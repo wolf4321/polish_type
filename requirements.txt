@@ -1,0 +1,18 @@
+fastapi
+uvicorn
+jinja2
+aiofiles
+asyncpg
+python-multipart
+python-dateutil
+APScheduler
+aiohttp>=3.9.0
+# --- Фаза 2: Google Sheets ---
+# gspread
+# google-auth
+# --- Фаза 3: Bitrix24 (использует aiohttp, уже подключен) ---
+# --- Фаза 4: Рекламные кабинеты ---
+# google-ads
+# google-analytics-data
+# google-api-python-client
+# openpyxl                    # Excel отчёты (для xlsx экспорта)
