@@ -902,23 +902,32 @@ def _parse_allegro_order(form: dict) -> dict:
     }
 
 
-async def sync_allegro():
-    """Background task: sync orders from Allegro (drogatrade)."""
+async def sync_allegro(full=False):
+    """Background task: sync orders from Allegro (drogatrade).
+    full=True — ignore date filter, fetch ALL orders (up to 12 months).
+    """
     if not ALLEGRO_CLIENT_ID or not ALLEGRO_CLIENT_SECRET or not ALLEGRO_REFRESH_TOKEN:
         return
 
     source = "allegro"
     pool = await get_db_pool()
 
-    # Find last sync date
-    async with pool.acquire() as conn:
-        last = await conn.fetchval(
-            "SELECT MAX(external_created) FROM orders WHERE source=$1", source
-        )
+    # Find last sync date (skip if full resync)
     updated_after = None
-    if last:
-        # Format as ISO 8601 with Z suffix for Allegro API
-        updated_after = (last - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    if not full:
+        async with pool.acquire() as conn:
+            last = await conn.fetchval(
+                "SELECT MAX(external_created) FROM orders WHERE source=$1", source
+            )
+            order_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM orders WHERE source=$1", source
+            )
+        if last and order_count and order_count > 10:
+            # Only use date filter if we already have a decent number of orders
+            updated_after = (last - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+    if full:
+        print("[sync-allegro] FULL resync — fetching all orders")
 
     log_id = None
     async with pool.acquire() as conn:
@@ -1448,8 +1457,8 @@ async def webhook_woo(request: Request):
 # ============================================================
 
 @app.get("/admin/sync")
-async def manual_sync(source: str = Query(None)):
-    """Ручной запуск синхронизации. /admin/sync?source=dobraszklarnia"""
+async def manual_sync(source: str = Query(None), full: bool = Query(False)):
+    """Ручной запуск синхронизации. /admin/sync?source=allegro&full=true"""
     if source == "dobraszklarnia":
         asyncio.create_task(sync_woocommerce())
         return JSONResponse({"ok": True, "message": "WooCommerce sync started"})
@@ -1460,8 +1469,8 @@ async def manual_sync(source: str = Query(None)):
         asyncio.create_task(sync_presta_ciep())
         return JSONResponse({"ok": True, "message": "Cieplarnia sync started"})
     elif source == "allegro":
-        asyncio.create_task(sync_allegro())
-        return JSONResponse({"ok": True, "message": "Allegro sync started"})
+        asyncio.create_task(sync_allegro(full=full))
+        return JSONResponse({"ok": True, "message": f"Allegro sync started (full={full})"})
     else:
         # Синк всех
         asyncio.create_task(sync_woocommerce())
