@@ -713,11 +713,14 @@ async def _allegro_get_token(session: aiohttp.ClientSession) -> str:
     if _allegro_token["access_token"] and _allegro_token["expires_at"] > now + 60:
         return _allegro_token["access_token"]
 
+    # Use the latest refresh token (Allegro rotates them on each use)
+    current_rt = _allegro_token.get("refresh_token") or ALLEGRO_REFRESH_TOKEN
+
     # Refresh the token
     auth = aiohttp.BasicAuth(ALLEGRO_CLIENT_ID, ALLEGRO_CLIENT_SECRET)
     data = {
         "grant_type": "refresh_token",
-        "refresh_token": ALLEGRO_REFRESH_TOKEN,
+        "refresh_token": current_rt,
     }
     async with session.post(ALLEGRO_AUTH_URL, data=data, auth=auth) as resp:
         if resp.status != 200:
@@ -728,14 +731,12 @@ async def _allegro_get_token(session: aiohttp.ClientSession) -> str:
     _allegro_token["access_token"] = body["access_token"]
     _allegro_token["expires_at"] = now + body.get("expires_in", 3600) - 60
 
-    # If Allegro returned a new refresh_token, log it (user should update env var)
+    # Store new refresh_token for subsequent calls (Allegro rotates them!)
     new_rt = body.get("refresh_token")
-    if new_rt and new_rt != ALLEGRO_REFRESH_TOKEN:
-        print(f"[allegro] ⚠ NEW refresh_token issued — update ALLEGRO_REFRESH_TOKEN env var!")
-        print(f"[allegro] new refresh_token: {new_rt[:20]}...")
-        # Store in memory so subsequent refreshes use the new one
-        import builtins
-        builtins.__allegro_latest_refresh = new_rt
+    if new_rt:
+        _allegro_token["refresh_token"] = new_rt
+        if new_rt != current_rt:
+            print(f"[allegro] refresh_token rotated (stored in memory)")
 
     return _allegro_token["access_token"]
 
@@ -754,7 +755,12 @@ async def _allegro_fetch_orders(session: aiohttp.ClientSession, token: str,
         "sort": "-updatedAt",
     }
     if updated_after:
-        params["updatedAt.gte"] = updated_after  # ISO 8601
+        # Allegro requires ISO 8601 with timezone, e.g. 2026-04-14T10:00:00.000Z
+        if isinstance(updated_after, str) and "T" not in updated_after:
+            updated_after = updated_after + "T00:00:00.000Z"
+        elif isinstance(updated_after, str) and not updated_after.endswith("Z") and "+" not in updated_after:
+            updated_after = updated_after + "Z"
+        params["updatedAt.gte"] = updated_after
 
     async with session.get(url, headers=headers, params=params) as resp:
         if resp.status == 401:
@@ -825,8 +831,9 @@ def _parse_allegro_order(form: dict) -> dict:
 
     # Payment status can override
     pay_status = (payment.get("type") or "").lower()
-    if pay_status == "paid" or payment.get("paidAmount", {}).get("amount"):
-        paid_amt = float(payment.get("paidAmount", {}).get("amount", 0))
+    paid_amount_obj = payment.get("paidAmount") or {}
+    if pay_status == "paid" or paid_amount_obj.get("amount"):
+        paid_amt = float(paid_amount_obj.get("amount", 0) or 0)
         if paid_amt >= total_amount and total_amount > 0:
             if status == "processing":
                 status = "payment_accepted"
@@ -866,7 +873,8 @@ async def sync_allegro():
         )
     updated_after = None
     if last:
-        updated_after = (last - timedelta(hours=2)).isoformat()
+        # Format as ISO 8601 with Z suffix for Allegro API
+        updated_after = (last - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
     log_id = None
     async with pool.acquire() as conn:
