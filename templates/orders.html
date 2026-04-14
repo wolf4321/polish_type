@@ -62,6 +62,7 @@
         .badge-dobraszklarnia { background: #dbeafe; color: #1d4ed8; }
         .badge-oteko { background: #fef3c7; color: #92400e; }
         .badge-cieplarnia { background: #d1fae5; color: #065f46; }
+        .badge-allegro { background: #fff0e6; color: #cc4800; }
 
         .status-processing, .status-payment_accepted { color: #2563eb; font-weight: 600; }
         .status-completed, .status-delivered { color: #059669; font-weight: 600; }
@@ -129,6 +130,10 @@
                 <div class="label">cieplarnia.pl</div>
                 <div class="value" id="s-ciep">—</div>
             </div>
+            <div class="stat-card">
+                <div class="label">Allegro</div>
+                <div class="value" id="s-allegro">—</div>
+            </div>
         </div>
 
         <!-- Фильтры -->
@@ -139,6 +144,7 @@
                 <option value="dobraszklarnia">dobraszklarnia.pl</option>
                 <option value="oteko">oteko.pl</option>
                 <option value="cieplarnia">cieplarnia.pl</option>
+                <option value="allegro">Allegro</option>
             </select>
             <select id="f-status">
                 <option value="">All statuses</option>
@@ -237,6 +243,7 @@
             document.getElementById('s-woo').textContent = fmt(o.woo_count);
             document.getElementById('s-oteko').textContent = fmt(o.oteko_count);
             document.getElementById('s-ciep').textContent = fmt(o.ciep_count);
+            document.getElementById('s-allegro').textContent = fmt(o.allegro_count);
         });
     }
 
