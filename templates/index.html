@@ -4,6 +4,7 @@
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
     <title>EKOMAT Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -15,10 +16,10 @@
         .navbar a { color: #a5b4fc; font-size: 13px; text-decoration: none; }
         .navbar a:hover { color: #fff; }
         .navbar a.active { color: #fff; font-weight: 600; border-bottom: 2px solid #a5b4fc; padding-bottom: 2px; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        .container { max-width: 1280px; margin: 0 auto; padding: 24px; }
 
         .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-                 gap: 14px; margin-bottom: 24px; }
+                 gap: 14px; margin-bottom: 20px; }
         .stat-card { background: #fff; border-radius: 10px; padding: 18px;
                      box-shadow: 0 1px 3px rgba(0,0,0,.06); }
         .stat-card .label { font-size: 11px; color: #6b7280; margin-bottom: 6px; text-transform: uppercase;
@@ -27,223 +28,295 @@
         .stat-card .sub { font-size: 11px; color: #9ca3af; margin-top: 4px; }
 
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-        @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+        @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
 
         .card { background: #fff; border-radius: 10px; padding: 20px;
                 box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 16px; }
         .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { text-align: left; padding: 8px 10px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
-             font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase; }
-        td { padding: 8px 10px; border-bottom: 1px solid #f3f4f6; }
-        tr:hover td { background: #f9fafb; }
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
-                 font-weight: 600; }
-        .badge-new { background: #dbeafe; color: #1d4ed8; }
-        .badge-call { background: #fef3c7; color: #92400e; }
-        .badge-form { background: #d1fae5; color: #065f46; }
 
         .source-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-        .source-bar .name { font-size: 13px; font-weight: 500; width: 130px; }
-        .source-bar .bar { flex: 1; height: 24px; background: #f3f4f6; border-radius: 6px; overflow: hidden; }
+        .source-bar .name { font-size: 13px; font-weight: 500; min-width: 130px; }
+        .source-bar .bar { flex: 1; height: 28px; background: #f3f4f6; border-radius: 6px; overflow: hidden; }
         .source-bar .bar-fill { height: 100%; border-radius: 6px; display: flex; align-items: center;
-                                padding-left: 8px; font-size: 11px; color: #fff; font-weight: 600;
-                                min-width: 30px; }
+                                padding-left: 10px; font-size: 12px; color: #fff; font-weight: 600;
+                                min-width: 40px; transition: width .5s ease; }
         .bar-dobraszklarnia { background: #3b82f6; }
         .bar-oteko { background: #f59e0b; }
         .bar-cieplarnia { background: #10b981; }
-        .source-bar .amount { font-size: 12px; color: #6b7280; width: 100px; text-align: right; }
+        .source-bar .amount { font-size: 12px; color: #6b7280; min-width: 100px; text-align: right; }
 
         .sync-list { list-style: none; }
-        .sync-list li { padding: 8px 0; border-bottom: 1px solid #f3f4f6; font-size: 13px;
-                        display: flex; justify-content: space-between; }
-        .sync-ok { color: #059669; }
-        .sync-error { color: #dc2626; }
-        .sync-running { color: #f59e0b; }
+        .sync-list li { padding: 10px 0; border-bottom: 1px solid #f3f4f6; font-size: 13px;
+                        display: flex; justify-content: space-between; align-items: center; }
+        .sync-list li:last-child { border-bottom: none; }
+        .sync-ok { color: #059669; font-weight: 600; }
+        .sync-error { color: #dc2626; font-weight: 600; }
+        .sync-running { color: #f59e0b; font-weight: 600; }
 
         .empty { text-align: center; padding: 40px; color: #9ca3af; font-size: 14px; }
 
         .filters { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
-        .filters input { padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px; }
-        .filters button { padding: 6px 14px; background: #1a1a2e; color: #fff; border: none;
-                          border-radius: 6px; font-size: 13px; cursor: pointer; }
+        .filters input, .filters select {
+            padding: 7px 10px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px; }
+        .filters button { padding: 7px 14px; background: #1a1a2e; color: #fff; border: none;
+                          border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 500; }
+        .filters button:hover { background: #2d2d5e; }
+
+        .chart-container { position: relative; height: 320px; }
+
+        .info-block { background: #f0f4ff; border-radius: 10px; padding: 20px; }
+        .info-block h3 { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+        .info-block code { background: #e0e7ff; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
     </style>
 </head>
 <body>
     <div class="navbar">
         <h1>EKOMAT Dashboard</h1>
         <div class="navbar-links">
-            <a href="/" class="active">Przegld</a>
-            <a href="/orders">Zamówienia</a>
-            {% if user %}<a href="/logout">Wyjdź</a>{% else %}<a href="/login">Zaloguj</a>{% endif %}
+            <a href="/" class="active">Dashboard</a>
+            <a href="/orders">Orders</a>
+            {% if user %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
         </div>
     </div>
 
     <div class="container">
-        <!-- Карточки статистики -->
+        <!-- Stats cards -->
         <div class="stats">
             <div class="stat-card">
-                <div class="label">Zamówienia</div>
+                <div class="label">Orders</div>
                 <div class="value">{{ total_orders }}</div>
-                <div class="sub">+{{ today_orders }} dzisiaj</div>
+                <div class="sub">+{{ today_orders }} today</div>
             </div>
             <div class="stat-card">
-                <div class="label">Przychód (PLN)</div>
+                <div class="label">Revenue (PLN)</div>
                 <div class="value">{{ "{:,.0f}".format(total_revenue).replace(",", " ") }}</div>
             </div>
             <div class="stat-card">
-                <div class="label">Klienci</div>
+                <div class="label">Customers</div>
                 <div class="value">{{ total_customers }}</div>
             </div>
             <div class="stat-card">
-                <div class="label">Leady</div>
+                <div class="label">Leads</div>
                 <div class="value">{{ total_leads }}</div>
-                <div class="sub">+{{ today_leads }} dzisiaj</div>
+                <div class="sub">+{{ today_leads }} today</div>
+            </div>
+        </div>
+
+        <!-- Filters for chart -->
+        <div class="filters">
+            <input type="date" id="f-from">
+            <span style="color:#9ca3af;">—</span>
+            <input type="date" id="f-to">
+            <select id="f-source">
+                <option value="">All stores</option>
+                <option value="dobraszklarnia">dobraszklarnia.pl</option>
+                <option value="oteko">oteko.pl</option>
+                <option value="cieplarnia">cieplarnia.pl</option>
+            </select>
+            <button onclick="loadChart()">Apply</button>
+        </div>
+
+        <!-- Chart: orders + revenue by day -->
+        <div class="card">
+            <h3>Orders & Revenue by day</h3>
+            <div class="chart-container">
+                <canvas id="dailyChart"></canvas>
             </div>
         </div>
 
         <div class="grid-2">
-            <!-- Заказы по источникам -->
+            <!-- Orders by source -->
             <div class="card">
-                <h3>Zamówienia wg sklepu</h3>
+                <h3>Orders by store</h3>
                 {% if by_source %}
                     {% set max_cnt = by_source[0].cnt if by_source else 1 %}
                     {% for s in by_source %}
                     <div class="source-bar">
-                        <div class="name">{{ s.source }}</div>
+                        <div class="name">{{ s.source }}.pl</div>
                         <div class="bar">
                             <div class="bar-fill bar-{{ s.source }}" style="width: {{ (s.cnt / max_cnt * 100)|int }}%">
                                 {{ s.cnt }}
                             </div>
                         </div>
-                        <div class="amount">{{ "{:,.0f}".format(s.revenue).replace(",", " ") }} zł</div>
+                        <div class="amount">{{ "{:,.0f}".format(s.revenue).replace(",", " ") }} PLN</div>
                     </div>
                     {% endfor %}
                 {% else %}
-                <div class="empty">Brak danych. Uruchom synchronizację.</div>
+                <div class="empty">No data yet. Run sync first.</div>
                 {% endif %}
             </div>
 
-            <!-- Статус синка -->
+            <!-- Sync status -->
             <div class="card">
-                <h3>Status synchronizacji</h3>
+                <h3>Sync status</h3>
                 {% if last_syncs %}
                 <ul class="sync-list">
                     {% for s in last_syncs %}
                     <li>
                         <span>
-                            <b>{{ s.source }}</b>
+                            <b>{{ s.source }}.pl</b>
                             <span class="sync-{{ s.status or 'running' }}">
                                 {{ s.status or 'running' }}
                             </span>
-                            {% if s.orders_new %} (+{{ s.orders_new }} nowych){% endif %}
+                            {% if s.orders_new %} (+{{ s.orders_new }} new){% endif %}
                         </span>
                         <span style="color:#9ca3af; font-size:12px;">
                             {% if s.finished_at %}
                                 {{ s.finished_at.strftime('%d.%m %H:%M') }}
                             {% else %}
-                                w trakcie...
+                                in progress...
                             {% endif %}
                         </span>
                     </li>
                     {% endfor %}
                 </ul>
                 <div style="margin-top: 12px;">
-                    <a href="/admin/sync" style="font-size:13px; color:#3b82f6;">Synchronizuj teraz →</a>
+                    <a href="/admin/sync" style="font-size:13px; color:#3b82f6;">Sync now →</a>
                 </div>
                 {% else %}
                 <div class="empty">
-                    Brak synchronizacji.<br>
-                    <a href="/admin/sync" style="color:#3b82f6;">Uruchom pierwszą synchronizację →</a>
+                    No syncs yet.<br>
+                    <a href="/admin/sync" style="color:#3b82f6;">Run first sync →</a>
                 </div>
                 {% endif %}
             </div>
         </div>
 
-        <!-- Фильтры -->
-        <div class="filters">
-            <input type="date" id="f-from">
-            <span>—</span>
-            <input type="date" id="f-to">
-            <button onclick="loadStats()">Zastosuj</button>
-        </div>
-
-        <!-- Последние лиды -->
-        <div class="card">
-            <h3>Ostatnie leady</h3>
-            {% if recent_leads %}
-            <table>
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Imię</th>
-                        <th>Telefon</th>
-                        <th>Typ</th>
-                        <th>Źródło</th>
-                        <th>Kampania</th>
-                        <th>Data</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for l in recent_leads %}
-                    <tr>
-                        <td>{{ l.id }}</td>
-                        <td>{{ l.name or '—' }}</td>
-                        <td>{{ l.phone or l.email or '—' }}</td>
-                        <td>
-                            {% if l.form_type == 'call' %}
-                            <span class="badge badge-call">Połączenie</span>
-                            {% else %}
-                            <span class="badge badge-form">Formularz</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ l.utm_source or '(direct)' }}</td>
-                        <td>{{ l.utm_campaign or '—' }}</td>
-                        <td>{{ l.created_at.strftime('%d.%m %H:%M') }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <div class="empty">Brak leadów. Skonfiguruj webhook!</div>
-            {% endif %}
-        </div>
-
-        <!-- Webhook endpoints -->
-        <div class="card" style="background:#f0f4ff;">
+        <!-- Webhook info -->
+        <div class="info-block">
             <h3>Webhook endpoints</h3>
-            <p style="font-size:13px;color:#4b5563;margin-top:8px;">
-                <b>Lead (formularz):</b> <code>POST {{ request.url_for('webhook_lead') }}</code><br>
-                <b>Połączenie:</b> <code>POST {{ request.url_for('webhook_call') }}</code><br>
-                <b>WooCommerce order:</b> <code>POST {{ request.url_for('webhook_woo') }}</code><br>
-                <b>Parametry leadów:</b> name, phone, email, utm_source, utm_medium, utm_campaign, gclid
+            <p style="font-size:13px;color:#4b5563;margin-top:8px;line-height:1.8;">
+                <b>Lead form:</b> <code>POST {{ request.url_for('webhook_lead') }}</code><br>
+                <b>Call tracking:</b> <code>POST {{ request.url_for('webhook_call') }}</code><br>
+                <b>WooCommerce order:</b> <code>POST {{ request.url_for('webhook_woo') }}</code>
             </p>
         </div>
     </div>
 
     <script>
+    var dailyChart = null;
+
     (function() {
         var to = new Date();
         var from = new Date();
         from.setDate(from.getDate() - 30);
         document.getElementById('f-from').value = from.toISOString().slice(0,10);
         document.getElementById('f-to').value = to.toISOString().slice(0,10);
-        loadStats();
+        loadChart();
     })();
 
-    function fmt(n) {
-        return (n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-    }
-
-    function loadStats() {
+    function loadChart() {
         var from = document.getElementById('f-from').value;
         var to = document.getElementById('f-to').value;
+        var source = document.getElementById('f-source').value;
         if (!from || !to) return;
-        fetch('/api/stats?date_from=' + from + '&date_to=' + to)
-            .then(function(r) { return r.json(); })
-            .then(function(d) {
-                // Можно обновить карточки динамически если нужно
-            });
+
+        var url = '/api/orders/daily?date_from=' + from + '&date_to=' + to;
+        if (source) url += '&source=' + encodeURIComponent(source);
+
+        fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+            renderChart(d);
+        });
+    }
+
+    function renderChart(data) {
+        var ctx = document.getElementById('dailyChart').getContext('2d');
+
+        if (dailyChart) {
+            dailyChart.destroy();
+        }
+
+        // Format labels: "14.04" instead of "2026-04-14"
+        var labels = data.days.map(function(d) {
+            var parts = d.split('-');
+            return parts[2] + '.' + parts[1];
+        });
+
+        dailyChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Revenue (PLN)',
+                        data: data.revenue,
+                        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                        borderColor: 'rgba(59, 130, 246, 0.8)',
+                        borderWidth: 2,
+                        borderRadius: 4,
+                        yAxisID: 'y-revenue',
+                        order: 2,
+                    },
+                    {
+                        label: 'Orders',
+                        data: data.orders_count,
+                        type: 'line',
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        borderWidth: 3,
+                        pointRadius: 3,
+                        pointBackgroundColor: '#f59e0b',
+                        fill: true,
+                        tension: 0.3,
+                        yAxisID: 'y-orders',
+                        order: 1,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { font: { size: 12 }, usePointStyle: true, padding: 20 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                var v = ctx.parsed.y;
+                                if (ctx.dataset.yAxisID === 'y-revenue') {
+                                    return 'Revenue: ' + v.toLocaleString('pl-PL', {minimumFractionDigits: 0}) + ' PLN';
+                                }
+                                return 'Orders: ' + v;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 11 }, maxRotation: 0 }
+                    },
+                    'y-revenue': {
+                        type: 'linear',
+                        position: 'left',
+                        beginAtZero: true,
+                        grid: { color: 'rgba(0,0,0,0.04)' },
+                        ticks: {
+                            font: { size: 11 },
+                            callback: function(v) {
+                                if (v >= 1000) return (v/1000).toFixed(0) + 'k';
+                                return v;
+                            }
+                        },
+                        title: { display: true, text: 'Revenue (PLN)', font: { size: 11 }, color: '#3b82f6' }
+                    },
+                    'y-orders': {
+                        type: 'linear',
+                        position: 'right',
+                        beginAtZero: true,
+                        grid: { drawOnChartArea: false },
+                        ticks: { font: { size: 11 } },
+                        title: { display: true, text: 'Orders', font: { size: 11 }, color: '#f59e0b' }
+                    }
+                }
+            }
+        });
     }
     </script>
 </body>
