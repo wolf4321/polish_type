@@ -943,38 +943,58 @@ async def sync_allegro(full=False):
         async with aiohttp.ClientSession() as session:
             token = await _allegro_get_token(session)
 
-            offset = 0
-            while True:
-                forms, total = await _allegro_fetch_orders(
-                    session, token,
-                    offset=offset, limit=100, updated_after=updated_after
-                )
-                if not forms:
-                    break
+            # Allegro returns max ~3 months per query.
+            # For full resync, iterate in 3-month windows going back 12 months.
+            if full:
+                now = datetime.utcnow()
+                date_ranges = []
+                for m in range(4):  # 4 windows × 3 months = 12 months back
+                    range_end = now - timedelta(days=90 * m)
+                    range_start = now - timedelta(days=90 * (m + 1))
+                    date_ranges.append((
+                        range_start.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                        range_end.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                    ))
+            else:
+                # Normal incremental sync — single pass
+                date_ranges = [(updated_after, None)]
 
-                async with pool.acquire() as conn:
-                    for form in forms:
-                        try:
-                            parsed = _parse_allegro_order(form)
-                            result = await _save_order(conn, source, parsed)
-                            if result == "new":
-                                new_count += 1
-                                await _upsert_customer(
-                                    conn, source,
-                                    parsed["customer_name"], parsed["customer_email"],
-                                    parsed["customer_phone"], parsed["customer_city"],
-                                    parsed["total"], parsed["external_created"]
-                                )
-                            else:
-                                upd_count += 1
-                        except Exception as e_order:
-                            skip_count += 1
-                            order_id = form.get("id", "?")
-                            print(f"[sync-allegro] SKIP order {order_id}: {e_order}")
+            for dr_start, dr_end in date_ranges:
+                offset = 0
+                while True:
+                    # Build params
+                    forms, total = await _allegro_fetch_orders(
+                        session, token,
+                        offset=offset, limit=100, updated_after=dr_start
+                    )
+                    if offset == 0:
+                        print(f"[sync-allegro] page offset=0, API total={total}, fetched={len(forms)}, range={dr_start}..{dr_end}")
+                    if not forms:
+                        break
 
-                offset += len(forms)
-                if offset >= total or len(forms) < 100:
-                    break
+                    async with pool.acquire() as conn:
+                        for form in forms:
+                            try:
+                                parsed = _parse_allegro_order(form)
+                                result = await _save_order(conn, source, parsed)
+                                if result == "new":
+                                    new_count += 1
+                                    await _upsert_customer(
+                                        conn, source,
+                                        parsed["customer_name"], parsed["customer_email"],
+                                        parsed["customer_phone"], parsed["customer_city"],
+                                        parsed["total"], parsed["external_created"]
+                                    )
+                                else:
+                                    upd_count += 1
+                            except Exception as e_order:
+                                skip_count += 1
+                                order_id = form.get("id", "?")
+                                print(f"[sync-allegro] SKIP order {order_id}: {e_order}")
+
+                    offset += len(forms)
+                    if offset >= total or len(forms) < 100:
+                        break
 
         async with pool.acquire() as conn:
             await conn.execute(
