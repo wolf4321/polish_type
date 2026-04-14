@@ -511,9 +511,13 @@ async def _presta_fetch_orders(session: aiohttp.ClientSession, base_url: str, ap
         params["filter[date_add]"] = f"[{date_after},]"
 
     auth = aiohttp.BasicAuth(api_key, "")  # PrestaShop: key как логин, пустой пароль
+    full_url = f"{url}?{'&'.join(f'{k}={v}' for k,v in params.items())}"
+    print(f"[presta] GET {full_url} (key={api_key[:8]}...)")
     async with session.get(url, params=params, auth=auth, ssl=True) as resp:
+        print(f"[presta] response status={resp.status}, url={resp.url}")
         if resp.status == 401:
-            raise Exception("PrestaShop API: неверный ключ или Webservice отключён")
+            text = await resp.text()
+            raise Exception(f"PrestaShop API 401 Unauthorized: {text[:300]}")
         if resp.status != 200:
             text = await resp.text()
             raise Exception(f"PrestaShop API error {resp.status}: {text[:300]}")
