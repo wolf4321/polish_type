@@ -201,7 +201,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# static — создаём папку если нет (Railway может не включить пустую папку)
+import pathlib
+_static_dir = pathlib.Path("static")
+_static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
 templates = Jinja2Templates(directory="templates")
 app.include_router(auth_router)
 
