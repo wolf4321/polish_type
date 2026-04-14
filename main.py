@@ -1,11 +1,12 @@
 """
 Dashboard Boilerplate — EKOMAT Analytics Hub.
-FastAPI + asyncpg + Jinja2 + WooCommerce + PrestaShop.
+FastAPI + asyncpg + Jinja2 + WooCommerce + PrestaShop + Allegro.
 
 Сайты:
   - dobraszklarnia.pl  (WooCommerce)  — webhook + API sync
   - oteko.pl           (PrestaShop)   — API pull каждые 15 мин
   - cieplarnia.pl      (PrestaShop)   — API pull каждые 15 мин
+  - Allegro (drogatrade) — OAuth2 + API pull каждые 15 мин
 
 Railway deploy: добавь DB_CONNECT + API-ключи в env vars.
 """
@@ -56,6 +57,16 @@ PRESTA_OTEKO_KEY = os.getenv("PRESTA_OTEKO_KEY", "")
 # PrestaShop — cieplarnia.pl
 PRESTA_CIEP_URL  = os.getenv("PRESTA_CIEP_URL", "https://cieplarnia.pl")
 PRESTA_CIEP_KEY  = os.getenv("PRESTA_CIEP_KEY", "")
+
+# Allegro — drogatrade
+ALLEGRO_CLIENT_ID     = os.getenv("ALLEGRO_CLIENT_ID", "")
+ALLEGRO_CLIENT_SECRET = os.getenv("ALLEGRO_CLIENT_SECRET", "")
+ALLEGRO_REFRESH_TOKEN = os.getenv("ALLEGRO_REFRESH_TOKEN", "")
+ALLEGRO_API_URL       = "https://api.allegro.pl"
+ALLEGRO_AUTH_URL      = "https://allegro.pl/auth/oauth/token"
+
+# In-memory token cache for Allegro
+_allegro_token = {"access_token": "", "expires_at": 0}
 
 # Bitrix24 (фаза 3 — пока закомментировано)
 # BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL")
@@ -190,8 +201,9 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(sync_woocommerce, CronTrigger(minute="*/15"), id="sync_woo", replace_existing=True)
     scheduler.add_job(sync_presta_oteko, CronTrigger(minute="*/15"), id="sync_oteko", replace_existing=True)
     scheduler.add_job(sync_presta_ciep, CronTrigger(minute="*/15"), id="sync_ciep", replace_existing=True)
+    scheduler.add_job(sync_allegro, CronTrigger(minute="*/15"), id="sync_allegro", replace_existing=True)
     scheduler.start()
-    print("[startup] scheduler started — syncing every 15 min")
+    print("[startup] scheduler started — syncing every 15 min (woo + oteko + ciep + allegro)")
 
     yield
 
@@ -688,6 +700,232 @@ async def sync_presta_ciep():
 
 
 # ============================================================
+# === ИНТЕГРАЦИИ: Allegro (drogatrade) ===
+# ============================================================
+
+import time as _time
+
+async def _allegro_get_token(session: aiohttp.ClientSession) -> str:
+    """Get a valid Allegro access token, refreshing if needed."""
+    global _allegro_token
+
+    now = _time.time()
+    if _allegro_token["access_token"] and _allegro_token["expires_at"] > now + 60:
+        return _allegro_token["access_token"]
+
+    # Refresh the token
+    auth = aiohttp.BasicAuth(ALLEGRO_CLIENT_ID, ALLEGRO_CLIENT_SECRET)
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": ALLEGRO_REFRESH_TOKEN,
+    }
+    async with session.post(ALLEGRO_AUTH_URL, data=data, auth=auth) as resp:
+        if resp.status != 200:
+            text = await resp.text()
+            raise Exception(f"Allegro token refresh failed {resp.status}: {text[:300]}")
+        body = await resp.json()
+
+    _allegro_token["access_token"] = body["access_token"]
+    _allegro_token["expires_at"] = now + body.get("expires_in", 3600) - 60
+
+    # If Allegro returned a new refresh_token, log it (user should update env var)
+    new_rt = body.get("refresh_token")
+    if new_rt and new_rt != ALLEGRO_REFRESH_TOKEN:
+        print(f"[allegro] ⚠ NEW refresh_token issued — update ALLEGRO_REFRESH_TOKEN env var!")
+        print(f"[allegro] new refresh_token: {new_rt[:20]}...")
+        # Store in memory so subsequent refreshes use the new one
+        import builtins
+        builtins.__allegro_latest_refresh = new_rt
+
+    return _allegro_token["access_token"]
+
+
+async def _allegro_fetch_orders(session: aiohttp.ClientSession, token: str,
+                                 offset=0, limit=100, updated_after=None):
+    """Fetch checkout-forms (orders) from Allegro REST API."""
+    url = f"{ALLEGRO_API_URL}/order/checkout-forms"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.allegro.public.v1+json",
+    }
+    params = {
+        "offset": offset,
+        "limit": min(limit, 100),
+        "sort": "-updatedAt",
+    }
+    if updated_after:
+        params["updatedAt.gte"] = updated_after  # ISO 8601
+
+    async with session.get(url, headers=headers, params=params) as resp:
+        if resp.status == 401:
+            raise Exception("Allegro API: token expired or invalid")
+        if resp.status != 200:
+            text = await resp.text()
+            raise Exception(f"Allegro API error {resp.status}: {text[:300]}")
+        data = await resp.json()
+        return data.get("checkoutForms", []), data.get("count", 0)
+
+
+def _parse_allegro_order(form: dict) -> dict:
+    """Map Allegro checkout-form → our unified order format."""
+    buyer = form.get("buyer", {})
+    delivery = form.get("delivery", {})
+    address = delivery.get("address", {})
+    payment = form.get("payment", {})
+    summary = form.get("summary", {})
+
+    # Build buyer name
+    buyer_name = ""
+    if buyer.get("firstName") or buyer.get("lastName"):
+        buyer_name = f"{buyer.get('firstName', '')} {buyer.get('lastName', '')}".strip()
+    if not buyer_name:
+        buyer_name = address.get("firstName", "") + " " + address.get("lastName", "")
+        buyer_name = buyer_name.strip()
+
+    # Items
+    items = []
+    for li in form.get("lineItems", []):
+        items.append({
+            "name": li.get("offer", {}).get("name", ""),
+            "qty": int(li.get("quantity", 1)),
+            "price": str(li.get("price", {}).get("amount", "0")),
+            "sku": li.get("offer", {}).get("external", {}).get("id", "")
+                   or str(li.get("offer", {}).get("id", "")),
+        })
+
+    # Total
+    total_amount = 0.0
+    if summary.get("totalToPay"):
+        total_amount = float(summary["totalToPay"].get("amount", 0))
+
+    # Currency
+    currency = "PLN"
+    if summary.get("totalToPay", {}).get("currency"):
+        currency = summary["totalToPay"]["currency"]
+
+    # Created date
+    ext_created = None
+    bought_at = form.get("updatedAt") or form.get("createdAt")
+    if bought_at:
+        try:
+            ext_created = datetime.fromisoformat(bought_at.replace("Z", "+00:00"))
+        except Exception:
+            ext_created = datetime.now(TZ)
+
+    # Status mapping
+    status_raw = form.get("status", "UNKNOWN")
+    allegro_status_map = {
+        "BOUGHT": "processing",
+        "FILLED_IN": "processing",
+        "READY_FOR_PROCESSING": "processing",
+        "CANCELLED": "cancelled",
+    }
+    status = allegro_status_map.get(status_raw, status_raw.lower())
+
+    # Payment status can override
+    pay_status = (payment.get("type") or "").lower()
+    if pay_status == "paid" or payment.get("paidAmount", {}).get("amount"):
+        paid_amt = float(payment.get("paidAmount", {}).get("amount", 0))
+        if paid_amt >= total_amount and total_amount > 0:
+            if status == "processing":
+                status = "payment_accepted"
+
+    return {
+        "external_id": str(form.get("id", "")),
+        "status": status,
+        "customer_name": buyer_name,
+        "customer_email": buyer.get("email", ""),
+        "customer_phone": buyer.get("phoneNumber") or address.get("phoneNumber", ""),
+        "customer_city": address.get("city", ""),
+        "customer_zip": address.get("zipCode", "") or address.get("postCode", ""),
+        "customer_address": f"{address.get('street', '')}".strip(),
+        "total": total_amount,
+        "currency": currency,
+        "items_count": len(items),
+        "items_json": json.dumps(items, ensure_ascii=False),
+        "payment_method": payment.get("type", ""),
+        "shipping_method": delivery.get("method", {}).get("name", ""),
+        "note": form.get("messageToSeller", ""),
+        "external_created": ext_created,
+    }
+
+
+async def sync_allegro():
+    """Background task: sync orders from Allegro (drogatrade)."""
+    if not ALLEGRO_CLIENT_ID or not ALLEGRO_CLIENT_SECRET or not ALLEGRO_REFRESH_TOKEN:
+        return
+
+    source = "allegro"
+    pool = await get_db_pool()
+
+    # Find last sync date
+    async with pool.acquire() as conn:
+        last = await conn.fetchval(
+            "SELECT MAX(external_created) FROM orders WHERE source=$1", source
+        )
+    updated_after = None
+    if last:
+        updated_after = (last - timedelta(hours=2)).isoformat()
+
+    log_id = None
+    async with pool.acquire() as conn:
+        log_id = await conn.fetchval(
+            "INSERT INTO sync_log (source, status) VALUES ($1, 'running') RETURNING id", source
+        )
+
+    new_count = 0
+    upd_count = 0
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            token = await _allegro_get_token(session)
+
+            offset = 0
+            while True:
+                forms, total = await _allegro_fetch_orders(
+                    session, token,
+                    offset=offset, limit=100, updated_after=updated_after
+                )
+                if not forms:
+                    break
+
+                async with pool.acquire() as conn:
+                    for form in forms:
+                        parsed = _parse_allegro_order(form)
+                        result = await _save_order(conn, source, parsed)
+                        if result == "new":
+                            new_count += 1
+                            await _upsert_customer(
+                                conn, source,
+                                parsed["customer_name"], parsed["customer_email"],
+                                parsed["customer_phone"], parsed["customer_city"],
+                                parsed["total"], parsed["external_created"]
+                            )
+                        else:
+                            upd_count += 1
+
+                offset += len(forms)
+                if offset >= total or len(forms) < 100:
+                    break
+
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE sync_log SET status='ok', orders_new=$1, orders_upd=$2, finished_at=NOW() WHERE id=$3",
+                new_count, upd_count, log_id
+            )
+        print(f"[sync-allegro] done: +{new_count} new, ~{upd_count} updated")
+
+    except Exception as e:
+        print(f"[sync-allegro] ERROR: {e}")
+        traceback.print_exc()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE sync_log SET status='error', error=$1, finished_at=NOW() WHERE id=$2",
+                str(e)[:500], log_id
+            )
+
+
+# ============================================================
 # === СТРАНИЦЫ ===
 # ============================================================
 
@@ -786,7 +1024,8 @@ async def api_stats(
                 COUNT(DISTINCT customer_email) FILTER (WHERE customer_email != '') AS unique_customers,
                 COUNT(*) FILTER (WHERE source = 'dobraszklarnia') AS woo_count,
                 COUNT(*) FILTER (WHERE source = 'oteko') AS oteko_count,
-                COUNT(*) FILTER (WHERE source = 'cieplarnia') AS ciep_count
+                COUNT(*) FILTER (WHERE source = 'cieplarnia') AS ciep_count,
+                COUNT(*) FILTER (WHERE source = 'allegro') AS allegro_count
             FROM orders
             WHERE created_at::date >= $1 AND created_at::date <= $2
         """, d_from, d_to)
@@ -1167,12 +1406,16 @@ async def manual_sync(source: str = Query(None)):
     elif source == "cieplarnia":
         asyncio.create_task(sync_presta_ciep())
         return JSONResponse({"ok": True, "message": "Cieplarnia sync started"})
+    elif source == "allegro":
+        asyncio.create_task(sync_allegro())
+        return JSONResponse({"ok": True, "message": "Allegro sync started"})
     else:
         # Синк всех
         asyncio.create_task(sync_woocommerce())
         asyncio.create_task(sync_presta_oteko())
         asyncio.create_task(sync_presta_ciep())
-        return JSONResponse({"ok": True, "message": "All syncs started"})
+        asyncio.create_task(sync_allegro())
+        return JSONResponse({"ok": True, "message": "All syncs started (woo + oteko + ciep + allegro)"})
 
 
 @app.get("/api/sync-log")
