@@ -813,7 +813,11 @@ async def _allegro_fetch_orders(session: aiohttp.ClientSession, token: str,
             text = await resp.text()
             raise Exception(f"Allegro API error {resp.status}: {text[:300]}")
         data = await resp.json()
-        return data.get("checkoutForms", []), data.get("count", 0)
+        forms = data.get("checkoutForms", [])
+        # Allegro: "count" = items on this page, "totalCount" = total matching
+        total_count = data.get("totalCount") or data.get("count") or len(forms)
+        print(f"[allegro-api] response keys={list(data.keys())}, count={data.get('count')}, totalCount={data.get('totalCount')}, forms={len(forms)}")
+        return forms, total_count
 
 
 def _parse_allegro_order(form: dict) -> dict:
