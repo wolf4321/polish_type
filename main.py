@@ -800,6 +800,47 @@ async def api_stats(
 
 
 # ============================================================
+# === API: Статистика по дням (для графика) ===
+# ============================================================
+
+@app.get("/api/orders/daily")
+async def api_orders_daily(
+    date_from: str = Query(None),
+    date_to:   str = Query(None),
+    source:    str = Query(None),
+):
+    pool = await get_db_pool()
+    d_from = date.fromisoformat(date_from) if date_from else date.today() - timedelta(days=30)
+    d_to   = date.fromisoformat(date_to)   if date_to   else date.today()
+
+    conditions = ["COALESCE(external_created, created_at)::date >= $1", "COALESCE(external_created, created_at)::date <= $2"]
+    params = [d_from, d_to]
+    if source:
+        params.append(source)
+        conditions.append(f"source = ${len(params)}")
+
+    where = " AND ".join(conditions)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(f"""
+            SELECT
+                COALESCE(external_created, created_at)::date AS day,
+                COUNT(*) AS orders_count,
+                COALESCE(SUM(total), 0) AS revenue
+            FROM orders
+            WHERE {where}
+            GROUP BY day
+            ORDER BY day
+        """, *params)
+
+    return JSONResponse({
+        "days": [r["day"].isoformat() for r in rows],
+        "orders_count": [int(r["orders_count"]) for r in rows],
+        "revenue": [float(r["revenue"]) for r in rows],
+    })
+
+
+# ============================================================
 # === API: Заказы (для таблицы + экспорт) ===
 # ============================================================
 
