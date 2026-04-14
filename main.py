@@ -40,7 +40,7 @@ from auth import auth_router, get_current_user
 # Конфигурация
 # ============================================================
 TZ = ZoneInfo("Europe/Warsaw")
-DSN = lambda: os.getenv("DB_CONNECT")
+DSN = lambda: os.getenv("DB_CONNECT") or os.getenv("DATABASE_URL") or os.getenv("DATABASE_PRIVATE_URL")
 
 # WooCommerce — dobraszklarnia.pl
 WOO_URL     = os.getenv("WOO_URL", "https://dobraszklarnia.pl")
@@ -85,6 +85,18 @@ scheduler = AsyncIOScheduler(timezone=TZ)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- Startup ---
+    dsn = DSN()
+    print(f"[startup] DSN present: {bool(dsn)}")
+    if dsn:
+        # Маскируем пароль для лога
+        safe = dsn[:30] + "..." if len(dsn) > 30 else dsn
+        print(f"[startup] DSN starts with: {safe}")
+    else:
+        # Выводим все env vars с DB/DATABASE в имени для диагностики
+        db_vars = {k: v[:20]+"..." for k, v in os.environ.items() if "DB" in k.upper() or "DATABASE" in k.upper() or "POSTGRES" in k.upper() or "PG" in k.upper()}
+        print(f"[startup] WARNING: No DSN found! DB-related env vars: {db_vars}")
+        print(f"[startup] All env var names: {list(os.environ.keys())}")
+
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         # Таблица лидов (из форм, звонков)
