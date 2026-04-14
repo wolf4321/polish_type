@@ -43,6 +43,7 @@
         .bar-dobraszklarnia { background: #3b82f6; }
         .bar-oteko { background: #f59e0b; }
         .bar-cieplarnia { background: #10b981; }
+        .bar-allegro { background: #ff5a00; }
         .source-bar .amount { font-size: 12px; color: #6b7280; min-width: 100px; text-align: right; }
 
         .sync-list { list-style: none; }
@@ -112,6 +113,7 @@
                 <option value="dobraszklarnia">dobraszklarnia.pl</option>
                 <option value="oteko">oteko.pl</option>
                 <option value="cieplarnia">cieplarnia.pl</option>
+                <option value="allegro">Allegro</option>
             </select>
             <button onclick="loadChart()">Apply</button>
         </div>
@@ -132,7 +134,7 @@
                     {% set max_cnt = by_source[0].cnt if by_source else 1 %}
                     {% for s in by_source %}
                     <div class="source-bar">
-                        <div class="name">{{ s.source }}.pl</div>
+                        <div class="name">{% if s.source == 'allegro' %}Allegro{% else %}{{ s.source }}.pl{% endif %}</div>
                         <div class="bar">
                             <div class="bar-fill bar-{{ s.source }}" style="width: {{ (s.cnt / max_cnt * 100)|int }}%">
                                 {{ s.cnt }}
@@ -154,7 +156,7 @@
                     {% for s in last_syncs %}
                     <li>
                         <span>
-                            <b>{{ s.source }}.pl</b>
+                            <b>{% if s.source == 'allegro' %}Allegro{% else %}{{ s.source }}.pl{% endif %}</b>
                             <span class="sync-{{ s.status or 'running' }}">
                                 {{ s.status or 'running' }}
                             </span>
