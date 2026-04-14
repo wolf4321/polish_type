@@ -1119,7 +1119,8 @@ async def api_stats(
                 COUNT(*) FILTER (WHERE source = 'cieplarnia') AS ciep_count,
                 COUNT(*) FILTER (WHERE source = 'allegro') AS allegro_count
             FROM orders
-            WHERE created_at::date >= $1 AND created_at::date <= $2
+            WHERE COALESCE(external_created, created_at)::date >= $1
+              AND COALESCE(external_created, created_at)::date <= $2
         """, d_from, d_to)
 
     return JSONResponse({
@@ -1200,10 +1201,10 @@ async def api_orders(
         conditions.append(f"(customer_name ILIKE ${len(params)} OR customer_phone ILIKE ${len(params)} OR customer_email ILIKE ${len(params)})")
     if date_from:
         params.append(date.fromisoformat(date_from))
-        conditions.append(f"created_at::date >= ${len(params)}")
+        conditions.append(f"COALESCE(external_created, created_at)::date >= ${len(params)}")
     if date_to:
         params.append(date.fromisoformat(date_to))
-        conditions.append(f"created_at::date <= ${len(params)}")
+        conditions.append(f"COALESCE(external_created, created_at)::date <= ${len(params)}")
 
     where = " AND ".join(conditions)
 
@@ -1252,10 +1253,10 @@ async def export_orders(
         conditions.append(f"status = ${len(params)}")
     if date_from:
         params.append(date.fromisoformat(date_from))
-        conditions.append(f"created_at::date >= ${len(params)}")
+        conditions.append(f"COALESCE(external_created, created_at)::date >= ${len(params)}")
     if date_to:
         params.append(date.fromisoformat(date_to))
-        conditions.append(f"created_at::date <= ${len(params)}")
+        conditions.append(f"COALESCE(external_created, created_at)::date <= ${len(params)}")
 
     where = " AND ".join(conditions)
 
