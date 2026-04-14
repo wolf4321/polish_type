@@ -803,14 +803,15 @@ def _parse_allegro_order(form: dict) -> dict:
     if summary.get("totalToPay", {}).get("currency"):
         currency = summary["totalToPay"]["currency"]
 
-    # Created date
+    # Created date — strip timezone to match our naive TIMESTAMP column
     ext_created = None
     bought_at = form.get("updatedAt") or form.get("createdAt")
     if bought_at:
         try:
-            ext_created = datetime.fromisoformat(bought_at.replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(bought_at.replace("Z", "+00:00"))
+            ext_created = dt.replace(tzinfo=None)
         except Exception:
-            ext_created = datetime.now(TZ)
+            ext_created = datetime.now(TZ).replace(tzinfo=None)
 
     # Status mapping
     status_raw = form.get("status", "UNKNOWN")
