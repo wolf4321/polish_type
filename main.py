@@ -195,6 +195,15 @@ async def lifespan(app: FastAPI):
             )
         """)
 
+        # App settings — key-value store (для Allegro refresh token и др.)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key         VARCHAR(100) PRIMARY KEY,
+                value       TEXT,
+                updated_at  TIMESTAMP DEFAULT NOW()
+            )
+        """)
+
     print("[startup] DB connected, all tables ready")
 
     # Фоновые задачи — синк магазинов
@@ -705,6 +714,33 @@ async def sync_presta_ciep():
 
 import time as _time
 
+async def _allegro_db_get_refresh_token():
+    """Read the latest refresh token from DB (survives restarts)."""
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchval(
+                "SELECT value FROM app_settings WHERE key='allegro_refresh_token'"
+            )
+            return row
+    except Exception:
+        return None
+
+
+async def _allegro_db_save_refresh_token(token: str):
+    """Save new refresh token to DB so it survives restarts."""
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES ('allegro_refresh_token', $1, NOW())
+                ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()
+            """, token)
+    except Exception as e:
+        print(f"[allegro] WARNING: could not save refresh_token to DB: {e}")
+
+
 async def _allegro_get_token(session: aiohttp.ClientSession) -> str:
     """Get a valid Allegro access token, refreshing if needed."""
     global _allegro_token
@@ -713,8 +749,15 @@ async def _allegro_get_token(session: aiohttp.ClientSession) -> str:
     if _allegro_token["access_token"] and _allegro_token["expires_at"] > now + 60:
         return _allegro_token["access_token"]
 
-    # Use the latest refresh token (Allegro rotates them on each use)
-    current_rt = _allegro_token.get("refresh_token") or ALLEGRO_REFRESH_TOKEN
+    # Priority: memory → DB → env var
+    current_rt = (
+        _allegro_token.get("refresh_token")
+        or await _allegro_db_get_refresh_token()
+        or ALLEGRO_REFRESH_TOKEN
+    )
+
+    if not current_rt:
+        raise Exception("No Allegro refresh token available (check env var or re-authorize)")
 
     # Refresh the token
     auth = aiohttp.BasicAuth(ALLEGRO_CLIENT_ID, ALLEGRO_CLIENT_SECRET)
@@ -731,12 +774,13 @@ async def _allegro_get_token(session: aiohttp.ClientSession) -> str:
     _allegro_token["access_token"] = body["access_token"]
     _allegro_token["expires_at"] = now + body.get("expires_in", 3600) - 60
 
-    # Store new refresh_token for subsequent calls (Allegro rotates them!)
+    # Store new refresh_token in memory + DB (Allegro rotates them on each use!)
     new_rt = body.get("refresh_token")
     if new_rt:
         _allegro_token["refresh_token"] = new_rt
+        await _allegro_db_save_refresh_token(new_rt)
         if new_rt != current_rt:
-            print(f"[allegro] refresh_token rotated (stored in memory)")
+            print(f"[allegro] refresh_token rotated and saved to DB")
 
     return _allegro_token["access_token"]
 
