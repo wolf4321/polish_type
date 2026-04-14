@@ -818,11 +818,11 @@ async def _allegro_fetch_orders(session: aiohttp.ClientSession, token: str,
 
 def _parse_allegro_order(form: dict) -> dict:
     """Map Allegro checkout-form → our unified order format."""
-    buyer = form.get("buyer", {})
-    delivery = form.get("delivery", {})
-    address = delivery.get("address", {})
-    payment = form.get("payment", {})
-    summary = form.get("summary", {})
+    buyer = form.get("buyer") or {}
+    delivery = form.get("delivery") or {}
+    address = delivery.get("address") or {}
+    payment = form.get("payment") or {}
+    summary = form.get("summary") or {}
 
     # Build buyer name
     buyer_name = ""
@@ -937,6 +937,7 @@ async def sync_allegro(full=False):
 
     new_count = 0
     upd_count = 0
+    skip_count = 0
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -953,18 +954,23 @@ async def sync_allegro(full=False):
 
                 async with pool.acquire() as conn:
                     for form in forms:
-                        parsed = _parse_allegro_order(form)
-                        result = await _save_order(conn, source, parsed)
-                        if result == "new":
-                            new_count += 1
-                            await _upsert_customer(
-                                conn, source,
-                                parsed["customer_name"], parsed["customer_email"],
-                                parsed["customer_phone"], parsed["customer_city"],
-                                parsed["total"], parsed["external_created"]
-                            )
-                        else:
-                            upd_count += 1
+                        try:
+                            parsed = _parse_allegro_order(form)
+                            result = await _save_order(conn, source, parsed)
+                            if result == "new":
+                                new_count += 1
+                                await _upsert_customer(
+                                    conn, source,
+                                    parsed["customer_name"], parsed["customer_email"],
+                                    parsed["customer_phone"], parsed["customer_city"],
+                                    parsed["total"], parsed["external_created"]
+                                )
+                            else:
+                                upd_count += 1
+                        except Exception as e_order:
+                            skip_count += 1
+                            order_id = form.get("id", "?")
+                            print(f"[sync-allegro] SKIP order {order_id}: {e_order}")
 
                 offset += len(forms)
                 if offset >= total or len(forms) < 100:
@@ -975,7 +981,7 @@ async def sync_allegro(full=False):
                 "UPDATE sync_log SET status='ok', orders_new=$1, orders_upd=$2, finished_at=NOW() WHERE id=$3",
                 new_count, upd_count, log_id
             )
-        print(f"[sync-allegro] done: +{new_count} new, ~{upd_count} updated")
+        print(f"[sync-allegro] done: +{new_count} new, ~{upd_count} updated, skipped={skip_count}")
 
     except Exception as e:
         print(f"[sync-allegro] ERROR: {e}")
