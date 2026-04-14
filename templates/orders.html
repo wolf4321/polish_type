@@ -100,9 +100,9 @@
     <div class="navbar">
         <h1>EKOMAT Dashboard</h1>
         <div class="navbar-links">
-            <a href="/">Przegld</a>
-            <a href="/orders" class="active">Zamówienia</a>
-            {% if user %}<a href="/logout">Wyjdź</a>{% else %}<a href="/login">Zaloguj</a>{% endif %}
+            <a href="/">Dashboard</a>
+            <a href="/orders" class="active">Orders</a>
+            {% if user %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
         </div>
     </div>
 
@@ -110,15 +110,15 @@
         <!-- Статистика -->
         <div class="stats" id="stats-row">
             <div class="stat-card">
-                <div class="label">Wszystkie zamówienia</div>
+                <div class="label">All orders</div>
                 <div class="value" id="s-total">—</div>
             </div>
             <div class="stat-card">
-                <div class="label">Przychód (PLN)</div>
+                <div class="label">Revenue (PLN)</div>
                 <div class="value" id="s-revenue">—</div>
             </div>
             <div class="stat-card">
-                <div class="label">dobraszklarnia</div>
+                <div class="label">dobraszklarnia.pl</div>
                 <div class="value" id="s-woo">—</div>
             </div>
             <div class="stat-card">
@@ -133,15 +133,15 @@
 
         <!-- Фильтры -->
         <div class="toolbar">
-            <input type="text" id="f-search" placeholder="Szukaj klienta...">
+            <input type="text" id="f-search" placeholder="Search customer...">
             <select id="f-source">
-                <option value="">Wszystkie sklepy</option>
+                <option value="">All stores</option>
                 <option value="dobraszklarnia">dobraszklarnia.pl</option>
                 <option value="oteko">oteko.pl</option>
                 <option value="cieplarnia">cieplarnia.pl</option>
             </select>
             <select id="f-status">
-                <option value="">Wszystkie statusy</option>
+                <option value="">All statuses</option>
                 <option value="processing">Processing</option>
                 <option value="completed">Completed</option>
                 <option value="pending">Pending</option>
@@ -154,36 +154,36 @@
             <input type="date" id="f-from">
             <span style="color:#9ca3af;">—</span>
             <input type="date" id="f-to">
-            <button class="btn-primary" onclick="loadOrders(1)">Filtruj</button>
-            <button class="btn-export" onclick="exportCSV()">Eksport CSV</button>
-            <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Synchronizuj teraz">Sync</button>
+            <button class="btn-primary" onclick="loadOrders(1)">Filter</button>
+            <button class="btn-export" onclick="exportCSV()">Export CSV</button>
+            <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Sync now">Sync</button>
         </div>
 
         <!-- Таблица заказов -->
         <div class="card">
             <div class="card-header">
-                <h3>Lista zamówień</h3>
+                <h3>Orders list</h3>
                 <span class="sync-status" id="sync-info"></span>
             </div>
             <div style="overflow-x: auto;">
                 <table>
                     <thead>
                         <tr>
-                            <th>Sklep</th>
+                            <th>Store</th>
                             <th>#ID</th>
-                            <th>Klient</th>
-                            <th>Telefon</th>
-                            <th>Miasto</th>
-                            <th>Pozycje</th>
-                            <th>Kwota</th>
+                            <th>Customer</th>
+                            <th>Phone</th>
+                            <th>City</th>
+                            <th>Items</th>
+                            <th>Total</th>
                             <th>Status</th>
-                            <th>Płatność</th>
-                            <th>Data</th>
+                            <th>Payment</th>
+                            <th>Date</th>
                         </tr>
                     </thead>
                     <tbody id="orders-body">
                         <tr><td colspan="10" class="empty">
-                            <h4>Ładowanie...</h4>
+                            <h4>Loading...</h4>
                         </td></tr>
                     </tbody>
                 </table>
@@ -263,7 +263,7 @@
     function renderOrders(orders) {
         var tbody = document.getElementById('orders-body');
         if (!orders || orders.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="10" class="empty"><h4>Brak zamówień</h4><p>Sprawdź filtry lub uruchom synchronizację</p></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="empty"><h4>No orders</h4><p>Check filters or run sync</p></td></tr>';
             return;
         }
 
@@ -275,7 +275,7 @@
             items.slice(0, 3).forEach(function(it) {
                 itemsHtml += '<span>' + it.qty + 'x ' + (it.name || '').substring(0, 40) + '</span>';
             });
-            if (items.length > 3) itemsHtml += '<span>+ jeszcze ' + (items.length - 3) + '...</span>';
+            if (items.length > 3) itemsHtml += '<span>+ ' + (items.length - 3) + ' more...</span>';
             itemsHtml += '</div>';
 
             var dt = o.external_created || o.created_at || '';
@@ -303,11 +303,11 @@
     function renderPagination() {
         var totalPages = Math.ceil(totalOrders / perPage);
         var el = document.getElementById('pagination');
-        if (totalPages <= 1) { el.innerHTML = '<span class="info">Razem: ' + totalOrders + '</span>'; return; }
+        if (totalPages <= 1) { el.innerHTML = '<span class="info">Total: ' + totalOrders + '</span>'; return; }
 
-        var html = '<span class="info">Razem: ' + fmt(totalOrders) + ' | Strona ' + currentPage + ' z ' + totalPages + '</span>';
-        if (currentPage > 1) html += '<button onclick="loadOrders(' + (currentPage-1) + ')">← Wstecz</button>';
-        if (currentPage < totalPages) html += '<button onclick="loadOrders(' + (currentPage+1) + ')">Dalej →</button>';
+        var html = '<span class="info">Total: ' + fmt(totalOrders) + ' | Page ' + currentPage + ' of ' + totalPages + '</span>';
+        if (currentPage > 1) html += '<button onclick="loadOrders(' + (currentPage-1) + ')">← Prev</button>';
+        if (currentPage < totalPages) html += '<button onclick="loadOrders(' + (currentPage+1) + ')">Next →</button>';
         el.innerHTML = html;
     }
 
