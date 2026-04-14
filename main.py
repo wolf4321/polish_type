@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from base64 import b64encode
+from decimal import Decimal
 
 import asyncpg
 import aiohttp
@@ -212,6 +213,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def _safe_val(v):
+    """Конвертирует Decimal/datetime в JSON-совместимые типы."""
+    if isinstance(v, Decimal):
+        return float(v)
+    if isinstance(v, datetime):
+        return v.isoformat()
+    return v
+
+def _safe_dict(row):
+    """Конвертирует asyncpg Record в JSON-safe dict."""
+    return {k: _safe_val(v) for k, v in dict(row).items()}
 
 # static — создаём папку если нет (Railway может не включить пустую папку)
 import pathlib
@@ -779,8 +792,8 @@ async def api_stats(
         """, d_from, d_to)
 
     return JSONResponse({
-        "leads": dict(leads),
-        "orders": {k: float(v) if isinstance(v, (int, float)) else v for k, v in dict(orders).items()},
+        "leads": _safe_dict(leads),
+        "orders": _safe_dict(orders),
         "date_from": d_from.isoformat(),
         "date_to": d_to.isoformat(),
     })
@@ -837,16 +850,9 @@ async def api_orders(
             *params[:-2]
         )
 
-    def serialize_row(r):
-        d = dict(r)
-        for k, v in d.items():
-            if isinstance(v, datetime):
-                d[k] = v.isoformat()
-        return d
-
     return JSONResponse({
         "total": total,
-        "orders": [serialize_row(r) for r in rows],
+        "orders": [_safe_dict(r) for r in rows],
     })
 
 
@@ -945,14 +951,7 @@ async def api_customers(
             *params[:-2]
         )
 
-    def serialize(r):
-        d = dict(r)
-        for k, v in d.items():
-            if isinstance(v, datetime):
-                d[k] = v.isoformat()
-        return d
-
-    return JSONResponse({"total": total, "customers": [serialize(r) for r in rows]})
+    return JSONResponse({"total": total, "customers": [_safe_dict(r) for r in rows]})
 
 
 # ============================================================
@@ -1143,14 +1142,7 @@ async def api_sync_log(limit: int = Query(20)):
             "SELECT * FROM sync_log ORDER BY started_at DESC LIMIT $1", limit
         )
 
-    def serialize(r):
-        d = dict(r)
-        for k, v in d.items():
-            if isinstance(v, datetime):
-                d[k] = v.isoformat()
-        return d
-
-    return JSONResponse({"log": [serialize(r) for r in rows]})
+    return JSONResponse({"log": [_safe_dict(r) for r in rows]})
 
 
 # ============================================================
