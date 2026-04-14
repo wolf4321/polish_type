@@ -505,10 +505,10 @@ async def _presta_fetch_orders(session: aiohttp.ClientSession, base_url: str, ap
         "output_format": "JSON",
         "display": "full",
         "limit": f"{page * limit},{limit}",
-        "sort": "[date_add_DESC]",
+        "sort": "[id_DESC]",
     }
     if date_after:
-        params["filter[date_add]"] = f"[{date_after},]"
+        params["filter[date_add]"] = f"[{date_after},9999-12-31 23:59:59]"
 
     auth = aiohttp.BasicAuth(api_key, "")  # PrestaShop: key как логин, пустой пароль
     full_url = f"{url}?{'&'.join(f'{k}={v}' for k,v in params.items())}"
