@@ -659,26 +659,30 @@ async def _sync_prestashop(source: str, base_url: str, api_key: str):
 
                 async with pool.acquire() as conn:
                     for ps_order in orders:
-                        # Подтягиваем клиента и адрес
-                        customer = await _presta_fetch_customer(
-                            session, base_url, api_key, ps_order.get("id_customer")
-                        )
-                        address = await _presta_fetch_address(
-                            session, base_url, api_key, ps_order.get("id_address_delivery")
-                        )
-
-                        parsed = _parse_presta_order(ps_order, customer, address)
-                        result = await _save_order(conn, source, parsed)
-                        if result == "new":
-                            new_count += 1
-                            await _upsert_customer(
-                                conn, source,
-                                parsed["customer_name"], parsed["customer_email"],
-                                parsed["customer_phone"], parsed["customer_city"],
-                                parsed["total"], parsed["external_created"]
+                        try:
+                            # Подтягиваем клиента и адрес
+                            customer = await _presta_fetch_customer(
+                                session, base_url, api_key, ps_order.get("id_customer")
                             )
-                        else:
-                            upd_count += 1
+                            address = await _presta_fetch_address(
+                                session, base_url, api_key, ps_order.get("id_address_delivery")
+                            )
+
+                            parsed = _parse_presta_order(ps_order, customer, address)
+                            result = await _save_order(conn, source, parsed)
+                            if result == "new":
+                                new_count += 1
+                                await _upsert_customer(
+                                    conn, source,
+                                    parsed["customer_name"], parsed["customer_email"],
+                                    parsed["customer_phone"], parsed["customer_city"],
+                                    parsed["total"], parsed["external_created"]
+                                )
+                            else:
+                                upd_count += 1
+                        except Exception as e_order:
+                            order_id = ps_order.get("id", "?")
+                            print(f"[sync-{source}] SKIP order {order_id}: {e_order}")
 
                 if len(orders) < 50:
                     break
