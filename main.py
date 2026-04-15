@@ -498,7 +498,7 @@ async def sync_woocommerce():
 # ============================================================
 
 async def _presta_fetch_orders(session: aiohttp.ClientSession, base_url: str, api_key: str,
-                                page=0, limit=50, date_after=None):
+                                page=0, limit=50, since_id=None):
     """Получить заказы из PrestaShop Webservice API."""
     url = f"{base_url}/api/orders"
     params = {
@@ -507,8 +507,8 @@ async def _presta_fetch_orders(session: aiohttp.ClientSession, base_url: str, ap
         "limit": f"{page * limit},{limit}",
         "sort": "[id_DESC]",
     }
-    if date_after:
-        params["filter[date_add]"] = f"[{date_after},9999-12-31 23:59:59]"
+    if since_id:
+        params["filter[id]"] = f"[{since_id},999999999]"
 
     auth = aiohttp.BasicAuth(api_key, "")  # PrestaShop: key как логин, пустой пароль
     full_url = f"{url}?{'&'.join(f'{k}={v}' for k,v in params.items())}"
@@ -632,14 +632,14 @@ async def _sync_prestashop(source: str, base_url: str, api_key: str):
 
     pool = await get_db_pool()
 
-    # Определяем с какой даты синкать
+    # Определяем с какого ID синкать (incremental)
     async with pool.acquire() as conn:
-        last = await conn.fetchval(
-            "SELECT MAX(external_created) FROM orders WHERE source=$1", source
+        last_id = await conn.fetchval(
+            "SELECT MAX(CAST(external_id AS INTEGER)) FROM orders WHERE source=$1 AND external_id ~ '^[0-9]+$'", source
         )
-    date_after = None
-    if last:
-        date_after = (last - timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")
+    since_id = None
+    if last_id:
+        since_id = max(1, last_id - 10)  # small overlap for safety
 
     log_id = None
     async with pool.acquire() as conn:
@@ -656,7 +656,7 @@ async def _sync_prestashop(source: str, base_url: str, api_key: str):
             while True:
                 orders = await _presta_fetch_orders(
                     session, base_url, api_key,
-                    page=page, limit=50, date_after=date_after
+                    page=page, limit=50, since_id=since_id
                 )
                 if not orders:
                     break
