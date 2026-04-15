@@ -17,7 +17,7 @@
         .navbar a:hover { color: #fff; }
         .navbar a.active { color: #fff; font-weight: 600; border-bottom: 2px solid #a5b4fc; padding-bottom: 2px; }
 
-        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
 
         .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
                  gap: 12px; margin-bottom: 20px; }
@@ -81,8 +81,17 @@
         .empty { text-align: center; padding: 60px 20px; color: #9ca3af; }
         .empty h4 { font-size: 16px; margin-bottom: 8px; color: #6b7280; }
 
-        .items-list { font-size: 11px; color: #6b7280; max-width: 250px; }
+        .items-list { font-size: 11px; color: #6b7280; max-width: 220px; }
         .items-list span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .price-breakdown { font-size: 12px; }
+        .price-breakdown .ship { font-size: 10px; color: #6b7280; }
+        .comment-cell { font-size: 11px; color: #4b5563; max-width: 180px;
+                         white-space: pre-wrap; word-break: break-word; }
+        .address-cell { font-size: 11px; color: #4b5563; max-width: 180px; }
+        .phone-cell { font-size: 12px; white-space: nowrap; }
+        .config-cell { font-size: 11px; color: #9ca3af; font-style: italic; }
+        .seller-cell { font-size: 11px; color: #6b7280; }
 
         .sync-status { font-size: 11px; color: #6b7280; }
         .sync-ok { color: #059669; }
@@ -175,20 +184,21 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Store</th>
-                            <th>#ID</th>
-                            <th>Customer</th>
-                            <th>Phone</th>
-                            <th>City</th>
-                            <th>Items</th>
-                            <th>Total</th>
-                            <th>Status</th>
-                            <th>Payment</th>
-                            <th>Date</th>
+                            <th>Дата</th>
+                            <th>Тип товара</th>
+                            <th>Комплектация</th>
+                            <th>Цена + доставка</th>
+                            <th>Продукт</th>
+                            <th>Статус</th>
+                            <th>Телефон</th>
+                            <th>Адрес</th>
+                            <th>Комментарий</th>
+                            <th>Источник</th>
+                            <th>Аккаунт</th>
                         </tr>
                     </thead>
                     <tbody id="orders-body">
-                        <tr><td colspan="10" class="empty">
+                        <tr><td colspan="11" class="empty">
                             <h4>Loading...</h4>
                         </td></tr>
                     </tbody>
@@ -270,7 +280,7 @@
     function renderOrders(orders) {
         var tbody = document.getElementById('orders-body');
         if (!orders || orders.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="10" class="empty"><h4>No orders</h4><p>Check filters or run sync</p></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="11" class="empty"><h4>No orders</h4><p>Check filters or run sync</p></td></tr>';
             return;
         }
 
@@ -278,30 +288,55 @@
         orders.forEach(function(o) {
             var items = [];
             try { items = JSON.parse(o.items_json || '[]'); } catch(e) {}
-            var itemsHtml = '<div class="items-list">';
-            items.slice(0, 3).forEach(function(it) {
-                itemsHtml += '<span>' + it.qty + 'x ' + (it.name || '').substring(0, 40) + '</span>';
-            });
-            if (items.length > 3) itemsHtml += '<span>+ ' + (items.length - 3) + ' more...</span>';
-            itemsHtml += '</div>';
 
+            // Product names
+            var productHtml = '<div class="items-list">';
+            items.slice(0, 3).forEach(function(it) {
+                productHtml += '<span>' + it.qty + 'x ' + (it.name || '').substring(0, 50) + '</span>';
+            });
+            if (items.length > 3) productHtml += '<span>+ ' + (items.length - 3) + ' more...</span>';
+            productHtml += '</div>';
+
+            // Date
             var dt = o.external_created || o.created_at || '';
             if (dt) {
                 var d = new Date(dt);
                 dt = d.toLocaleDateString('pl-PL') + ' ' + d.toLocaleTimeString('pl-PL', {hour:'2-digit',minute:'2-digit'});
             }
 
+            // Price breakdown: product_price + shipping
+            var shipCost = parseFloat(o.shipping_cost || 0);
+            var totalVal = parseFloat(o.total || 0);
+            var productPrice = totalVal - shipCost;
+            if (productPrice < 0) productPrice = totalVal;
+            var priceHtml = '<div class="price-breakdown"><b>' + fmtMoney(productPrice) + '</b>';
+            if (shipCost > 0) {
+                priceHtml += ' <span class="ship">+ ' + fmtMoney(shipCost) + ' ship</span>';
+            }
+            priceHtml += '<br><span style="font-size:10px;color:#374151;">= ' + fmtMoney(totalVal) + ' PLN</span></div>';
+
+            // Address: city + full address
+            var addrParts = [];
+            if (o.customer_city) addrParts.push(o.customer_city);
+            if (o.customer_address) addrParts.push(o.customer_address);
+            if (o.customer_zip) addrParts.push(o.customer_zip);
+            var addrHtml = addrParts.join(', ') || '—';
+
+            // Comment (messageToSeller + NIP)
+            var commentHtml = (o.customer_comment || o.note || '—');
+
             html += '<tr>'
-                + '<td><span class="badge badge-' + o.source + '">' + o.source + '</span></td>'
-                + '<td>' + (o.external_id || o.id) + '</td>'
-                + '<td><b>' + (o.customer_name || '—') + '</b><br><span style="font-size:11px;color:#6b7280;">' + (o.customer_email || '') + '</span></td>'
-                + '<td>' + (o.customer_phone || '—') + '</td>'
-                + '<td>' + (o.customer_city || '—') + '</td>'
-                + '<td>' + itemsHtml + '</td>'
-                + '<td><b>' + fmtMoney(o.total) + '</b> ' + (o.currency || 'PLN') + '</td>'
-                + '<td><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + (o.status || '—') + '</span></td>'
-                + '<td style="font-size:11px;">' + (o.payment_method || '—') + '</td>'
                 + '<td style="white-space:nowrap;">' + dt + '</td>'
+                + '<td>' + (o.product_type || '') + '</td>'
+                + '<td class="config-cell">' + (o.configuration || '') + '</td>'
+                + '<td>' + priceHtml + '</td>'
+                + '<td>' + productHtml + '</td>'
+                + '<td><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + (o.status || '—') + '</span></td>'
+                + '<td class="phone-cell">' + (o.customer_phone || '—') + '</td>'
+                + '<td class="address-cell">' + addrHtml + '</td>'
+                + '<td class="comment-cell">' + commentHtml + '</td>'
+                + '<td><span class="badge badge-' + o.source + '">' + o.source + '</span></td>'
+                + '<td class="seller-cell">' + (o.seller_account || '') + '</td>'
                 + '</tr>';
         });
         tbody.innerHTML = html;
