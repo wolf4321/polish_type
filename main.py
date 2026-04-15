@@ -296,7 +296,9 @@ async def _save_order(conn, source: str, order_data: dict):
                 customer_city=$5, customer_zip=$6, customer_address=$7,
                 total=$8, currency=$9, items_count=$10, items_json=$11,
                 payment_method=$12, shipping_method=$13, note=$14,
-                external_created=$15, updated_at=NOW()
+                external_created=$15, shipping_cost=$18,
+                seller_account=$19, customer_comment=$20,
+                updated_at=NOW()
             WHERE source=$16 AND external_id=$17
         """,
             order_data.get("status", ""),
@@ -314,7 +316,10 @@ async def _save_order(conn, source: str, order_data: dict):
             order_data.get("shipping_method", ""),
             order_data.get("note", ""),
             order_data.get("external_created"),
-            source, ext_id
+            source, ext_id,
+            float(order_data.get("shipping_cost", 0)),
+            order_data.get("seller_account", ""),
+            order_data.get("customer_comment", ""),
         )
         return "updated"
     else:
@@ -323,8 +328,9 @@ async def _save_order(conn, source: str, order_data: dict):
                 external_id, source, status, customer_name, customer_email,
                 customer_phone, customer_city, customer_zip, customer_address,
                 total, currency, items_count, items_json,
-                payment_method, shipping_method, note, external_created
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+                payment_method, shipping_method, note, external_created,
+                shipping_cost, seller_account, customer_comment
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
         """,
             ext_id, source,
             order_data.get("status", ""),
@@ -342,6 +348,9 @@ async def _save_order(conn, source: str, order_data: dict):
             order_data.get("shipping_method", ""),
             order_data.get("note", ""),
             order_data.get("external_created"),
+            float(order_data.get("shipping_cost", 0)),
+            order_data.get("seller_account", ""),
+            order_data.get("customer_comment", ""),
         )
         return "new"
 
@@ -402,6 +411,16 @@ def _parse_woo_order(woo: dict) -> dict:
         except Exception:
             ext_created = datetime.now(TZ)
 
+    # Shipping cost
+    ship_cost = 0.0
+    try:
+        ship_cost = float(woo.get("shipping_total", 0) or 0)
+    except (ValueError, TypeError):
+        ship_cost = 0.0
+
+    # Customer comment
+    customer_comment = woo.get("customer_note", "") or ""
+
     return {
         "external_id": str(woo["id"]),
         "status": woo.get("status", "unknown"),
@@ -419,6 +438,9 @@ def _parse_woo_order(woo: dict) -> dict:
         "shipping_method": ", ".join(s.get("method_title", "") for s in woo.get("shipping_lines", [])),
         "note": woo.get("customer_note", ""),
         "external_created": ext_created,
+        "shipping_cost": ship_cost,
+        "customer_comment": customer_comment,
+        "seller_account": "",
     }
 
 
@@ -605,6 +627,21 @@ def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
     if not cust_name:
         cust_name = f"{address.get('firstname', '')} {address.get('lastname', '')}".strip()
 
+    # Shipping cost
+    ship_cost = 0.0
+    try:
+        total_shipping = float(order.get("total_shipping", 0) or 0)
+        total_shipping_tax = float(order.get("total_shipping_tax_incl", 0) or 0)
+        ship_cost = total_shipping_tax if total_shipping_tax > 0 else total_shipping
+    except (ValueError, TypeError):
+        ship_cost = 0.0
+
+    # Customer comment / note
+    customer_comment = ""
+    note_text = order.get("note", "") or ""
+    if note_text:
+        customer_comment = note_text
+
     return {
         "external_id": str(order.get("id", "")),
         "status": status,
@@ -622,6 +659,9 @@ def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
         "shipping_method": "",
         "note": "",
         "external_created": ext_created,
+        "shipping_cost": ship_cost,
+        "customer_comment": customer_comment,
+        "seller_account": "",
     }
 
 
@@ -894,6 +934,25 @@ def _parse_allegro_order(form: dict) -> dict:
             if status == "processing":
                 status = "payment_accepted"
 
+    # Shipping cost
+    ship_cost = 0.0
+    delivery_cost = delivery.get("cost") or {}
+    if delivery_cost.get("amount"):
+        ship_cost = float(delivery_cost["amount"])
+
+    # Seller comment / message to seller + NIP
+    msg_to_seller = form.get("messageToSeller", "") or ""
+    invoice = form.get("invoice") or {}
+    nip = invoice.get("naturalPerson") if invoice.get("naturalPerson") else ""
+    if invoice.get("company") and invoice["company"].get("taxId"):
+        nip = f"NIP: {invoice['company']['taxId']}"
+    customer_comment = msg_to_seller
+    if nip:
+        customer_comment = f"{msg_to_seller}\n{nip}".strip() if msg_to_seller else nip
+
+    # Seller account name (Allegro seller login)
+    seller_account = "drogatrade"  # Default for now
+
     return {
         "external_id": str(form.get("id", "")),
         "status": status,
@@ -907,6 +966,9 @@ def _parse_allegro_order(form: dict) -> dict:
         "currency": currency,
         "items_count": len(items),
         "items_json": json.dumps(items, ensure_ascii=False),
+        "shipping_cost": ship_cost,
+        "customer_comment": customer_comment,
+        "seller_account": seller_account,
         "payment_method": payment.get("type", ""),
         "shipping_method": delivery.get("method", {}).get("name", ""),
         "note": form.get("messageToSeller", ""),
@@ -1545,7 +1607,12 @@ async def run_migration():
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_method VARCHAR(200)",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_zip VARCHAR(20)",
             "ALTER TABLE customers ADD COLUMN IF NOT EXISTS source VARCHAR(50)",
-            # Добавляй свои миграции:
+            # v2 — new fields for detailed order view
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_type VARCHAR(100) DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS configuration TEXT DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_cost NUMERIC(10,2) DEFAULT 0",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS seller_account VARCHAR(200) DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_comment TEXT DEFAULT ''",
         ]
         results = []
         for m in migrations:
