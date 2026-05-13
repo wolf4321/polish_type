@@ -737,21 +737,22 @@ def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
     }
 
 
-async def _sync_prestashop(source: str, base_url: str, api_key: str):
+async def _sync_prestashop(source: str, base_url: str, api_key: str, full=False):
     """Универсальная функция синка PrestaShop магазина."""
     if not api_key:
         return
 
     pool = await get_db_pool()
 
-    # Определяем с какого ID синкать (incremental)
-    async with pool.acquire() as conn:
-        last_id = await conn.fetchval(
-            "SELECT MAX(CAST(external_id AS INTEGER)) FROM orders WHERE source=$1 AND external_id ~ '^[0-9]+$'", source
-        )
+    # Определяем с какого ID синкать (incremental), full=True — всё с начала
     since_id = None
-    if last_id:
-        since_id = max(1, last_id - 10)  # small overlap for safety
+    if not full:
+        async with pool.acquire() as conn:
+            last_id = await conn.fetchval(
+                "SELECT MAX(CAST(external_id AS INTEGER)) FROM orders WHERE source=$1 AND external_id ~ '^[0-9]+$'", source
+            )
+        if last_id:
+            since_id = max(1, last_id - 10)  # small overlap for safety
 
     log_id = None
     async with pool.acquire() as conn:
@@ -821,11 +822,11 @@ async def _sync_prestashop(source: str, base_url: str, api_key: str):
             )
 
 
-async def sync_presta_oteko():
-    await _sync_prestashop("oteko", PRESTA_OTEKO_URL, PRESTA_OTEKO_KEY)
+async def sync_presta_oteko(full=False):
+    await _sync_prestashop("oteko", PRESTA_OTEKO_URL, PRESTA_OTEKO_KEY, full=full)
 
-async def sync_presta_ciep():
-    await _sync_prestashop("cieplarnia", PRESTA_CIEP_URL, PRESTA_CIEP_KEY)
+async def sync_presta_ciep(full=False):
+    await _sync_prestashop("cieplarnia", PRESTA_CIEP_URL, PRESTA_CIEP_KEY, full=full)
 
 
 # ============================================================
@@ -1751,19 +1752,20 @@ async def manual_sync(source: str = Query(None), full: bool = Query(False)):
         asyncio.create_task(sync_woocommerce(full=full))
         return JSONResponse({"ok": True, "message": f"WooCommerce sync started (full={full})"})
     elif source == "oteko":
-        asyncio.create_task(sync_presta_oteko())
-        return JSONResponse({"ok": True, "message": "Oteko sync started"})
+        asyncio.create_task(sync_presta_oteko(full=full))
+        return JSONResponse({"ok": True, "message": f"Oteko sync started (full={full})"})
     elif source == "cieplarnia":
-        asyncio.create_task(sync_presta_ciep())
-        return JSONResponse({"ok": True, "message": "Cieplarnia sync started"})
+        asyncio.create_task(sync_presta_ciep(full=full))
+        return JSONResponse({"ok": True, "message": f"Cieplarnia sync started (full={full})"})
+
     elif source == "allegro":
         asyncio.create_task(sync_allegro(full=full))
         return JSONResponse({"ok": True, "message": f"Allegro sync started (full={full})"})
     else:
         # Синк всех
         asyncio.create_task(sync_woocommerce(full=full))
-        asyncio.create_task(sync_presta_oteko())
-        asyncio.create_task(sync_presta_ciep())
+        asyncio.create_task(sync_presta_oteko(full=full))
+        asyncio.create_task(sync_presta_ciep(full=full))
         asyncio.create_task(sync_allegro(full=full))
         return JSONResponse({"ok": True, "message": f"All syncs started (full={full})"})
 
