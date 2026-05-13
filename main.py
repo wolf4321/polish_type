@@ -597,7 +597,40 @@ PRESTA_STATUS_MAP = {
     "10": "awaiting_bankwire",
     "11": "awaiting_cash",
     "12": "remote_payment",
+    "13": "awaiting_check",
+    "14": "completed",
 }
+
+# ---- Все статусы на польском ----
+STATUS_PL = {
+    "pending": "Oczekujące",
+    "pending_payment": "Oczekiwanie na płatność",
+    "payment_accepted": "Płatność zaakceptowana",
+    "processing": "W realizacji",
+    "shipped": "Wysłane",
+    "delivered": "Dostarczone",
+    "completed": "Zrealizowane",
+    "cancelled": "Anulowane",
+    "refunded": "Zwrot",
+    "failed": "Nieudane",
+    "on-hold": "Wstrzymane",
+    "on_hold": "Wstrzymane",
+    "payment_error": "Błąd płatności",
+    "on_backorder": "Zamówienie wsteczne",
+    "awaiting_bankwire": "Oczekiwanie na przelew",
+    "awaiting_cash": "Oczekiwanie na gotówkę",
+    "awaiting_check": "Oczekiwanie na czek",
+    "remote_payment": "Płatność zdalna",
+    "bought": "Kupione",
+    "filled_in": "Wypełnione",
+    "ready_for_processing": "Gotowe do realizacji",
+}
+
+def _status_pl(status: str) -> str:
+    """Zwraca polską nazwę statusu."""
+    if not status:
+        return "—"
+    return STATUS_PL.get(status, STATUS_PL.get(status.lower(), status))
 
 
 def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
@@ -1336,29 +1369,126 @@ async def export_orders(
             *params
         )
 
-    # CSV export
-    output = io.StringIO()
-    writer = csv.writer(output, delimiter=";")
-    writer.writerow([
-        "ID", "Источник", "Внешний ID", "Статус", "Клиент", "Email", "Телефон",
-        "Город", "Адрес", "Сумма", "Валюта", "Товаров", "Оплата", "Доставка",
-        "Дата заказа", "Дата синка"
-    ])
-    for r in rows:
-        writer.writerow([
-            r["id"], r["source"], r["external_id"], r["status"],
-            r["customer_name"], r["customer_email"], r["customer_phone"],
-            r["customer_city"], r["customer_address"],
-            r["total"], r["currency"], r["items_count"],
-            r["payment_method"], r["shipping_method"],
-            r["external_created"].strftime("%Y-%m-%d %H:%M") if r["external_created"] else "",
-            r["created_at"].strftime("%Y-%m-%d %H:%M") if r["created_at"] else "",
-        ])
+    # --- XLSX export (openpyxl) ---
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-    filename = f"orders_{date.today().isoformat()}.csv"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Zamówienia"
+
+    # Header row — same order as /orders table
+    headers = [
+        "Дата", "Тип товара", "Комплектация",
+        "Цена товара", "Доставка", "Итого",
+        "Продукт", "Статус", "Телефон",
+        "Адрес", "Комментарий", "Источник", "Аккаунт"
+    ]
+    header_font = Font(name="Arial", bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill("solid", fgColor="1a1a2e")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin_border = Border(
+        left=Side(style="thin", color="E5E7EB"),
+        right=Side(style="thin", color="E5E7EB"),
+        bottom=Side(style="thin", color="E5E7EB"),
+        top=Side(style="thin", color="E5E7EB"),
+    )
+
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+        cell.border = thin_border
+
+    # Data rows
+    data_font = Font(name="Arial", size=10)
+    date_fmt = "DD.MM.YYYY HH:MM"
+
+    for row_idx, r in enumerate(rows, 2):
+        # Parse items for product name
+        items = []
+        try:
+            items = json.loads(r["items_json"] or "[]")
+        except Exception:
+            pass
+        product_names = "; ".join(
+            f"{it.get('qty', 1)}x {it.get('name', '')}" for it in items
+        ) or ""
+
+        # Price breakdown
+        total_val = float(r["total"] or 0)
+        ship_cost = float(r["shipping_cost"] or 0) if r.get("shipping_cost") else 0.0
+        product_price = total_val - ship_cost
+        if product_price < 0:
+            product_price = total_val
+
+        # Address
+        addr_parts = []
+        if r["customer_city"]:
+            addr_parts.append(r["customer_city"])
+        if r["customer_address"]:
+            addr_parts.append(r["customer_address"])
+        if r["customer_zip"]:
+            addr_parts.append(r["customer_zip"])
+        addr_str = ", ".join(addr_parts)
+
+        # Comment
+        comment = r.get("customer_comment") or r.get("note") or ""
+
+        # Status in Polish
+        status_pl = _status_pl(r["status"])
+
+        row_data = [
+            r["external_created"] if r["external_created"] else r["created_at"],
+            r.get("product_type") or "",
+            r.get("configuration") or "",
+            product_price,
+            ship_cost,
+            total_val,
+            product_names,
+            status_pl,
+            r["customer_phone"] or "",
+            addr_str,
+            comment,
+            r["source"] or "",
+            r.get("seller_account") or "",
+        ]
+
+        for col_idx, val in enumerate(row_data, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell.font = data_font
+            cell.border = thin_border
+
+        # Format date cell
+        date_cell = ws.cell(row=row_idx, column=1)
+        if date_cell.value and hasattr(date_cell.value, 'strftime'):
+            date_cell.number_format = date_fmt
+
+        # Format money cells
+        for money_col in [4, 5, 6]:
+            ws.cell(row=row_idx, column=money_col).number_format = '#,##0.00'
+
+    # Column widths
+    col_widths = [18, 14, 16, 14, 12, 14, 45, 22, 16, 35, 30, 16, 14]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+
+    # Freeze header
+    ws.freeze_panes = "A2"
+
+    # Auto-filter
+    ws.auto_filter.ref = f"A1:M{len(rows) + 1}"
+
+    # Save to bytes
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"orders_{date.today().isoformat()}.xlsx"
     return StreamingResponse(
         iter([output.getvalue()]),
-        media_type="text/csv; charset=utf-8",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
