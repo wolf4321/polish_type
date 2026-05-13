@@ -43,6 +43,8 @@
         .btn-sync:hover { background: #d97706; }
         .btn-add { background: #7c3aed; color: #fff; }
         .btn-add:hover { background: #6d28d9; }
+        .btn-export-sel { background: #2563eb; color: #fff; }
+        .btn-export-sel:hover { background: #1d4ed8; }
         .btn-sync.spinning { animation: spin 1s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
 
@@ -209,6 +211,7 @@
             <input type="date" id="f-to">
             <button class="btn-primary" onclick="loadOrders(1)">Filter</button>
             <button class="btn-export" onclick="exportCSV()">Export XLSX</button>
+            <button class="btn-export-sel" onclick="exportSelected()" id="btn-export-sel" style="display:none;">Eksport zaznaczonych (<span id="sel-count">0</span>)</button>
             <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Sync now">Sync</button>
             <button class="btn-add" onclick="openAddModal()" title="Dodaj zamówienie">+ Dodaj</button>
         </div>
@@ -223,6 +226,7 @@
                 <table>
                     <thead>
                         <tr>
+                            <th style="width:30px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
                             <th>Дата</th>
                             <th>Тип товара</th>
                             <th>Комплектация</th>
@@ -238,7 +242,7 @@
                         </tr>
                     </thead>
                     <tbody id="orders-body">
-                        <tr><td colspan="12" class="empty">
+                        <tr><td colspan="13" class="empty">
                             <h4>Loading...</h4>
                         </td></tr>
                     </tbody>
@@ -320,7 +324,7 @@
     function renderOrders(orders) {
         var tbody = document.getElementById('orders-body');
         if (!orders || orders.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="12" class="empty"><h4>No orders</h4><p>Check filters or run sync</p></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="13" class="empty"><h4>No orders</h4><p>Check filters or run sync</p></td></tr>';
             return;
         }
 
@@ -403,20 +407,22 @@
             var statusLabel = getStatusPL(o.status);
 
             var rowId = 'detail-' + (o.id || o.external_id);
+            var orderId = o.id || '';
 
-            html += '<tr class="order-row" onclick="toggleDetail(\'' + rowId + '\')">'
-                + '<td style="white-space:nowrap;">' + dt + '</td>'
-                + '<td>' + (o.product_type || '') + '</td>'
-                + '<td class="config-cell">' + (o.configuration || '') + '</td>'
-                + '<td>' + priceHtml + '</td>'
-                + '<td>' + productHtml + '</td>'
-                + '<td><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span></td>'
-                + '<td style="font-size:11px;">' + (o.payment_method || '—') + '</td>'
-                + '<td class="phone-cell">' + (o.customer_phone || '—') + '</td>'
-                + '<td class="address-cell">' + addrHtml + '</td>'
-                + '<td class="comment-cell">' + commentHtml + '</td>'
-                + '<td><span class="badge badge-' + o.source + '">' + o.source + '</span></td>'
-                + '<td class="seller-cell">' + (o.seller_account || '') + '</td>'
+            html += '<tr class="order-row">'
+                + '<td onclick="event.stopPropagation()"><input type="checkbox" class="order-check" data-id="' + orderId + '" onchange="updateSelCount()"></td>'
+                + '<td style="white-space:nowrap;" onclick="toggleDetail(\'' + rowId + '\')">' + dt + '</td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')">' + (o.product_type || '') + '</td>'
+                + '<td class="config-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.configuration || '') + '</td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')">' + priceHtml + '</td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')">' + productHtml + '</td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span></td>'
+                + '<td style="font-size:11px;" onclick="toggleDetail(\'' + rowId + '\')">' + (o.payment_method || '—') + '</td>'
+                + '<td class="phone-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.customer_phone || '—') + '</td>'
+                + '<td class="address-cell" onclick="toggleDetail(\'' + rowId + '\')">' + addrHtml + '</td>'
+                + '<td class="comment-cell" onclick="toggleDetail(\'' + rowId + '\')">' + commentHtml + '</td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="badge badge-' + o.source + '">' + o.source + '</span></td>'
+                + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.seller_account || '') + '</td>'
                 + '</tr>';
 
             // --- Detail row (expandable) ---
@@ -427,7 +433,7 @@
             });
             itemsTable += '</tbody></table>';
 
-            html += '<tr class="detail-row" id="' + rowId + '"><td colspan="12"><div class="detail-panel">'
+            html += '<tr class="detail-row" id="' + rowId + '"><td colspan="13"><div class="detail-panel">'
                 + '<div class="d-group"><div class="d-label">Klient</div><div class="d-value">' + (o.customer_name || '—') + '</div></div>'
                 + '<div class="d-group"><div class="d-label">Email</div><div class="d-value">' + (o.customer_email || '—') + '</div></div>'
                 + '<div class="d-group"><div class="d-label">Telefon</div><div class="d-value">' + (o.customer_phone || '—') + '</div></div>'
@@ -498,6 +504,29 @@
             });
             el.innerHTML = html;
         });
+    }
+
+    // --- Selection logic ---
+    function updateSelCount() {
+        var checks = document.querySelectorAll('.order-check:checked');
+        var cnt = checks.length;
+        var btn = document.getElementById('btn-export-sel');
+        document.getElementById('sel-count').textContent = cnt;
+        btn.style.display = cnt > 0 ? 'inline-block' : 'none';
+    }
+
+    function toggleSelectAll(master) {
+        var checks = document.querySelectorAll('.order-check');
+        checks.forEach(function(cb) { cb.checked = master.checked; });
+        updateSelCount();
+    }
+
+    function exportSelected() {
+        var checks = document.querySelectorAll('.order-check:checked');
+        var ids = [];
+        checks.forEach(function(cb) { ids.push(cb.getAttribute('data-id')); });
+        if (ids.length === 0) return;
+        window.location.href = '/api/orders/export?ids=' + ids.join(',');
     }
 
     // Enter в поиске
