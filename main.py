@@ -460,7 +460,7 @@ def _parse_woo_order(woo: dict) -> dict:
     }
 
 
-async def sync_woocommerce():
+async def sync_woocommerce(full=False):
     """Фоновая задача: синк заказов из WooCommerce (dobraszklarnia.pl)."""
     if not WOO_KEY or not WOO_SECRET:
         return
@@ -469,13 +469,14 @@ async def sync_woocommerce():
     pool = await get_db_pool()
 
     # Определяем с какой даты синкать (последний заказ + запас)
-    async with pool.acquire() as conn:
-        last = await conn.fetchval(
-            "SELECT MAX(external_created) FROM orders WHERE source=$1", source
-        )
     after = None
-    if last:
-        after = (last - timedelta(hours=2)).isoformat()
+    if not full:
+        async with pool.acquire() as conn:
+            last = await conn.fetchval(
+                "SELECT MAX(external_created) FROM orders WHERE source=$1", source
+            )
+        if last:
+            after = (last - timedelta(hours=2)).isoformat()
 
     log_id = None
     async with pool.acquire() as conn:
@@ -1747,8 +1748,8 @@ async def webhook_woo(request: Request):
 async def manual_sync(source: str = Query(None), full: bool = Query(False)):
     """Ручной запуск синхронизации. /admin/sync?source=allegro&full=true"""
     if source == "dobraszklarnia":
-        asyncio.create_task(sync_woocommerce())
-        return JSONResponse({"ok": True, "message": "WooCommerce sync started"})
+        asyncio.create_task(sync_woocommerce(full=full))
+        return JSONResponse({"ok": True, "message": f"WooCommerce sync started (full={full})"})
     elif source == "oteko":
         asyncio.create_task(sync_presta_oteko())
         return JSONResponse({"ok": True, "message": "Oteko sync started"})
@@ -1760,11 +1761,11 @@ async def manual_sync(source: str = Query(None), full: bool = Query(False)):
         return JSONResponse({"ok": True, "message": f"Allegro sync started (full={full})"})
     else:
         # Синк всех
-        asyncio.create_task(sync_woocommerce())
+        asyncio.create_task(sync_woocommerce(full=full))
         asyncio.create_task(sync_presta_oteko())
         asyncio.create_task(sync_presta_ciep())
-        asyncio.create_task(sync_allegro())
-        return JSONResponse({"ok": True, "message": "All syncs started (woo + oteko + ciep + allegro)"})
+        asyncio.create_task(sync_allegro(full=full))
+        return JSONResponse({"ok": True, "message": f"All syncs started (full={full})"})
 
 
 @app.get("/api/sync-log")
