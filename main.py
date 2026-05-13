@@ -1,1926 +1,484 @@
-"""
-Dashboard Boilerplate — EKOMAT Analytics Hub.
-FastAPI + asyncpg + Jinja2 + WooCommerce + PrestaShop + Allegro.
+<!doctype html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Zamówienia — EKOMAT Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+               background: #f3f4f6; color: #1f2937; }
 
-Сайты:
-  - dobraszklarnia.pl  (WooCommerce)  — webhook + API sync
-  - oteko.pl           (PrestaShop)   — API pull каждые 15 мин
-  - cieplarnia.pl      (PrestaShop)   — API pull каждые 15 мин
-  - Allegro (drogatrade) — OAuth2 + API pull каждые 15 мин
+        .navbar { background: #1a1a2e; color: #fff; padding: 12px 24px;
+                  display: flex; align-items: center; justify-content: space-between; }
+        .navbar h1 { font-size: 16px; font-weight: 600; }
+        .navbar-links { display: flex; gap: 16px; align-items: center; }
+        .navbar a { color: #a5b4fc; font-size: 13px; text-decoration: none; }
+        .navbar a:hover { color: #fff; }
+        .navbar a.active { color: #fff; font-weight: 600; border-bottom: 2px solid #a5b4fc; padding-bottom: 2px; }
 
-Railway deploy: добавь DB_CONNECT + API-ключи в env vars.
-"""
+        .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
 
-import os
-import io
-import csv
-import json
-import asyncio
-import hashlib
-import hmac
-import traceback
-from contextlib import asynccontextmanager
-from datetime import datetime, date, timedelta
-from zoneinfo import ZoneInfo
-from base64 import b64encode
-from decimal import Decimal
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+                 gap: 12px; margin-bottom: 20px; }
+        .stat-card { background: #fff; border-radius: 10px; padding: 16px;
+                     box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+        .stat-card .label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; }
+        .stat-card .value { font-size: 24px; font-weight: 700; color: #1a1a2e; margin-top: 4px; }
+        .stat-card .sub { font-size: 11px; color: #9ca3af; margin-top: 2px; }
 
-import asyncpg
-import aiohttp
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
+        .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;
+                   background: #fff; padding: 12px 16px; border-radius: 10px;
+                   box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+        .toolbar input, .toolbar select {
+            padding: 7px 10px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px; }
+        .toolbar input[type="text"] { width: 200px; }
+        .toolbar button { padding: 7px 16px; border: none; border-radius: 6px; font-size: 13px;
+                          cursor: pointer; font-weight: 500; }
+        .btn-primary { background: #1a1a2e; color: #fff; }
+        .btn-primary:hover { background: #2d2d5e; }
+        .btn-export { background: #059669; color: #fff; }
+        .btn-export:hover { background: #047857; }
+        .btn-sync { background: #f59e0b; color: #fff; }
+        .btn-sync:hover { background: #d97706; }
+        .btn-sync.spinning { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
 
-from fastapi import FastAPI, Request, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from auth import auth_router, get_current_user
+        .card { background: #fff; border-radius: 10px; padding: 0;
+                box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 16px; overflow: hidden; }
+        .card-header { padding: 16px 20px; border-bottom: 1px solid #f3f4f6;
+                       display: flex; justify-content: space-between; align-items: center; }
+        .card-header h3 { font-size: 15px; font-weight: 600; }
 
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; padding: 10px 12px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
+             font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase;
+             letter-spacing: .3px; position: sticky; top: 0; }
+        td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+        tr:hover td { background: #f9fafb; }
 
-# ============================================================
-# Конфигурация
-# ============================================================
-TZ = ZoneInfo("Europe/Warsaw")
-DSN = lambda: os.getenv("DB_CONNECT") or os.getenv("DATABASE_URL") or os.getenv("DATABASE_PRIVATE_URL")
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px;
+                 font-weight: 600; text-transform: uppercase; }
+        .badge-dobraszklarnia { background: #dbeafe; color: #1d4ed8; }
+        .badge-oteko { background: #fef3c7; color: #92400e; }
+        .badge-cieplarnia { background: #d1fae5; color: #065f46; }
+        .badge-allegro { background: #fff0e6; color: #cc4800; }
 
-# WooCommerce — dobraszklarnia.pl
-WOO_URL     = os.getenv("WOO_URL", "https://dobraszklarnia.pl")
-WOO_KEY     = os.getenv("WOO_KEY", "")       # Consumer Key
-WOO_SECRET  = os.getenv("WOO_SECRET", "")     # Consumer Secret
-WOO_WEBHOOK_SECRET = os.getenv("WOO_WEBHOOK_SECRET", "")  # Webhook secret для верификации
+        .status-processing, .status-payment_accepted { color: #2563eb; font-weight: 600; }
+        .status-completed, .status-delivered { color: #059669; font-weight: 600; }
+        .status-cancelled, .status-refunded { color: #dc2626; font-weight: 600; }
+        .status-pending, .status-pending_payment { color: #d97706; font-weight: 600; }
+        .status-shipped { color: #7c3aed; font-weight: 600; }
+        .status-on-hold { color: #6b7280; font-weight: 600; }
 
-# PrestaShop — oteko.pl
-PRESTA_OTEKO_URL = os.getenv("PRESTA_OTEKO_URL", "https://oteko.pl")
-PRESTA_OTEKO_KEY = os.getenv("PRESTA_OTEKO_KEY", "")
+        .pagination { display: flex; justify-content: center; gap: 8px; padding: 16px; }
+        .pagination button { padding: 6px 14px; border: 1px solid #e5e7eb; border-radius: 6px;
+                             background: #fff; cursor: pointer; font-size: 13px; }
+        .pagination button:hover { background: #f3f4f6; }
+        .pagination button.active { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
+        .pagination .info { padding: 6px 0; font-size: 13px; color: #6b7280; }
 
-# PrestaShop — cieplarnia.pl
-PRESTA_CIEP_URL  = os.getenv("PRESTA_CIEP_URL", "https://cieplarnia.pl")
-PRESTA_CIEP_KEY  = os.getenv("PRESTA_CIEP_KEY", "")
+        .empty { text-align: center; padding: 60px 20px; color: #9ca3af; }
+        .empty h4 { font-size: 16px; margin-bottom: 8px; color: #6b7280; }
 
-# Allegro — drogatrade
-ALLEGRO_CLIENT_ID     = os.getenv("ALLEGRO_CLIENT_ID", "")
-ALLEGRO_CLIENT_SECRET = os.getenv("ALLEGRO_CLIENT_SECRET", "")
-ALLEGRO_REFRESH_TOKEN = os.getenv("ALLEGRO_REFRESH_TOKEN", "")
-ALLEGRO_API_URL       = "https://api.allegro.pl"
-ALLEGRO_AUTH_URL      = "https://allegro.pl/auth/oauth/token"
+        .items-list { font-size: 11px; color: #6b7280; max-width: 220px; }
+        .items-list span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-# In-memory token cache for Allegro
-_allegro_token = {"access_token": "", "expires_at": 0}
+        .price-breakdown { font-size: 12px; }
+        .price-breakdown .ship { font-size: 10px; color: #6b7280; }
+        .comment-cell { font-size: 11px; color: #4b5563; max-width: 180px;
+                         white-space: pre-wrap; word-break: break-word; }
+        .address-cell { font-size: 11px; color: #4b5563; max-width: 180px; }
+        .phone-cell { font-size: 12px; white-space: nowrap; }
+        .config-cell { font-size: 11px; color: #9ca3af; font-style: italic; }
+        .seller-cell { font-size: 11px; color: #6b7280; }
 
-# Bitrix24 (фаза 3 — пока закомментировано)
-# BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL")
+        tr.order-row { cursor: pointer; }
+        tr.order-row:hover td { background: #f0f4ff; }
+        tr.detail-row { display: none; }
+        tr.detail-row.open { display: table-row; }
+        tr.detail-row td { background: #f9fafb; padding: 0; border-bottom: 2px solid #e5e7eb; }
+        .detail-panel { padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px 24px; }
+        .detail-panel .d-group { }
+        .detail-panel .d-label { font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; }
+        .detail-panel .d-value { font-size: 13px; color: #1f2937; word-break: break-word; }
+        .detail-panel .d-items { grid-column: 1 / -1; }
+        .detail-panel .d-items table { width: 100%; font-size: 12px; margin-top: 6px; }
+        .detail-panel .d-items table th { background: #f3f4f6; font-size: 10px; padding: 6px 10px; }
+        .detail-panel .d-items table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; }
 
+        .sync-status { font-size: 11px; color: #6b7280; }
+        .sync-ok { color: #059669; }
+        .sync-error { color: #dc2626; }
+        .sync-running { color: #f59e0b; }
 
-# ============================================================
-# Database connection pool
-# ============================================================
-_pool = None
+        @media (max-width: 768px) {
+            .toolbar { flex-direction: column; }
+            .toolbar input[type="text"] { width: 100%; }
+            table { font-size: 12px; }
+            th, td { padding: 6px 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h1>EKOMAT Dashboard</h1>
+        <div class="navbar-links">
+            <a href="/">Dashboard</a>
+            <a href="/orders" class="active">Orders</a>
+            {% if user %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
+        </div>
+    </div>
 
-async def get_db_pool():
-    global _pool
-    if _pool is None or _pool._closed:
-        _pool = await asyncpg.create_pool(
-            dsn=DSN(),
-            min_size=2,
-            max_size=10,
-            command_timeout=30,
-        )
-    return _pool
+    <div class="container">
+        <!-- Статистика -->
+        <div class="stats" id="stats-row">
+            <div class="stat-card">
+                <div class="label">All orders</div>
+                <div class="value" id="s-total">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Revenue (PLN)</div>
+                <div class="value" id="s-revenue">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">dobraszklarnia.pl</div>
+                <div class="value" id="s-woo">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">oteko.pl</div>
+                <div class="value" id="s-oteko">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">cieplarnia.pl</div>
+                <div class="value" id="s-ciep">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Allegro</div>
+                <div class="value" id="s-allegro">—</div>
+            </div>
+        </div>
 
+        <!-- Фильтры -->
+        <div class="toolbar">
+            <input type="text" id="f-search" placeholder="Search customer...">
+            <select id="f-source">
+                <option value="">All stores</option>
+                <option value="dobraszklarnia">dobraszklarnia.pl</option>
+                <option value="oteko">oteko.pl</option>
+                <option value="cieplarnia">cieplarnia.pl</option>
+                <option value="allegro">Allegro</option>
+            </select>
+            <select id="f-status">
+                <option value="">All statuses</option>
+                <option value="processing">Processing</option>
+                <option value="completed">Completed</option>
+                <option value="pending">Pending</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="payment_accepted">Payment accepted</option>
+                <option value="shipped">Shipped</option>
+                <option value="delivered">Delivered</option>
+                <option value="on-hold">On hold</option>
+            </select>
+            <input type="date" id="f-from">
+            <span style="color:#9ca3af;">—</span>
+            <input type="date" id="f-to">
+            <button class="btn-primary" onclick="loadOrders(1)">Filter</button>
+            <button class="btn-export" onclick="exportCSV()">Export XLSX</button>
+            <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Sync now">Sync</button>
+        </div>
 
-# ============================================================
-# Lifespan — создание таблиц + запуск планировщика
-# ============================================================
-scheduler = AsyncIOScheduler(timezone=TZ)
+        <!-- Таблица заказов -->
+        <div class="card">
+            <div class="card-header">
+                <h3>Orders list</h3>
+                <span class="sync-status" id="sync-info"></span>
+            </div>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Тип товара</th>
+                            <th>Комплектация</th>
+                            <th>Цена + доставка</th>
+                            <th>Продукт</th>
+                            <th>Статус</th>
+                            <th>Оплата</th>
+                            <th>Телефон</th>
+                            <th>Адрес</th>
+                            <th>Комментарий</th>
+                            <th>Источник</th>
+                            <th>Аккаунт</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-body">
+                        <tr><td colspan="12" class="empty">
+                            <h4>Loading...</h4>
+                        </td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination" id="pagination"></div>
+        </div>
+    </div>
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # --- Startup ---
-    dsn = DSN()
-    print(f"[startup] DSN present: {bool(dsn)}")
-    if dsn:
-        # Маскируем пароль для лога
-        safe = dsn[:30] + "..." if len(dsn) > 30 else dsn
-        print(f"[startup] DSN starts with: {safe}")
-    else:
-        # Выводим все env vars с DB/DATABASE в имени для диагностики
-        db_vars = {k: v[:20]+"..." for k, v in os.environ.items() if "DB" in k.upper() or "DATABASE" in k.upper() or "POSTGRES" in k.upper() or "PG" in k.upper()}
-        print(f"[startup] WARNING: No DSN found! DB-related env vars: {db_vars}")
-        print(f"[startup] All env var names: {list(os.environ.keys())}")
+    <script>
+    var currentPage = 1;
+    var perPage = 50;
+    var totalOrders = 0;
 
-    pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        # Таблица лидов (из форм, звонков)
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS leads (
-                id            SERIAL PRIMARY KEY,
-                name          VARCHAR(200),
-                phone         VARCHAR(50),
-                email         VARCHAR(200),
-                site          VARCHAR(200),
-                brand_slug    VARCHAR(100) DEFAULT 'unknown',
-                form_type     VARCHAR(50)  DEFAULT 'form',
-                utm_source    VARCHAR(200),
-                utm_medium    VARCHAR(200),
-                utm_campaign  VARCHAR(500),
-                utm_term      VARCHAR(500),
-                gclid         VARCHAR(500),
-                landing_page  TEXT,
-                campaign_id   VARCHAR(100),
-                ad_id         VARCHAR(100),
-                status        VARCHAR(50) DEFAULT 'new',
-                device        VARCHAR(50),
-                created_at    TIMESTAMP DEFAULT NOW(),
-                updated_at    TIMESTAMP DEFAULT NOW()
-            )
-        """)
+    // Инициализация
+    (function() {
+        var to = new Date();
+        var from = new Date();
+        from.setDate(from.getDate() - 90);
+        document.getElementById('f-from').value = from.toISOString().slice(0,10);
+        document.getElementById('f-to').value = to.toISOString().slice(0,10);
+        loadOrders(1);
+        loadStats();
+        loadSyncInfo();
+    })();
 
-        # Таблица заказов — единая для всех магазинов
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS orders (
-                id              SERIAL PRIMARY KEY,
-                external_id     VARCHAR(100),
-                source          VARCHAR(50) NOT NULL,
-                status          VARCHAR(50) DEFAULT 'new',
-                customer_name   VARCHAR(300),
-                customer_email  VARCHAR(200),
-                customer_phone  VARCHAR(50),
-                customer_city   VARCHAR(200),
-                customer_zip    VARCHAR(20),
-                customer_address TEXT,
-                total           NUMERIC(12,2) DEFAULT 0,
-                currency        VARCHAR(10) DEFAULT 'PLN',
-                items_count     INTEGER DEFAULT 0,
-                items_json      TEXT,
-                payment_method  VARCHAR(100),
-                shipping_method VARCHAR(200),
-                note            TEXT,
-                external_created TIMESTAMP,
-                created_at      TIMESTAMP DEFAULT NOW(),
-                updated_at      TIMESTAMP DEFAULT NOW(),
-                UNIQUE(source, external_id)
-            )
-        """)
-
-        # Таблица клиентов — уникальные по email/phone
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS customers (
-                id              SERIAL PRIMARY KEY,
-                name            VARCHAR(300),
-                email           VARCHAR(200),
-                phone           VARCHAR(50),
-                city            VARCHAR(200),
-                source          VARCHAR(50),
-                orders_count    INTEGER DEFAULT 0,
-                total_spent     NUMERIC(12,2) DEFAULT 0,
-                first_order     TIMESTAMP,
-                last_order      TIMESTAMP,
-                created_at      TIMESTAMP DEFAULT NOW(),
-                updated_at      TIMESTAMP DEFAULT NOW()
-            )
-        """)
-
-        # Лог синхронизации — отслеживание процесса
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS sync_log (
-                id          SERIAL PRIMARY KEY,
-                source      VARCHAR(50),
-                status      VARCHAR(20),
-                orders_new  INTEGER DEFAULT 0,
-                orders_upd  INTEGER DEFAULT 0,
-                error       TEXT,
-                started_at  TIMESTAMP DEFAULT NOW(),
-                finished_at TIMESTAMP
-            )
-        """)
-
-        # App settings — key-value store (для Allegro refresh token и др.)
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS app_settings (
-                key         VARCHAR(100) PRIMARY KEY,
-                value       TEXT,
-                updated_at  TIMESTAMP DEFAULT NOW()
-            )
-        """)
-
-    print("[startup] DB connected, all tables ready")
-
-    # Фоновые задачи — синк магазинов
-    scheduler.add_job(sync_woocommerce, CronTrigger(minute="*/15"), id="sync_woo", replace_existing=True)
-    scheduler.add_job(sync_presta_oteko, CronTrigger(minute="*/15"), id="sync_oteko", replace_existing=True)
-    scheduler.add_job(sync_presta_ciep, CronTrigger(minute="*/15"), id="sync_ciep", replace_existing=True)
-    scheduler.add_job(sync_allegro, CronTrigger(minute="*/15"), id="sync_allegro", replace_existing=True)
-    scheduler.start()
-    print("[startup] scheduler started — syncing every 15 min (woo + oteko + ciep + allegro)")
-
-    yield
-
-    # --- Shutdown ---
-    scheduler.shutdown(wait=False)
-    if _pool and not _pool._closed:
-        await _pool.close()
-    print("[shutdown] cleanup done")
-
-
-# ============================================================
-# FastAPI app
-# ============================================================
-app = FastAPI(lifespan=lifespan)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-def _safe_val(v):
-    """Конвертирует Decimal/datetime в JSON-совместимые типы."""
-    if isinstance(v, Decimal):
-        return float(v)
-    if isinstance(v, datetime):
-        return v.isoformat()
-    return v
-
-def _safe_dict(row):
-    """Конвертирует asyncpg Record в JSON-safe dict."""
-    return {k: _safe_val(v) for k, v in dict(row).items()}
-
-# static — создаём папку если нет (Railway может не включить пустую папку)
-import pathlib
-_static_dir = pathlib.Path("static")
-_static_dir.mkdir(exist_ok=True)
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-templates = Jinja2Templates(directory="templates")
-app.include_router(auth_router)
-
-
-# ============================================================
-# === ИНТЕГРАЦИИ: WooCommerce (dobraszklarnia.pl) ===
-# ============================================================
-
-def _woo_auth_header():
-    """Basic Auth для WooCommerce REST API."""
-    creds = b64encode(f"{WOO_KEY}:{WOO_SECRET}".encode()).decode()
-    return {"Authorization": f"Basic {creds}"}
-
-
-async def _woo_fetch_orders(session: aiohttp.ClientSession, page=1, per_page=50, after=None):
-    """Получить страницу заказов из WooCommerce API."""
-    params = {"page": page, "per_page": per_page, "orderby": "date", "order": "desc"}
-    if after:
-        params["after"] = after  # ISO 8601 формат
-    url = f"{WOO_URL}/wp-json/wc/v3/orders"
-    async with session.get(url, headers=_woo_auth_header(), params=params, ssl=True) as resp:
-        if resp.status != 200:
-            text = await resp.text()
-            raise Exception(f"WooCommerce API error {resp.status}: {text[:300]}")
-        return await resp.json()
-
-
-async def _save_order(conn, source: str, order_data: dict):
-    """Сохранить/обновить заказ в unified таблице orders."""
-    ext_id = str(order_data["external_id"])
-
-    existing = await conn.fetchval(
-        "SELECT id FROM orders WHERE source=$1 AND external_id=$2",
-        source, ext_id
-    )
-
-    if existing:
-        await conn.execute("""
-            UPDATE orders SET
-                status=$1, customer_name=$2, customer_email=$3, customer_phone=$4,
-                customer_city=$5, customer_zip=$6, customer_address=$7,
-                total=$8, currency=$9, items_count=$10, items_json=$11,
-                payment_method=$12, shipping_method=$13, note=$14,
-                external_created=$15, shipping_cost=$18,
-                seller_account=$19, customer_comment=$20,
-                updated_at=NOW()
-            WHERE source=$16 AND external_id=$17
-        """,
-            order_data.get("status", ""),
-            order_data.get("customer_name", ""),
-            order_data.get("customer_email", ""),
-            order_data.get("customer_phone", ""),
-            order_data.get("customer_city", ""),
-            order_data.get("customer_zip", ""),
-            order_data.get("customer_address", ""),
-            float(order_data.get("total", 0)),
-            order_data.get("currency", "PLN"),
-            int(order_data.get("items_count", 0)),
-            order_data.get("items_json", "[]"),
-            order_data.get("payment_method", ""),
-            order_data.get("shipping_method", ""),
-            order_data.get("note", ""),
-            order_data.get("external_created"),
-            source, ext_id,
-            float(order_data.get("shipping_cost", 0)),
-            order_data.get("seller_account", ""),
-            order_data.get("customer_comment", ""),
-        )
-        return "updated"
-    else:
-        await conn.execute("""
-            INSERT INTO orders (
-                external_id, source, status, customer_name, customer_email,
-                customer_phone, customer_city, customer_zip, customer_address,
-                total, currency, items_count, items_json,
-                payment_method, shipping_method, note, external_created,
-                shipping_cost, seller_account, customer_comment
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-        """,
-            ext_id, source,
-            order_data.get("status", ""),
-            order_data.get("customer_name", ""),
-            order_data.get("customer_email", ""),
-            order_data.get("customer_phone", ""),
-            order_data.get("customer_city", ""),
-            order_data.get("customer_zip", ""),
-            order_data.get("customer_address", ""),
-            float(order_data.get("total", 0)),
-            order_data.get("currency", "PLN"),
-            int(order_data.get("items_count", 0)),
-            order_data.get("items_json", "[]"),
-            order_data.get("payment_method", ""),
-            order_data.get("shipping_method", ""),
-            order_data.get("note", ""),
-            order_data.get("external_created"),
-            float(order_data.get("shipping_cost", 0)),
-            order_data.get("seller_account", ""),
-            order_data.get("customer_comment", ""),
-        )
-        return "new"
-
-
-async def _upsert_customer(conn, source: str, name: str, email: str, phone: str, city: str,
-                            total: float, order_date):
-    """Обновить/создать клиента. Матчим по email (приоритет) или phone."""
-    match_field = None
-    match_value = None
-    if email:
-        match_field = "email"
-        match_value = email
-    elif phone:
-        match_field = "phone"
-        match_value = phone
-    else:
-        return
-
-    existing = await conn.fetchrow(
-        f"SELECT id, orders_count, total_spent FROM customers WHERE {match_field}=$1",
-        match_value
-    )
-
-    if existing:
-        await conn.execute("""
-            UPDATE customers SET
-                name = COALESCE(NULLIF($1, ''), name),
-                city = COALESCE(NULLIF($2, ''), city),
-                orders_count = orders_count + 1,
-                total_spent = total_spent + $3,
-                last_order = $4,
-                updated_at = NOW()
-            WHERE id = $5
-        """, name, city, total, order_date, existing["id"])
-    else:
-        await conn.execute("""
-            INSERT INTO customers (name, email, phone, city, source, orders_count, total_spent, first_order, last_order)
-            VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $7)
-        """, name, email, phone, city, source, total, order_date)
-
-
-def _parse_woo_order(woo: dict) -> dict:
-    """Маппинг WooCommerce order → наш формат."""
-    billing = woo.get("billing", {})
-    items = []
-    for item in woo.get("line_items", []):
-        product_name = item.get("name", "")
-        # Append product attributes (Długość, Grubość, etc.) if not already in the name
-        meta_parts = []
-        for m in item.get("meta_data", []):
-            key = m.get("display_key") or m.get("key", "")
-            val = m.get("display_value") or m.get("value", "")
-            if not key or not val:
-                continue
-            # Skip internal WooCommerce meta keys (start with _)
-            if key.startswith("_"):
-                continue
-            # Only add if the value isn't already in the product name
-            if str(val).lower() not in product_name.lower():
-                meta_parts.append(f"{val}")
-        if meta_parts:
-            product_name = f"{product_name} ({', '.join(meta_parts)})"
-        items.append({
-            "name": product_name,
-            "qty": item.get("quantity", 1),
-            "price": item.get("total", "0"),
-            "sku": item.get("sku", ""),
-        })
-
-    ext_created = None
-    if woo.get("date_created"):
-        try:
-            ext_created = datetime.fromisoformat(woo["date_created"].replace("Z", "+00:00"))
-        except Exception:
-            ext_created = datetime.now(TZ)
-
-    # Shipping cost
-    ship_cost = 0.0
-    try:
-        ship_cost = float(woo.get("shipping_total", 0) or 0)
-    except (ValueError, TypeError):
-        ship_cost = 0.0
-
-    # Customer comment
-    customer_comment = woo.get("customer_note", "") or ""
-
-    return {
-        "external_id": str(woo["id"]),
-        "status": woo.get("status", "unknown"),
-        "customer_name": f"{billing.get('first_name', '')} {billing.get('last_name', '')}".strip(),
-        "customer_email": billing.get("email", ""),
-        "customer_phone": billing.get("phone", ""),
-        "customer_city": billing.get("city", ""),
-        "customer_zip": billing.get("postcode", ""),
-        "customer_address": f"{billing.get('address_1', '')} {billing.get('address_2', '')}".strip(),
-        "total": float(woo.get("total", 0)),
-        "currency": woo.get("currency", "PLN"),
-        "items_count": len(items),
-        "items_json": json.dumps(items, ensure_ascii=False),
-        "payment_method": woo.get("payment_method_title", ""),
-        "shipping_method": ", ".join(s.get("method_title", "") for s in woo.get("shipping_lines", [])),
-        "note": woo.get("customer_note", ""),
-        "external_created": ext_created,
-        "shipping_cost": ship_cost,
-        "customer_comment": customer_comment,
-        "seller_account": "",
+    function fmt(n) {
+        return parseFloat(n || 0).toLocaleString('pl-PL');
     }
 
-
-async def sync_woocommerce(full=False):
-    """Фоновая задача: синк заказов из WooCommerce (dobraszklarnia.pl)."""
-    if not WOO_KEY or not WOO_SECRET:
-        return
-
-    source = "dobraszklarnia"
-    pool = await get_db_pool()
-
-    # Определяем с какой даты синкать (последний заказ + запас)
-    after = None
-    if not full:
-        async with pool.acquire() as conn:
-            last = await conn.fetchval(
-                "SELECT MAX(external_created) FROM orders WHERE source=$1", source
-            )
-        if last:
-            after = (last - timedelta(hours=2)).isoformat()
-
-    log_id = None
-    async with pool.acquire() as conn:
-        log_id = await conn.fetchval(
-            "INSERT INTO sync_log (source, status) VALUES ($1, 'running') RETURNING id", source
-        )
-
-    new_count = 0
-    upd_count = 0
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            page = 1
-            while True:
-                orders = await _woo_fetch_orders(session, page=page, per_page=50, after=after)
-                if not orders:
-                    break
-
-                async with pool.acquire() as conn:
-                    for woo_order in orders:
-                        parsed = _parse_woo_order(woo_order)
-                        result = await _save_order(conn, source, parsed)
-                        if result == "new":
-                            new_count += 1
-                            # Upsert customer только для новых
-                            await _upsert_customer(
-                                conn, source,
-                                parsed["customer_name"], parsed["customer_email"],
-                                parsed["customer_phone"], parsed["customer_city"],
-                                parsed["total"], parsed["external_created"]
-                            )
-                        else:
-                            upd_count += 1
-
-                if len(orders) < 50:
-                    break
-                page += 1
-
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE sync_log SET status='ok', orders_new=$1, orders_upd=$2, finished_at=NOW() WHERE id=$3",
-                new_count, upd_count, log_id
-            )
-        print(f"[sync-woo] done: +{new_count} new, ~{upd_count} updated")
-
-    except Exception as e:
-        print(f"[sync-woo] ERROR: {e}")
-        traceback.print_exc()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE sync_log SET status='error', error=$1, finished_at=NOW() WHERE id=$2",
-                str(e)[:500], log_id
-            )
-
-
-# ============================================================
-# === ИНТЕГРАЦИИ: PrestaShop (oteko.pl + cieplarnia.pl) ===
-# ============================================================
-
-async def _presta_fetch_orders(session: aiohttp.ClientSession, base_url: str, api_key: str,
-                                page=0, limit=50, since_id=None):
-    """Получить заказы из PrestaShop Webservice API."""
-    url = f"{base_url}/api/orders"
-    params = {
-        "output_format": "JSON",
-        "display": "full",
-        "limit": f"{page * limit},{limit}",
-        "sort": "[id_DESC]",
-    }
-    if since_id:
-        params["filter[id]"] = f"[{since_id},999999999]"
-
-    auth = aiohttp.BasicAuth(api_key, "")  # PrestaShop: key как логин, пустой пароль
-    full_url = f"{url}?{'&'.join(f'{k}={v}' for k,v in params.items())}"
-    print(f"[presta] GET {full_url} (key={api_key[:8]}...)")
-    async with session.get(url, params=params, auth=auth, ssl=True) as resp:
-        print(f"[presta] response status={resp.status}, url={resp.url}")
-        if resp.status == 401:
-            text = await resp.text()
-            raise Exception(f"PrestaShop API 401 Unauthorized: {text[:300]}")
-        if resp.status != 200:
-            text = await resp.text()
-            raise Exception(f"PrestaShop API error {resp.status}: {text[:300]}")
-        data = await resp.json()
-        return data.get("orders", [])
-
-
-async def _presta_fetch_customer(session: aiohttp.ClientSession, base_url: str, api_key: str,
-                                  customer_id):
-    """Получить данные клиента по ID."""
-    if not customer_id:
-        return {}
-    url = f"{base_url}/api/customers/{customer_id}"
-    params = {"output_format": "JSON"}
-    auth = aiohttp.BasicAuth(api_key, "")
-    try:
-        async with session.get(url, params=params, auth=auth, ssl=True) as resp:
-            if resp.status != 200:
-                return {}
-            data = await resp.json()
-            return data.get("customer", {})
-    except Exception:
-        return {}
-
-
-async def _presta_fetch_address(session: aiohttp.ClientSession, base_url: str, api_key: str,
-                                 address_id):
-    """Получить адрес по ID."""
-    if not address_id:
-        return {}
-    url = f"{base_url}/api/addresses/{address_id}"
-    params = {"output_format": "JSON"}
-    auth = aiohttp.BasicAuth(api_key, "")
-    try:
-        async with session.get(url, params=params, auth=auth, ssl=True) as resp:
-            if resp.status != 200:
-                return {}
-            data = await resp.json()
-            return data.get("address", {})
-    except Exception:
-        return {}
-
-
-# Маппинг статусов PrestaShop (стандартные ID → текст)
-PRESTA_STATUS_MAP = {
-    "1": "awaiting_check",
-    "2": "payment_accepted",
-    "3": "processing",
-    "4": "shipped",
-    "5": "delivered",
-    "6": "cancelled",
-    "7": "refunded",
-    "8": "payment_error",
-    "9": "order_pending_paid",
-    "10": "awaiting_bankwire",
-    "11": "payment_received",
-    "12": "order_pending_unpaid",
-    "13": "awaiting_cod",
-    "14": "awaiting_payment",
-    "15": "partial_refund",
-    "16": "partial_payment",
-    "17": "authorized_transfer",
-    "18": "awaiting_przelewy24",
-    "19": "przelewy24_accepted",
-    "20": "payu_started",
-    "21": "payu_awaiting",
-    "22": "payu_cancelled",
-}
-
-# ---- Все статусы на польском ----
-STATUS_PL = {
-    # WooCommerce / general
-    "pending": "Oczekujące",
-    "pending_payment": "Oczekiwanie na płatność",
-    "processing": "W realizacji",
-    "shipped": "Wysłane",
-    "delivered": "Dostarczone",
-    "completed": "Zrealizowane",
-    "cancelled": "Anulowane",
-    "refunded": "Zwrot",
-    "failed": "Nieudane",
-    "on-hold": "Wstrzymane",
-    "on_hold": "Wstrzymane",
-    "trash": "Usunięte",
-    # PrestaShop
-    "payment_accepted": "Płatność zaakceptowana",
-    "payment_error": "Błąd płatności",
-    "payment_received": "Płatność przyjęta",
-    "awaiting_bankwire": "Oczekiwanie na przelew",
-    "awaiting_check": "Oczekiwanie na płatność czekiem",
-    "awaiting_cod": "Oczekiwanie na płatność przy odbiorze",
-    "awaiting_payment": "Oczekiwanie na płatność",
-    "order_pending_paid": "Zamówienie oczekujące (opłacone)",
-    "order_pending_unpaid": "Zamówienie oczekujące (nieopłacone)",
-    "partial_refund": "Częściowy zwrot",
-    "partial_payment": "Częściowa płatność",
-    "authorized_transfer": "Autoryzacja — transfer przez sklep",
-    "awaiting_przelewy24": "Oczekiwanie na Przelewy24",
-    "przelewy24_accepted": "Płatność Przelewy24 przyjęta",
-    "payu_started": "Płatność PayU rozpoczęta",
-    "payu_awaiting": "PayU oczekuje na odbiór",
-    "payu_cancelled": "PayU anulowana",
-    # Allegro
-    "bought": "Kupione",
-    "filled_in": "Wypełnione",
-    "ready_for_processing": "Gotowe do realizacji",
-}
-
-def _status_pl(status: str) -> str:
-    """Zwraca polską nazwę statusu."""
-    if not status:
-        return "—"
-    return STATUS_PL.get(status, STATUS_PL.get(status.lower(), status))
-
-
-def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
-    """Маппинг PrestaShop order → наш формат."""
-    items = []
-    order_rows = order.get("associations", {}).get("order_rows", [])
-    if isinstance(order_rows, list):
-        for row in order_rows:
-            items.append({
-                "name": row.get("product_name", ""),
-                "qty": int(row.get("product_quantity", 1)),
-                "price": row.get("product_price", "0"),
-                "sku": row.get("product_reference", ""),
-            })
-
-    ext_created = None
-    if order.get("date_add"):
-        try:
-            ext_created = datetime.fromisoformat(order["date_add"])
-        except Exception:
-            ext_created = datetime.now(TZ)
-
-    status_id = str(order.get("current_state", ""))
-    status = PRESTA_STATUS_MAP.get(status_id, f"state_{status_id}")
-
-    cust_name = f"{customer.get('firstname', '')} {customer.get('lastname', '')}".strip()
-    if not cust_name:
-        cust_name = f"{address.get('firstname', '')} {address.get('lastname', '')}".strip()
-
-    # Shipping cost
-    ship_cost = 0.0
-    try:
-        total_shipping = float(order.get("total_shipping", 0) or 0)
-        total_shipping_tax = float(order.get("total_shipping_tax_incl", 0) or 0)
-        ship_cost = total_shipping_tax if total_shipping_tax > 0 else total_shipping
-    except (ValueError, TypeError):
-        ship_cost = 0.0
-
-    # Customer comment / note
-    customer_comment = ""
-    note_text = order.get("note", "") or ""
-    if note_text:
-        customer_comment = note_text
-
-    return {
-        "external_id": str(order.get("id", "")),
-        "status": status,
-        "customer_name": cust_name,
-        "customer_email": customer.get("email", ""),
-        "customer_phone": address.get("phone", "") or address.get("phone_mobile", ""),
-        "customer_city": address.get("city", ""),
-        "customer_zip": address.get("postcode", ""),
-        "customer_address": f"{address.get('address1', '')} {address.get('address2', '')}".strip(),
-        "total": float(order.get("total_paid", 0)),
-        "currency": order.get("id_currency", "PLN"),
-        "items_count": len(items),
-        "items_json": json.dumps(items, ensure_ascii=False),
-        "payment_method": order.get("payment", ""),
-        "shipping_method": "",
-        "note": "",
-        "external_created": ext_created,
-        "shipping_cost": ship_cost,
-        "customer_comment": customer_comment,
-        "seller_account": "",
+    function fmtMoney(n) {
+        return parseFloat(n || 0).toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
 
-
-async def _sync_prestashop(source: str, base_url: str, api_key: str, full=False):
-    """Универсальная функция синка PrestaShop магазина."""
-    if not api_key:
-        return
-
-    pool = await get_db_pool()
-
-    # Определяем с какого ID синкать (incremental), full=True — всё с начала
-    since_id = None
-    if not full:
-        async with pool.acquire() as conn:
-            last_id = await conn.fetchval(
-                "SELECT MAX(CAST(external_id AS INTEGER)) FROM orders WHERE source=$1 AND external_id ~ '^[0-9]+$'", source
-            )
-        if last_id:
-            since_id = max(1, last_id - 10)  # small overlap for safety
-
-    log_id = None
-    async with pool.acquire() as conn:
-        log_id = await conn.fetchval(
-            "INSERT INTO sync_log (source, status) VALUES ($1, 'running') RETURNING id", source
-        )
-
-    new_count = 0
-    upd_count = 0
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            page = 0
-            while True:
-                orders = await _presta_fetch_orders(
-                    session, base_url, api_key,
-                    page=page, limit=50, since_id=since_id
-                )
-                if not orders:
-                    break
-
-                async with pool.acquire() as conn:
-                    for ps_order in orders:
-                        try:
-                            # Подтягиваем клиента и адрес
-                            customer = await _presta_fetch_customer(
-                                session, base_url, api_key, ps_order.get("id_customer")
-                            )
-                            address = await _presta_fetch_address(
-                                session, base_url, api_key, ps_order.get("id_address_delivery")
-                            )
-
-                            parsed = _parse_presta_order(ps_order, customer, address)
-                            result = await _save_order(conn, source, parsed)
-                            if result == "new":
-                                new_count += 1
-                                await _upsert_customer(
-                                    conn, source,
-                                    parsed["customer_name"], parsed["customer_email"],
-                                    parsed["customer_phone"], parsed["customer_city"],
-                                    parsed["total"], parsed["external_created"]
-                                )
-                            else:
-                                upd_count += 1
-                        except Exception as e_order:
-                            order_id = ps_order.get("id", "?")
-                            print(f"[sync-{source}] SKIP order {order_id}: {e_order}")
-
-                if len(orders) < 50:
-                    break
-                page += 1
-
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE sync_log SET status='ok', orders_new=$1, orders_upd=$2, finished_at=NOW() WHERE id=$3",
-                new_count, upd_count, log_id
-            )
-        print(f"[sync-{source}] done: +{new_count} new, ~{upd_count} updated")
-
-    except Exception as e:
-        print(f"[sync-{source}] ERROR: {e}")
-        traceback.print_exc()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE sync_log SET status='error', error=$1, finished_at=NOW() WHERE id=$2",
-                str(e)[:500], log_id
-            )
-
-
-async def sync_presta_oteko(full=False):
-    await _sync_prestashop("oteko", PRESTA_OTEKO_URL, PRESTA_OTEKO_KEY, full=full)
-
-async def sync_presta_ciep(full=False):
-    await _sync_prestashop("cieplarnia", PRESTA_CIEP_URL, PRESTA_CIEP_KEY, full=full)
-
-
-# ============================================================
-# === ИНТЕГРАЦИИ: Allegro (drogatrade) ===
-# ============================================================
-
-import time as _time
-
-async def _allegro_db_get_refresh_token():
-    """Read the latest refresh token from DB (survives restarts)."""
-    try:
-        pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchval(
-                "SELECT value FROM app_settings WHERE key='allegro_refresh_token'"
-            )
-            return row
-    except Exception:
-        return None
-
-
-async def _allegro_db_save_refresh_token(token: str):
-    """Save new refresh token to DB so it survives restarts."""
-    try:
-        pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO app_settings (key, value, updated_at)
-                VALUES ('allegro_refresh_token', $1, NOW())
-                ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()
-            """, token)
-    except Exception as e:
-        print(f"[allegro] WARNING: could not save refresh_token to DB: {e}")
-
-
-async def _allegro_get_token(session: aiohttp.ClientSession) -> str:
-    """Get a valid Allegro access token, refreshing if needed."""
-    global _allegro_token
-
-    now = _time.time()
-    if _allegro_token["access_token"] and _allegro_token["expires_at"] > now + 60:
-        return _allegro_token["access_token"]
-
-    # Priority: memory → DB → env var
-    current_rt = (
-        _allegro_token.get("refresh_token")
-        or await _allegro_db_get_refresh_token()
-        or ALLEGRO_REFRESH_TOKEN
-    )
-
-    if not current_rt:
-        raise Exception("No Allegro refresh token available (check env var or re-authorize)")
-
-    # Refresh the token
-    auth = aiohttp.BasicAuth(ALLEGRO_CLIENT_ID, ALLEGRO_CLIENT_SECRET)
-    data = {
-        "grant_type": "refresh_token",
-        "refresh_token": current_rt,
-    }
-    async with session.post(ALLEGRO_AUTH_URL, data=data, auth=auth) as resp:
-        if resp.status != 200:
-            text = await resp.text()
-            raise Exception(f"Allegro token refresh failed {resp.status}: {text[:300]}")
-        body = await resp.json()
-
-    _allegro_token["access_token"] = body["access_token"]
-    _allegro_token["expires_at"] = now + body.get("expires_in", 3600) - 60
-
-    # Store new refresh_token in memory + DB (Allegro rotates them on each use!)
-    new_rt = body.get("refresh_token")
-    if new_rt:
-        _allegro_token["refresh_token"] = new_rt
-        await _allegro_db_save_refresh_token(new_rt)
-        if new_rt != current_rt:
-            print(f"[allegro] refresh_token rotated and saved to DB")
-
-    return _allegro_token["access_token"]
-
-
-async def _allegro_fetch_orders(session: aiohttp.ClientSession, token: str,
-                                 offset=0, limit=100, updated_after=None):
-    """Fetch checkout-forms (orders) from Allegro REST API."""
-    url = f"{ALLEGRO_API_URL}/order/checkout-forms"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.allegro.public.v1+json",
-    }
-    params = {
-        "offset": offset,
-        "limit": min(limit, 100),
-        "sort": "-updatedAt",
-    }
-    if updated_after:
-        # Allegro requires ISO 8601 with timezone, e.g. 2026-04-14T10:00:00.000Z
-        if isinstance(updated_after, str) and "T" not in updated_after:
-            updated_after = updated_after + "T00:00:00.000Z"
-        elif isinstance(updated_after, str) and not updated_after.endswith("Z") and "+" not in updated_after:
-            updated_after = updated_after + "Z"
-        params["updatedAt.gte"] = updated_after
-
-    async with session.get(url, headers=headers, params=params) as resp:
-        if resp.status == 401:
-            raise Exception("Allegro API: token expired or invalid")
-        if resp.status != 200:
-            text = await resp.text()
-            raise Exception(f"Allegro API error {resp.status}: {text[:300]}")
-        data = await resp.json()
-        forms = data.get("checkoutForms", [])
-        # Allegro: "count" = items on this page, "totalCount" = total matching
-        total_count = data.get("totalCount") or data.get("count") or len(forms)
-        print(f"[allegro-api] response keys={list(data.keys())}, count={data.get('count')}, totalCount={data.get('totalCount')}, forms={len(forms)}")
-        return forms, total_count
-
-
-def _parse_allegro_order(form: dict) -> dict:
-    """Map Allegro checkout-form → our unified order format."""
-    buyer = form.get("buyer") or {}
-    delivery = form.get("delivery") or {}
-    address = delivery.get("address") or {}
-    payment = form.get("payment") or {}
-    summary = form.get("summary") or {}
-
-    # Build buyer name
-    buyer_name = ""
-    if buyer.get("firstName") or buyer.get("lastName"):
-        buyer_name = f"{buyer.get('firstName', '')} {buyer.get('lastName', '')}".strip()
-    if not buyer_name:
-        buyer_name = address.get("firstName", "") + " " + address.get("lastName", "")
-        buyer_name = buyer_name.strip()
-
-    # Items — use external.id (sygnatura) as the display name if available
-    items = []
-    for li in form.get("lineItems", []):
-        offer = li.get("offer") or {}
-        ext = offer.get("external") or {}
-        sygnatura = ext.get("id", "")
-        full_name = offer.get("name", "")
-        items.append({
-            "name": sygnatura if sygnatura else full_name,
-            "full_name": full_name,
-            "qty": int(li.get("quantity", 1)),
-            "price": str(li.get("price", {}).get("amount", "0")),
-            "sku": sygnatura or str(offer.get("id", "")),
-        })
-
-    # Total
-    total_amount = 0.0
-    if summary.get("totalToPay"):
-        total_amount = float(summary["totalToPay"].get("amount", 0))
-
-    # Currency
-    currency = "PLN"
-    if summary.get("totalToPay", {}).get("currency"):
-        currency = summary["totalToPay"]["currency"]
-
-    # Created date — strip timezone to match our naive TIMESTAMP column
-    ext_created = None
-    bought_at = form.get("updatedAt") or form.get("createdAt")
-    if bought_at:
-        try:
-            dt = datetime.fromisoformat(bought_at.replace("Z", "+00:00"))
-            ext_created = dt.replace(tzinfo=None)
-        except Exception:
-            ext_created = datetime.now(TZ).replace(tzinfo=None)
-
-    # Status mapping
-    status_raw = form.get("status", "UNKNOWN")
-    allegro_status_map = {
-        "BOUGHT": "processing",
-        "FILLED_IN": "processing",
-        "READY_FOR_PROCESSING": "processing",
-        "CANCELLED": "cancelled",
-    }
-    status = allegro_status_map.get(status_raw, status_raw.lower())
-
-    # Payment type → Polish label
-    allegro_payment_map = {
-        "CASH_ON_DELIVERY": "Płatność przy odbiorze",
-        "ONLINE": "Opłacone",
-        "TRANSFER": "Przelew",
-        "CARD": "Karta",
-        "INSTALLMENTS": "Raty",
-        "P24": "Przelewy24",
-        "SPLIT_PAYMENT": "Podzielona płatność",
-    }
-    pay_type_raw = (payment.get("type") or "").upper()
-    payment_label = allegro_payment_map.get(pay_type_raw, pay_type_raw)
-
-    # Payment status can override order status
-    pay_status = pay_type_raw.lower()
-    paid_amount_obj = payment.get("paidAmount") or {}
-    if pay_status == "paid" or pay_type_raw == "ONLINE" or paid_amount_obj.get("amount"):
-        paid_amt = float(paid_amount_obj.get("amount", 0) or 0)
-        if paid_amt >= total_amount and total_amount > 0:
-            if status == "processing":
-                status = "payment_accepted"
-
-    # Shipping cost
-    ship_cost = 0.0
-    delivery_cost = delivery.get("cost") or {}
-    if delivery_cost.get("amount"):
-        ship_cost = float(delivery_cost["amount"])
-
-    # Seller comment / message to seller + NIP
-    msg_to_seller = form.get("messageToSeller", "") or ""
-    invoice = form.get("invoice") or {}
-    nip = invoice.get("naturalPerson") if invoice.get("naturalPerson") else ""
-    if invoice.get("company") and invoice["company"].get("taxId"):
-        nip = f"NIP: {invoice['company']['taxId']}"
-    customer_comment = msg_to_seller
-    if nip:
-        customer_comment = f"{msg_to_seller}\n{nip}".strip() if msg_to_seller else nip
-
-    # Seller account name (Allegro seller login)
-    seller_account = "mantrade"  # Default for now
-
-    return {
-        "external_id": str(form.get("id", "")),
-        "status": status,
-        "customer_name": buyer_name,
-        "customer_email": buyer.get("email", ""),
-        "customer_phone": buyer.get("phoneNumber") or address.get("phoneNumber", ""),
-        "customer_city": address.get("city", ""),
-        "customer_zip": address.get("zipCode", "") or address.get("postCode", ""),
-        "customer_address": f"{address.get('street', '')}".strip(),
-        "total": total_amount,
-        "currency": currency,
-        "items_count": len(items),
-        "items_json": json.dumps(items, ensure_ascii=False),
-        "shipping_cost": ship_cost,
-        "customer_comment": customer_comment,
-        "seller_account": seller_account,
-        "payment_method": payment_label,
-        "shipping_method": delivery.get("method", {}).get("name", ""),
-        "note": form.get("messageToSeller", ""),
-        "external_created": ext_created,
+    function getFilters() {
+        return {
+            source: document.getElementById('f-source').value,
+            status: document.getElementById('f-status').value,
+            search: document.getElementById('f-search').value,
+            date_from: document.getElementById('f-from').value,
+            date_to: document.getElementById('f-to').value,
+        };
     }
 
-
-async def sync_allegro(full=False):
-    """Background task: sync orders from Allegro (drogatrade).
-    full=True — ignore date filter, fetch ALL orders (up to 12 months).
-    """
-    if not ALLEGRO_CLIENT_ID or not ALLEGRO_CLIENT_SECRET or not ALLEGRO_REFRESH_TOKEN:
-        return
-
-    source = "allegro"
-    pool = await get_db_pool()
-
-    # Find last sync date (skip if full resync)
-    updated_after = None
-    if not full:
-        async with pool.acquire() as conn:
-            last = await conn.fetchval(
-                "SELECT MAX(external_created) FROM orders WHERE source=$1", source
-            )
-            order_count = await conn.fetchval(
-                "SELECT COUNT(*) FROM orders WHERE source=$1", source
-            )
-        if last and order_count and order_count > 10:
-            # Only use date filter if we already have a decent number of orders
-            updated_after = (last - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-
-    if full:
-        print("[sync-allegro] FULL resync — fetching all orders")
-
-    log_id = None
-    async with pool.acquire() as conn:
-        log_id = await conn.fetchval(
-            "INSERT INTO sync_log (source, status) VALUES ($1, 'running') RETURNING id", source
-        )
-
-    new_count = 0
-    upd_count = 0
-    skip_count = 0
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            token = await _allegro_get_token(session)
-
-            # Allegro returns max ~3 months per query.
-            # For full resync, iterate in 3-month windows going back 12 months.
-            if full:
-                now = datetime.utcnow()
-                date_ranges = []
-                for m in range(4):  # 4 windows × 3 months = 12 months back
-                    range_end = now - timedelta(days=90 * m)
-                    range_start = now - timedelta(days=90 * (m + 1))
-                    date_ranges.append((
-                        range_start.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-                        range_end.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-                    ))
-            else:
-                # Normal incremental sync — single pass
-                date_ranges = [(updated_after, None)]
-
-            for dr_start, dr_end in date_ranges:
-                offset = 0
-                while True:
-                    # Build params
-                    forms, total = await _allegro_fetch_orders(
-                        session, token,
-                        offset=offset, limit=100, updated_after=dr_start
-                    )
-                    if offset == 0:
-                        print(f"[sync-allegro] page offset=0, API total={total}, fetched={len(forms)}, range={dr_start}..{dr_end}")
-                    if not forms:
-                        break
-
-                    async with pool.acquire() as conn:
-                        for form in forms:
-                            try:
-                                parsed = _parse_allegro_order(form)
-                                result = await _save_order(conn, source, parsed)
-                                if result == "new":
-                                    new_count += 1
-                                    await _upsert_customer(
-                                        conn, source,
-                                        parsed["customer_name"], parsed["customer_email"],
-                                        parsed["customer_phone"], parsed["customer_city"],
-                                        parsed["total"], parsed["external_created"]
-                                    )
-                                else:
-                                    upd_count += 1
-                            except Exception as e_order:
-                                skip_count += 1
-                                order_id = form.get("id", "?")
-                                print(f"[sync-allegro] SKIP order {order_id}: {e_order}")
-
-                    offset += len(forms)
-                    if offset >= total or len(forms) < 100:
-                        break
-
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE sync_log SET status='ok', orders_new=$1, orders_upd=$2, finished_at=NOW() WHERE id=$3",
-                new_count, upd_count, log_id
-            )
-        print(f"[sync-allegro] done: +{new_count} new, ~{upd_count} updated, skipped={skip_count}")
-
-    except Exception as e:
-        print(f"[sync-allegro] ERROR: {e}")
-        traceback.print_exc()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE sync_log SET status='error', error=$1, finished_at=NOW() WHERE id=$2",
-                str(e)[:500], log_id
-            )
-
-
-# ============================================================
-# === СТРАНИЦЫ ===
-# ============================================================
-
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    user = await get_current_user(request)
-    pool = await get_db_pool()
-
-    async with pool.acquire() as conn:
-        # Статистика лидов
-        total_leads = await conn.fetchval("SELECT COUNT(*) FROM leads")
-        today_leads = await conn.fetchval(
-            "SELECT COUNT(*) FROM leads WHERE created_at::date = $1", date.today()
-        )
-        recent = await conn.fetch(
-            "SELECT * FROM leads ORDER BY created_at DESC LIMIT 20"
-        )
-
-        # Статистика заказов
-        total_orders = await conn.fetchval("SELECT COUNT(*) FROM orders")
-        today_orders = await conn.fetchval(
-            "SELECT COUNT(*) FROM orders WHERE created_at::date = $1", date.today()
-        )
-        total_revenue = await conn.fetchval("SELECT COALESCE(SUM(total), 0) FROM orders") or 0
-        total_customers = await conn.fetchval("SELECT COUNT(*) FROM customers")
-
-        # Заказы по источникам
-        by_source = await conn.fetch("""
-            SELECT source, COUNT(*) as cnt, COALESCE(SUM(total), 0) as revenue
-            FROM orders GROUP BY source ORDER BY cnt DESC
-        """)
-
-        # Последний синк
-        last_syncs = await conn.fetch("""
-            SELECT DISTINCT ON (source) source, status, orders_new, orders_upd, finished_at
-            FROM sync_log ORDER BY source, finished_at DESC NULLS LAST
-        """)
-
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={
-            "user": user,
-            "total_leads": total_leads,
-            "today_leads": today_leads,
-            "recent_leads": recent,
-            "total_orders": total_orders,
-            "today_orders": today_orders,
-            "total_revenue": total_revenue,
-            "total_customers": total_customers,
-            "by_source": by_source,
-            "last_syncs": last_syncs,
-        },
-    )
-
-
-@app.get("/orders", response_class=HTMLResponse)
-async def orders_page(request: Request):
-    user = await get_current_user(request)
-    return templates.TemplateResponse(
-        request=request,
-        name="orders.html",
-        context={"user": user},
-    )
-
-
-# ============================================================
-# === API: Статистика ===
-# ============================================================
-
-@app.get("/api/stats")
-async def api_stats(
-    date_from: str = Query(None),
-    date_to:   str = Query(None),
-):
-    pool = await get_db_pool()
-    d_from = date.fromisoformat(date_from) if date_from else date.today() - timedelta(days=30)
-    d_to   = date.fromisoformat(date_to)   if date_to   else date.today()
-
-    async with pool.acquire() as conn:
-        leads = await conn.fetchrow("""
-            SELECT
-                COUNT(*)                                              AS total,
-                COUNT(*) FILTER (WHERE form_type = 'call')            AS calls,
-                COUNT(*) FILTER (WHERE form_type IN ('form','chat'))  AS forms,
-                COUNT(*) FILTER (WHERE status = 'new')                AS new_leads,
-                COUNT(*) FILTER (WHERE status = 'processed')          AS processed
-            FROM leads
-            WHERE created_at::date >= $1 AND created_at::date <= $2
-        """, d_from, d_to)
-
-        orders = await conn.fetchrow("""
-            SELECT
-                COUNT(*) AS total,
-                COALESCE(SUM(total), 0) AS revenue,
-                COUNT(DISTINCT customer_email) FILTER (WHERE customer_email != '') AS unique_customers,
-                COUNT(*) FILTER (WHERE source = 'dobraszklarnia') AS woo_count,
-                COUNT(*) FILTER (WHERE source = 'oteko') AS oteko_count,
-                COUNT(*) FILTER (WHERE source = 'cieplarnia') AS ciep_count,
-                COUNT(*) FILTER (WHERE source = 'allegro') AS allegro_count
-            FROM orders
-            WHERE COALESCE(external_created, created_at)::date >= $1
-              AND COALESCE(external_created, created_at)::date <= $2
-        """, d_from, d_to)
-
-    return JSONResponse({
-        "leads": _safe_dict(leads),
-        "orders": _safe_dict(orders),
-        "date_from": d_from.isoformat(),
-        "date_to": d_to.isoformat(),
-    })
-
-
-# ============================================================
-# === API: Статистика по дням (для графика) ===
-# ============================================================
-
-@app.get("/api/orders/daily")
-async def api_orders_daily(
-    date_from: str = Query(None),
-    date_to:   str = Query(None),
-    source:    str = Query(None),
-):
-    pool = await get_db_pool()
-    d_from = date.fromisoformat(date_from) if date_from else date.today() - timedelta(days=30)
-    d_to   = date.fromisoformat(date_to)   if date_to   else date.today()
-
-    conditions = ["COALESCE(external_created, created_at)::date >= $1", "COALESCE(external_created, created_at)::date <= $2"]
-    params = [d_from, d_to]
-    if source:
-        params.append(source)
-        conditions.append(f"source = ${len(params)}")
-
-    where = " AND ".join(conditions)
-
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(f"""
-            SELECT
-                COALESCE(external_created, created_at)::date AS day,
-                COUNT(*) AS orders_count,
-                COALESCE(SUM(total), 0) AS revenue
-            FROM orders
-            WHERE {where}
-            GROUP BY day
-            ORDER BY day
-        """, *params)
-
-    return JSONResponse({
-        "days": [r["day"].isoformat() for r in rows],
-        "orders_count": [int(r["orders_count"]) for r in rows],
-        "revenue": [float(r["revenue"]) for r in rows],
-    })
-
-
-# ============================================================
-# === API: Заказы (для таблицы + экспорт) ===
-# ============================================================
-
-@app.get("/api/orders")
-async def api_orders(
-    limit:  int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
-    source: str = Query(None),
-    status: str = Query(None),
-    search: str = Query(None),
-    date_from: str = Query(None),
-    date_to:   str = Query(None),
-):
-    pool = await get_db_pool()
-    conditions = ["1=1"]
-    params = []
-
-    if source:
-        params.append(source)
-        conditions.append(f"source = ${len(params)}")
-    if status:
-        params.append(status)
-        conditions.append(f"status = ${len(params)}")
-    if search:
-        params.append(f"%{search}%")
-        conditions.append(f"(customer_name ILIKE ${len(params)} OR customer_phone ILIKE ${len(params)} OR customer_email ILIKE ${len(params)})")
-    if date_from:
-        params.append(date.fromisoformat(date_from))
-        conditions.append(f"COALESCE(external_created, created_at)::date >= ${len(params)}")
-    if date_to:
-        params.append(date.fromisoformat(date_to))
-        conditions.append(f"COALESCE(external_created, created_at)::date <= ${len(params)}")
-
-    where = " AND ".join(conditions)
-
-    params.extend([limit, offset])
-    q = f"""
-        SELECT * FROM orders
-        WHERE {where}
-        ORDER BY COALESCE(external_created, created_at) DESC
-        LIMIT ${len(params)-1} OFFSET ${len(params)}
-    """
-
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(q, *params)
-        total = await conn.fetchval(
-            f"SELECT COUNT(*) FROM orders WHERE {where}",
-            *params[:-2]
-        )
-
-    return JSONResponse({
-        "total": total,
-        "orders": [_safe_dict(r) for r in rows],
-    })
-
-
-# ============================================================
-# === API: Экспорт заказов в CSV ===
-# ============================================================
-
-@app.get("/api/orders/export")
-async def export_orders(
-    source: str = Query(None),
-    status: str = Query(None),
-    date_from: str = Query(None),
-    date_to:   str = Query(None),
-    fmt: str = Query("csv"),  # csv или xlsx (xlsx добавим позже)
-):
-    pool = await get_db_pool()
-    conditions = ["1=1"]
-    params = []
-
-    if source:
-        params.append(source)
-        conditions.append(f"source = ${len(params)}")
-    if status:
-        params.append(status)
-        conditions.append(f"status = ${len(params)}")
-    if date_from:
-        params.append(date.fromisoformat(date_from))
-        conditions.append(f"COALESCE(external_created, created_at)::date >= ${len(params)}")
-    if date_to:
-        params.append(date.fromisoformat(date_to))
-        conditions.append(f"COALESCE(external_created, created_at)::date <= ${len(params)}")
-
-    where = " AND ".join(conditions)
-
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            f"SELECT * FROM orders WHERE {where} ORDER BY COALESCE(external_created, created_at) DESC",
-            *params
-        )
-
-    # --- XLSX export (openpyxl) ---
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Zamówienia"
-
-    # Header row — same order as /orders table
-    headers = [
-        "Data", "Typ towaru", "Konfiguracja",
-        "Cena towaru", "Dostawa", "Razem",
-        "Produkt", "Status", "Płatność", "Telefon",
-        "Adres", "Komentarz", "Źródło", "Konto"
-    ]
-    header_font = Font(name="Arial", bold=True, color="FFFFFF", size=11)
-    header_fill = PatternFill("solid", fgColor="1a1a2e")
-    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    thin_border = Border(
-        left=Side(style="thin", color="E5E7EB"),
-        right=Side(style="thin", color="E5E7EB"),
-        bottom=Side(style="thin", color="E5E7EB"),
-        top=Side(style="thin", color="E5E7EB"),
-    )
-
-    for col_idx, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col_idx, value=h)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = header_align
-        cell.border = thin_border
-
-    # Data rows
-    data_font = Font(name="Arial", size=10)
-    date_fmt = "DD.MM.YYYY HH:MM"
-
-    for row_idx, r in enumerate(rows, 2):
-        # Parse items for product name
-        items = []
-        try:
-            items = json.loads(r["items_json"] or "[]")
-        except Exception:
-            pass
-        product_names = "; ".join(
-            f"{it.get('qty', 1)}x {it.get('name', '')}" for it in items
-        ) or ""
-
-        # Price breakdown
-        total_val = float(r["total"] or 0)
-        ship_cost = float(r["shipping_cost"] or 0) if r.get("shipping_cost") else 0.0
-        product_price = total_val - ship_cost
-        if product_price < 0:
-            product_price = total_val
-
-        # Address
-        addr_parts = []
-        if r["customer_city"]:
-            addr_parts.append(r["customer_city"])
-        if r["customer_address"]:
-            addr_parts.append(r["customer_address"])
-        if r["customer_zip"]:
-            addr_parts.append(r["customer_zip"])
-        addr_str = ", ".join(addr_parts)
-
-        # Comment
-        comment = r.get("customer_comment") or r.get("note") or ""
-
-        # Status in Polish
-        status_pl = _status_pl(r["status"])
-
-        row_data = [
-            r["external_created"] if r["external_created"] else r["created_at"],
-            r.get("product_type") or "",
-            r.get("configuration") or "",
-            product_price,
-            ship_cost,
-            total_val,
-            product_names,
-            status_pl,
-            r.get("payment_method") or "",
-            r["customer_phone"] or "",
-            addr_str,
-            comment,
-            r["source"] or "",
-            r.get("seller_account") or "",
-        ]
-
-        for col_idx, val in enumerate(row_data, 1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=val)
-            cell.font = data_font
-            cell.border = thin_border
-
-        # Format date cell
-        date_cell = ws.cell(row=row_idx, column=1)
-        if date_cell.value and hasattr(date_cell.value, 'strftime'):
-            date_cell.number_format = date_fmt
-
-        # Format money cells
-        for money_col in [4, 5, 6]:
-            ws.cell(row=row_idx, column=money_col).number_format = '#,##0.00'
-
-    # Column widths
-    col_widths = [18, 14, 16, 14, 12, 14, 45, 22, 25, 16, 35, 30, 16, 14]
-    for i, w in enumerate(col_widths, 1):
-        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
-
-    # Freeze header
-    ws.freeze_panes = "A2"
-
-    # Auto-filter
-    ws.auto_filter.ref = f"A1:N{len(rows) + 1}"
-
-    # Save to bytes
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-
-    filename = f"orders_{date.today().isoformat()}.xlsx"
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
-    )
-
-
-# ============================================================
-# === API: Клиенты ===
-# ============================================================
-
-@app.get("/api/customers")
-async def api_customers(
-    limit:  int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    search: str = Query(None),
-):
-    pool = await get_db_pool()
-    conditions = ["1=1"]
-    params = []
-
-    if search:
-        params.append(f"%{search}%")
-        conditions.append(f"(name ILIKE ${len(params)} OR phone ILIKE ${len(params)} OR email ILIKE ${len(params)})")
-
-    where = " AND ".join(conditions)
-    params.extend([limit, offset])
-
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            f"SELECT * FROM customers WHERE {where} ORDER BY last_order DESC NULLS LAST LIMIT ${len(params)-1} OFFSET ${len(params)}",
-            *params
-        )
-        total = await conn.fetchval(
-            f"SELECT COUNT(*) FROM customers WHERE {where}",
-            *params[:-2]
-        )
-
-    return JSONResponse({"total": total, "customers": [_safe_dict(r) for r in rows]})
-
-
-# ============================================================
-# === API: Лиды (оставляем из оригинала) ===
-# ============================================================
-
-@app.get("/api/leads")
-async def api_leads(
-    limit:  int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
-    status: str = Query(None),
-):
-    pool = await get_db_pool()
-    conditions = ["1=1"]
-    params = []
-
-    if status:
-        params.append(status)
-        conditions.append(f"status = ${len(params)}")
-
-    params.extend([limit, offset])
-    q = f"""
-        SELECT * FROM leads
-        WHERE {' AND '.join(conditions)}
-        ORDER BY created_at DESC
-        LIMIT ${len(params)-1} OFFSET ${len(params)}
-    """
-
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(q, *params)
-        total = await conn.fetchval(
-            f"SELECT COUNT(*) FROM leads WHERE {' AND '.join(conditions)}",
-            *params[:-2]
-        )
-
-    return JSONResponse({
-        "total": total,
-        "leads": [dict(r) | {"created_at": r["created_at"].isoformat()} for r in rows],
-    })
-
-
-# ============================================================
-# === Webhooks ===
-# ============================================================
-
-@app.api_route("/api/webhook/lead", methods=["GET", "POST"])
-async def webhook_lead(request: Request):
-    data = {}
-    data.update(dict(request.query_params))
-    raw = await request.body()
-    if raw:
-        ct = request.headers.get("content-type", "")
-        if "json" in ct:
-            data.update(json.loads(raw))
-        elif "form" in ct or "urlencoded" in ct:
-            from urllib.parse import parse_qs
-            for k, v in parse_qs(raw.decode()).items():
-                data[k] = v[0] if len(v) == 1 else v
-
-    name  = data.get("name", "")
-    phone = data.get("phone", "")
-    email = data.get("email", "")
-
-    utm_source   = data.get("utm_source", "")
-    utm_medium   = data.get("utm_medium", "")
-    utm_campaign = data.get("utm_campaign", "")
-    utm_term     = data.get("utm_term", "")
-    gclid        = data.get("gclid", "")
-    landing      = data.get("landing_page") or data.get("referer") or ""
-
-    if not phone and not email:
-        return JSONResponse({"ok": False, "error": "phone or email required"}, status_code=400)
-
-    pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        lead_id = await conn.fetchval("""
-            INSERT INTO leads (name, phone, email, utm_source, utm_medium,
-                               utm_campaign, utm_term, gclid, landing_page)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-            RETURNING id
-        """, name, phone, email, utm_source, utm_medium,
-             utm_campaign, utm_term, gclid, landing)
-
-    print(f"[webhook] new lead #{lead_id}: {phone or email}")
-    return JSONResponse({"ok": True, "lead_id": lead_id})
-
-
-@app.api_route("/api/webhook/call", methods=["GET", "POST"])
-async def webhook_call(request: Request):
-    raw = await request.body()
-    data = dict(request.query_params)
-    if raw:
-        ct = request.headers.get("content-type", "")
-        if "json" in ct:
-            data.update(json.loads(raw))
-        elif "form" in ct or "urlencoded" in ct:
-            from urllib.parse import parse_qs
-            for k, v in parse_qs(raw.decode()).items():
-                data[k] = v[0]
-
-    phone = data.get("phone", "")
-    lead_id = None
-    if phone:
-        pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            lead_id = await conn.fetchval(
-                "SELECT id FROM leads WHERE phone = $1 ORDER BY created_at DESC LIMIT 1", phone
-            )
-            if lead_id:
-                await conn.execute("""
-                    UPDATE leads SET form_type = 'call', device = 'phone', updated_at = NOW()
-                    WHERE id = $1
-                """, lead_id)
-
-    return JSONResponse({"ok": True, "matched_lead": lead_id})
-
-
-@app.api_route("/api/webhook/woo", methods=["POST"])
-async def webhook_woo(request: Request):
-    """Webhook от WooCommerce — мгновенный приём нового заказа."""
-    raw = await request.body()
-    if not raw:
-        return JSONResponse({"ok": False, "error": "empty body"}, status_code=400)
-
-    # Верификация подписи (если задан WOO_WEBHOOK_SECRET)
-    if WOO_WEBHOOK_SECRET:
-        signature = request.headers.get("X-WC-Webhook-Signature", "")
-        expected = b64encode(
-            hmac.new(WOO_WEBHOOK_SECRET.encode(), raw, hashlib.sha256).digest()
-        ).decode()
-        if not hmac.compare_digest(signature, expected):
-            print("[webhook-woo] invalid signature!")
-            return JSONResponse({"ok": False, "error": "invalid signature"}, status_code=401)
-
-    data = json.loads(raw)
-
-    # WooCommerce шлёт ping при создании webhook — игнорируем
-    if not data.get("id"):
-        return JSONResponse({"ok": True, "note": "ping acknowledged"})
-
-    source = "dobraszklarnia"
-    parsed = _parse_woo_order(data)
-
-    pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        result = await _save_order(conn, source, parsed)
-        if result == "new":
-            await _upsert_customer(
-                conn, source,
-                parsed["customer_name"], parsed["customer_email"],
-                parsed["customer_phone"], parsed["customer_city"],
-                parsed["total"], parsed["external_created"]
-            )
-
-    print(f"[webhook-woo] order #{parsed['external_id']} — {result}")
-    return JSONResponse({"ok": True, "order_id": parsed["external_id"], "result": result})
-
-
-# ============================================================
-# === Ручной синк + лог ===
-# ============================================================
-
-@app.get("/admin/sync")
-async def manual_sync(source: str = Query(None), full: bool = Query(False)):
-    """Ручной запуск синхронизации. /admin/sync?source=allegro&full=true"""
-    if source == "dobraszklarnia":
-        asyncio.create_task(sync_woocommerce(full=full))
-        return JSONResponse({"ok": True, "message": f"WooCommerce sync started (full={full})"})
-    elif source == "oteko":
-        asyncio.create_task(sync_presta_oteko(full=full))
-        return JSONResponse({"ok": True, "message": f"Oteko sync started (full={full})"})
-    elif source == "cieplarnia":
-        asyncio.create_task(sync_presta_ciep(full=full))
-        return JSONResponse({"ok": True, "message": f"Cieplarnia sync started (full={full})"})
-
-    elif source == "allegro":
-        asyncio.create_task(sync_allegro(full=full))
-        return JSONResponse({"ok": True, "message": f"Allegro sync started (full={full})"})
-    else:
-        # Синк всех
-        asyncio.create_task(sync_woocommerce(full=full))
-        asyncio.create_task(sync_presta_oteko(full=full))
-        asyncio.create_task(sync_presta_ciep(full=full))
-        asyncio.create_task(sync_allegro(full=full))
-        return JSONResponse({"ok": True, "message": f"All syncs started (full={full})"})
-
-
-@app.get("/api/sync-log")
-async def api_sync_log(limit: int = Query(20)):
-    pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT * FROM sync_log ORDER BY started_at DESC LIMIT $1", limit
-        )
-
-    return JSONResponse({"log": [_safe_dict(r) for r in rows]})
-
-
-# ============================================================
-# === Утилита: debug — raw WooCommerce order data ===
-# ============================================================
-
-@app.get("/admin/woo-debug")
-async def woo_debug(order_id: str = Query(None)):
-    """Show raw WooCommerce line_items with meta_data for debugging."""
-    if not WOO_KEY or not WOO_SECRET:
-        return JSONResponse({"error": "no woo keys"})
-    async with aiohttp.ClientSession() as session:
-        if order_id:
-            url = f"{WOO_URL}/wp-json/wc/v3/orders/{order_id}"
-        else:
-            url = f"{WOO_URL}/wp-json/wc/v3/orders?per_page=3&orderby=date&order=desc"
-        auth = aiohttp.BasicAuth(WOO_KEY, WOO_SECRET)
-        async with session.get(url, auth=auth, ssl=False) as resp:
-            data = await resp.json(content_type=None)
-    # Extract only line_items for clarity
-    if isinstance(data, list):
-        result = []
-        for o in data:
-            result.append({
-                "id": o.get("id"),
-                "line_items": [{
-                    "name": li.get("name"),
-                    "sku": li.get("sku"),
-                    "meta_data": li.get("meta_data", []),
-                    "variation_id": li.get("variation_id"),
-                    "product_id": li.get("product_id"),
-                } for li in o.get("line_items", [])]
-            })
-        return JSONResponse(result)
-    else:
-        return JSONResponse({
-            "id": data.get("id"),
-            "line_items": [{
-                "name": li.get("name"),
-                "sku": li.get("sku"),
-                "meta_data": li.get("meta_data", []),
-                "variation_id": li.get("variation_id"),
-                "product_id": li.get("product_id"),
-            } for li in data.get("line_items", [])]
-        })
-
-
-# ============================================================
-# === Утилита: массовое обновление seller_account ===
-# ============================================================
-
-@app.get("/admin/fix-seller-account")
-async def fix_seller_account():
-    pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        res = await conn.execute(
-            "UPDATE orders SET seller_account='mantrade' WHERE source='allegro' AND (seller_account IS NULL OR seller_account='' OR seller_account='drogatrade')"
-        )
-    return JSONResponse({"ok": True, "updated": str(res)})
-
-
-# ============================================================
-# === Утилита: вытянуть статусы PrestaShop ===
-# ============================================================
-
-@app.get("/admin/presta-states")
-async def presta_states():
-    """Fetch order_states from both PrestaShop stores."""
-    results = {}
-    stores = [
-        ("oteko", "https://oteko.pl", os.getenv("PRESTA_OTEKO_KEY", "")),
-        ("cieplarnia", "https://cieplarnia.pl", os.getenv("PRESTA_CIEP_KEY", "")),
-    ]
-    async with aiohttp.ClientSession() as session:
-        for name, base_url, key in stores:
-            if not key:
-                results[name] = "no key"
-                continue
-            try:
-                auth = b64encode(f"{key}:".encode()).decode()
-                url = f"{base_url}/api/order_states?output_format=JSON&display=full"
-                async with session.get(url, headers={"Authorization": f"Basic {auth}"}, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json(content_type=None)
-                        states_raw = data.get("order_states", [])
-                        mapped = {}
-                        for st in states_raw:
-                            sid = str(st.get("id", ""))
-                            # name может быть список (мультиязычность) или строка
-                            nm = st.get("name", "")
-                            if isinstance(nm, list):
-                                nm = nm[0].get("value", "") if nm else ""
-                            elif isinstance(nm, dict):
-                                nm = nm.get("value", "") or nm.get("language", "")
-                            mapped[sid] = nm
-                        results[name] = mapped
-                    else:
-                        results[name] = f"HTTP {resp.status}"
-            except Exception as e:
-                results[name] = str(e)
-    return JSONResponse(results)
-
-
-# ============================================================
-# === Миграции / Healthcheck ===
-# ============================================================
-
-@app.get("/admin/migrate")
-async def run_migration():
-    pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        migrations = [
-            "ALTER TABLE leads ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'new'",
-            "ALTER TABLE leads ADD COLUMN IF NOT EXISTS campaign_id VARCHAR(100)",
-            "ALTER TABLE leads ADD COLUMN IF NOT EXISTS ad_id VARCHAR(100)",
-            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_method VARCHAR(200)",
-            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_zip VARCHAR(20)",
-            "ALTER TABLE customers ADD COLUMN IF NOT EXISTS source VARCHAR(50)",
-            # v2 — new fields for detailed order view
-            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_type VARCHAR(100) DEFAULT ''",
-            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS configuration TEXT DEFAULT ''",
-            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_cost NUMERIC(10,2) DEFAULT 0",
-            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS seller_account VARCHAR(200) DEFAULT ''",
-            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_comment TEXT DEFAULT ''",
-        ]
-        results = []
-        for m in migrations:
-            try:
-                await conn.execute(m)
-                results.append(f"OK: {m[:80]}")
-            except Exception as e:
-                results.append(f"ERR: {m[:80]} — {e}")
-
-    return JSONResponse({"migrations": results})
-
-
-@app.get("/health")
-async def health():
-    try:
-        pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            await conn.fetchval("SELECT 1")
-        return JSONResponse({"status": "ok", "db": "connected"})
-    except Exception as e:
-        return JSONResponse({"status": "error", "db": str(e)}, status_code=500)
+    function loadStats() {
+        var f = getFilters();
+        var url = '/api/stats?date_from=' + f.date_from + '&date_to=' + f.date_to;
+        fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+            var o = d.orders;
+            document.getElementById('s-total').textContent = fmt(o.total);
+            document.getElementById('s-revenue').textContent = fmtMoney(o.revenue);
+            document.getElementById('s-woo').textContent = fmt(o.woo_count);
+            document.getElementById('s-oteko').textContent = fmt(o.oteko_count);
+            document.getElementById('s-ciep').textContent = fmt(o.ciep_count);
+            document.getElementById('s-allegro').textContent = fmt(o.allegro_count);
+        });
+    }
+
+    function loadOrders(page) {
+        currentPage = page;
+        var f = getFilters();
+        var offset = (page - 1) * perPage;
+        var url = '/api/orders?limit=' + perPage + '&offset=' + offset;
+        if (f.source) url += '&source=' + encodeURIComponent(f.source);
+        if (f.status) url += '&status=' + encodeURIComponent(f.status);
+        if (f.search) url += '&search=' + encodeURIComponent(f.search);
+        if (f.date_from) url += '&date_from=' + f.date_from;
+        if (f.date_to) url += '&date_to=' + f.date_to;
+
+        fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+            totalOrders = d.total;
+            renderOrders(d.orders);
+            renderPagination();
+        });
+
+        loadStats();
+    }
+
+    function renderOrders(orders) {
+        var tbody = document.getElementById('orders-body');
+        if (!orders || orders.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="12" class="empty"><h4>No orders</h4><p>Check filters or run sync</p></td></tr>';
+            return;
+        }
+
+        // Polish status map
+        var statusPL = {
+            'pending': 'Oczekujące',
+            'pending_payment': 'Oczekiwanie na płatność',
+            'processing': 'W realizacji',
+            'shipped': 'Wysłane',
+            'delivered': 'Dostarczone',
+            'completed': 'Zrealizowane',
+            'cancelled': 'Anulowane',
+            'refunded': 'Zwrot',
+            'failed': 'Nieudane',
+            'on-hold': 'Wstrzymane',
+            'on_hold': 'Wstrzymane',
+            'trash': 'Usunięte',
+            'payment_accepted': 'Płatność zaakceptowana',
+            'payment_error': 'Błąd płatności',
+            'payment_received': 'Płatność przyjęta',
+            'awaiting_bankwire': 'Oczekiwanie na przelew',
+            'awaiting_check': 'Oczekiwanie na płatność czekiem',
+            'awaiting_cod': 'Oczekiwanie na płatność przy odbiorze',
+            'awaiting_payment': 'Oczekiwanie na płatność',
+            'order_pending_paid': 'Zamówienie oczekujące (opłacone)',
+            'order_pending_unpaid': 'Zamówienie oczekujące (nieopłacone)',
+            'partial_refund': 'Częściowy zwrot',
+            'partial_payment': 'Częściowa płatność',
+            'authorized_transfer': 'Autoryzacja — transfer przez sklep',
+            'awaiting_przelewy24': 'Oczekiwanie na Przelewy24',
+            'przelewy24_accepted': 'Płatność Przelewy24 przyjęta',
+            'payu_started': 'Płatność PayU rozpoczęta',
+            'payu_awaiting': 'PayU oczekuje na odbiór',
+            'payu_cancelled': 'PayU anulowana',
+        };
+        function getStatusPL(s) { return statusPL[s] || s || '—'; }
+
+        var html = '';
+        orders.forEach(function(o) {
+            var items = [];
+            try { items = JSON.parse(o.items_json || '[]'); } catch(e) {}
+
+            // Product names
+            var productHtml = '<div class="items-list">';
+            items.slice(0, 3).forEach(function(it) {
+                productHtml += '<span>' + it.qty + 'x ' + (it.name || '').substring(0, 50) + '</span>';
+            });
+            if (items.length > 3) productHtml += '<span>+ ' + (items.length - 3) + ' jeszcze...</span>';
+            productHtml += '</div>';
+
+            // Date
+            var dt = o.external_created || o.created_at || '';
+            if (dt) {
+                var d = new Date(dt);
+                dt = d.toLocaleDateString('pl-PL') + ' ' + d.toLocaleTimeString('pl-PL', {hour:'2-digit',minute:'2-digit'});
+            }
+
+            // Price breakdown: product_price + shipping
+            var shipCost = parseFloat(o.shipping_cost || 0);
+            var totalVal = parseFloat(o.total || 0);
+            var productPrice = totalVal - shipCost;
+            if (productPrice < 0) productPrice = totalVal;
+            var priceHtml = '<div class="price-breakdown"><b>' + fmtMoney(productPrice) + '</b>';
+            if (shipCost > 0) {
+                priceHtml += ' <span class="ship">+ ' + fmtMoney(shipCost) + ' dost.</span>';
+            }
+            priceHtml += '<br><span style="font-size:10px;color:#374151;">= ' + fmtMoney(totalVal) + ' PLN</span></div>';
+
+            // Address: city + full address
+            var addrParts = [];
+            if (o.customer_city) addrParts.push(o.customer_city);
+            if (o.customer_address) addrParts.push(o.customer_address);
+            if (o.customer_zip) addrParts.push(o.customer_zip);
+            var addrHtml = addrParts.join(', ') || '—';
+
+            // Comment (messageToSeller + NIP)
+            var commentHtml = (o.customer_comment || o.note || '—');
+
+            // Status in Polish
+            var statusLabel = getStatusPL(o.status);
+
+            var rowId = 'detail-' + (o.id || o.external_id);
+
+            html += '<tr class="order-row" onclick="toggleDetail(\'' + rowId + '\')">'
+                + '<td style="white-space:nowrap;">' + dt + '</td>'
+                + '<td>' + (o.product_type || '') + '</td>'
+                + '<td class="config-cell">' + (o.configuration || '') + '</td>'
+                + '<td>' + priceHtml + '</td>'
+                + '<td>' + productHtml + '</td>'
+                + '<td><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span></td>'
+                + '<td style="font-size:11px;">' + (o.payment_method || '—') + '</td>'
+                + '<td class="phone-cell">' + (o.customer_phone || '—') + '</td>'
+                + '<td class="address-cell">' + addrHtml + '</td>'
+                + '<td class="comment-cell">' + commentHtml + '</td>'
+                + '<td><span class="badge badge-' + o.source + '">' + o.source + '</span></td>'
+                + '<td class="seller-cell">' + (o.seller_account || '') + '</td>'
+                + '</tr>';
+
+            // --- Detail row (expandable) ---
+            var itemsTable = '<table><thead><tr><th>Produkt</th><th>SKU</th><th>Ilość</th><th>Cena</th></tr></thead><tbody>';
+            items.forEach(function(it) {
+                var fullName = it.full_name || it.name || '';
+                itemsTable += '<tr><td>' + fullName + '</td><td>' + (it.sku || '—') + '</td><td>' + it.qty + '</td><td>' + fmtMoney(it.price) + ' PLN</td></tr>';
+            });
+            itemsTable += '</tbody></table>';
+
+            html += '<tr class="detail-row" id="' + rowId + '"><td colspan="12"><div class="detail-panel">'
+                + '<div class="d-group"><div class="d-label">Klient</div><div class="d-value">' + (o.customer_name || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">Email</div><div class="d-value">' + (o.customer_email || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">Telefon</div><div class="d-value">' + (o.customer_phone || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">Adres</div><div class="d-value">' + addrHtml + '</div></div>'
+                + '<div class="d-group"><div class="d-label">Metoda wysyłki</div><div class="d-value">' + (o.shipping_method || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">Płatność</div><div class="d-value">' + (o.payment_method || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">Status</div><div class="d-value"><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span> (' + (o.status || '') + ')</div></div>'
+                + '<div class="d-group"><div class="d-label">ID zamówienia</div><div class="d-value">#' + (o.external_id || o.id) + '</div></div>'
+                + '<div class="d-group"><div class="d-label">Komentarz</div><div class="d-value">' + (o.customer_comment || o.note || '—') + '</div></div>'
+                + '<div class="d-items"><div class="d-label">Pozycje zamówienia</div>' + itemsTable + '</div>'
+                + '</div></td></tr>';
+        });
+        tbody.innerHTML = html;
+    }
+
+    function toggleDetail(id) {
+        var row = document.getElementById(id);
+        if (row) row.classList.toggle('open');
+    }
+
+    function renderPagination() {
+        var totalPages = Math.ceil(totalOrders / perPage);
+        var el = document.getElementById('pagination');
+        if (totalPages <= 1) { el.innerHTML = '<span class="info">Total: ' + totalOrders + '</span>'; return; }
+
+        var html = '<span class="info">Total: ' + fmt(totalOrders) + ' | Page ' + currentPage + ' of ' + totalPages + '</span>';
+        if (currentPage > 1) html += '<button onclick="loadOrders(' + (currentPage-1) + ')">← Prev</button>';
+        if (currentPage < totalPages) html += '<button onclick="loadOrders(' + (currentPage+1) + ')">Next →</button>';
+        el.innerHTML = html;
+    }
+
+    function exportCSV() {
+        var f = getFilters();
+        var url = '/api/orders/export?fmt=xlsx';
+        if (f.source) url += '&source=' + encodeURIComponent(f.source);
+        if (f.status) url += '&status=' + encodeURIComponent(f.status);
+        if (f.date_from) url += '&date_from=' + f.date_from;
+        if (f.date_to) url += '&date_to=' + f.date_to;
+        window.location.href = url;
+    }
+
+    function syncAll() {
+        var btn = document.getElementById('btn-sync');
+        btn.textContent = 'Syncing...';
+        btn.disabled = true;
+        fetch('/admin/sync').then(function(r) { return r.json(); }).then(function(d) {
+            btn.textContent = 'Sync';
+            btn.disabled = false;
+            // Перезагружаем через 5 сек (время на синк)
+            setTimeout(function() { loadOrders(currentPage); loadSyncInfo(); }, 5000);
+        });
+    }
+
+    function loadSyncInfo() {
+        fetch('/api/sync-log?limit=5').then(function(r) { return r.json(); }).then(function(d) {
+            var el = document.getElementById('sync-info');
+            if (!d.log || d.log.length === 0) {
+                el.innerHTML = 'Brak synchronizacji';
+                return;
+            }
+            var html = '';
+            d.log.slice(0, 3).forEach(function(s) {
+                var cls = s.status === 'ok' ? 'sync-ok' : (s.status === 'error' ? 'sync-error' : 'sync-running');
+                var dt = s.finished_at ? new Date(s.finished_at).toLocaleTimeString('pl-PL', {hour:'2-digit',minute:'2-digit'}) : '...';
+                html += '<span class="' + cls + '">' + s.source + ': ' + s.status;
+                if (s.orders_new) html += ' (+' + s.orders_new + ')';
+                html += ' ' + dt + '</span>  ';
+            });
+            el.innerHTML = html;
+        });
+    }
+
+    // Enter в поиске
+    document.getElementById('f-search').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') loadOrders(1);
+    });
+    </script>
+</body>
+</html>
