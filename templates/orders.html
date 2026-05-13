@@ -190,6 +190,7 @@
                             <th>Цена + доставка</th>
                             <th>Продукт</th>
                             <th>Статус</th>
+                            <th>Оплата</th>
                             <th>Телефон</th>
                             <th>Адрес</th>
                             <th>Комментарий</th>
@@ -198,7 +199,7 @@
                         </tr>
                     </thead>
                     <tbody id="orders-body">
-                        <tr><td colspan="11" class="empty">
+                        <tr><td colspan="12" class="empty">
                             <h4>Loading...</h4>
                         </td></tr>
                     </tbody>
@@ -280,7 +281,7 @@
     function renderOrders(orders) {
         var tbody = document.getElementById('orders-body');
         if (!orders || orders.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="11" class="empty"><h4>No orders</h4><p>Check filters or run sync</p></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" class="empty"><h4>No orders</h4><p>Check filters or run sync</p></td></tr>';
             return;
         }
 
@@ -369,6 +370,7 @@
                 + '<td>' + priceHtml + '</td>'
                 + '<td>' + productHtml + '</td>'
                 + '<td><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span></td>'
+                + '<td style="font-size:11px;">' + (o.payment_method || '—') + '</td>'
                 + '<td class="phone-cell">' + (o.customer_phone || '—') + '</td>'
                 + '<td class="address-cell">' + addrHtml + '</td>'
                 + '<td class="comment-cell">' + commentHtml + '</td>'
