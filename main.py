@@ -397,8 +397,24 @@ def _parse_woo_order(woo: dict) -> dict:
     billing = woo.get("billing", {})
     items = []
     for item in woo.get("line_items", []):
+        product_name = item.get("name", "")
+        # Append product attributes (Długość, Grubość, etc.) if not already in the name
+        meta_parts = []
+        for m in item.get("meta_data", []):
+            key = m.get("display_key") or m.get("key", "")
+            val = m.get("display_value") or m.get("value", "")
+            if not key or not val:
+                continue
+            # Skip internal WooCommerce meta keys (start with _)
+            if key.startswith("_"):
+                continue
+            # Only add if the value isn't already in the product name
+            if str(val).lower() not in product_name.lower():
+                meta_parts.append(f"{val}")
+        if meta_parts:
+            product_name = f"{product_name} ({', '.join(meta_parts)})"
         items.append({
-            "name": item.get("name", ""),
+            "name": product_name,
             "qty": item.get("quantity", 1),
             "price": item.get("total", "0"),
             "sku": item.get("sku", ""),
@@ -939,15 +955,19 @@ def _parse_allegro_order(form: dict) -> dict:
         buyer_name = address.get("firstName", "") + " " + address.get("lastName", "")
         buyer_name = buyer_name.strip()
 
-    # Items
+    # Items — use external.id (sygnatura) as the display name if available
     items = []
     for li in form.get("lineItems", []):
+        offer = li.get("offer") or {}
+        ext = offer.get("external") or {}
+        sygnatura = ext.get("id", "")
+        full_name = offer.get("name", "")
         items.append({
-            "name": li.get("offer", {}).get("name", ""),
+            "name": sygnatura if sygnatura else full_name,
+            "full_name": full_name,
             "qty": int(li.get("quantity", 1)),
             "price": str(li.get("price", {}).get("amount", "0")),
-            "sku": li.get("offer", {}).get("external", {}).get("id", "")
-                   or str(li.get("offer", {}).get("id", "")),
+            "sku": sygnatura or str(offer.get("id", "")),
         })
 
     # Total
@@ -980,10 +1000,23 @@ def _parse_allegro_order(form: dict) -> dict:
     }
     status = allegro_status_map.get(status_raw, status_raw.lower())
 
-    # Payment status can override
-    pay_status = (payment.get("type") or "").lower()
+    # Payment type → Polish label
+    allegro_payment_map = {
+        "CASH_ON_DELIVERY": "Płatność przy odbiorze",
+        "ONLINE": "Opłacone",
+        "TRANSFER": "Przelew",
+        "CARD": "Karta",
+        "INSTALLMENTS": "Raty",
+        "P24": "Przelewy24",
+        "SPLIT_PAYMENT": "Podzielona płatność",
+    }
+    pay_type_raw = (payment.get("type") or "").upper()
+    payment_label = allegro_payment_map.get(pay_type_raw, pay_type_raw)
+
+    # Payment status can override order status
+    pay_status = pay_type_raw.lower()
     paid_amount_obj = payment.get("paidAmount") or {}
-    if pay_status == "paid" or paid_amount_obj.get("amount"):
+    if pay_status == "paid" or pay_type_raw == "ONLINE" or paid_amount_obj.get("amount"):
         paid_amt = float(paid_amount_obj.get("amount", 0) or 0)
         if paid_amt >= total_amount and total_amount > 0:
             if status == "processing":
@@ -1024,7 +1057,7 @@ def _parse_allegro_order(form: dict) -> dict:
         "shipping_cost": ship_cost,
         "customer_comment": customer_comment,
         "seller_account": seller_account,
-        "payment_method": payment.get("type", ""),
+        "payment_method": payment_label,
         "shipping_method": delivery.get("method", {}).get("name", ""),
         "note": form.get("messageToSeller", ""),
         "external_created": ext_created,
@@ -1743,6 +1776,20 @@ async def api_sync_log(limit: int = Query(20)):
         )
 
     return JSONResponse({"log": [_safe_dict(r) for r in rows]})
+
+
+# ============================================================
+# === Утилита: массовое обновление seller_account ===
+# ============================================================
+
+@app.get("/admin/fix-seller-account")
+async def fix_seller_account():
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        res = await conn.execute(
+            "UPDATE orders SET seller_account='mantrade' WHERE source='allegro' AND (seller_account IS NULL OR seller_account='' OR seller_account='drogatrade')"
+        )
+    return JSONResponse({"ok": True, "updated": str(res)})
 
 
 # ============================================================
