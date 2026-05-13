@@ -1379,10 +1379,10 @@ async def export_orders(
 
     # Header row — same order as /orders table
     headers = [
-        "Дата", "Тип товара", "Комплектация",
-        "Цена товара", "Доставка", "Итого",
-        "Продукт", "Статус", "Телефон",
-        "Адрес", "Комментарий", "Источник", "Аккаунт"
+        "Data", "Typ towaru", "Konfiguracja",
+        "Cena towaru", "Dostawa", "Razem",
+        "Produkt", "Status", "Telefon",
+        "Adres", "Komentarz", "Źródło", "Konto"
     ]
     header_font = Font(name="Arial", bold=True, color="FFFFFF", size=11)
     header_fill = PatternFill("solid", fgColor="1a1a2e")
@@ -1720,6 +1720,48 @@ async def api_sync_log(limit: int = Query(20)):
         )
 
     return JSONResponse({"log": [_safe_dict(r) for r in rows]})
+
+
+# ============================================================
+# === Утилита: вытянуть статусы PrestaShop ===
+# ============================================================
+
+@app.get("/admin/presta-states")
+async def presta_states():
+    """Fetch order_states from both PrestaShop stores."""
+    results = {}
+    stores = [
+        ("oteko", "https://oteko.pl", os.getenv("PRESTA_OTEKO_KEY", "")),
+        ("cieplarnia", "https://cieplarnia.pl", os.getenv("PRESTA_CIEP_KEY", "")),
+    ]
+    async with aiohttp.ClientSession() as session:
+        for name, base_url, key in stores:
+            if not key:
+                results[name] = "no key"
+                continue
+            try:
+                auth = b64encode(f"{key}:".encode()).decode()
+                url = f"{base_url}/api/order_states?output_format=JSON&display=full"
+                async with session.get(url, headers={"Authorization": f"Basic {auth}"}, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        states_raw = data.get("order_states", [])
+                        mapped = {}
+                        for st in states_raw:
+                            sid = str(st.get("id", ""))
+                            # name может быть список (мультиязычность) или строка
+                            nm = st.get("name", "")
+                            if isinstance(nm, list):
+                                nm = nm[0].get("value", "") if nm else ""
+                            elif isinstance(nm, dict):
+                                nm = nm.get("value", "") or nm.get("language", "")
+                            mapped[sid] = nm
+                        results[name] = mapped
+                    else:
+                        results[name] = f"HTTP {resp.status}"
+            except Exception as e:
+                results[name] = str(e)
+    return JSONResponse(results)
 
 
 # ============================================================
