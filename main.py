@@ -1440,6 +1440,46 @@ async def add_manual_order(request: Request):
 
 
 # ============================================================
+# === API: Toggle exported status ===
+# ============================================================
+
+@app.post("/api/orders/toggle-exported")
+async def toggle_exported(request: Request):
+    """Toggle exported flag for an order."""
+    body = await request.json()
+    order_id = body.get("id")
+    exported = body.get("exported", False)
+    if not order_id:
+        return JSONResponse({"ok": False, "error": "no id"})
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE orders SET exported=$1, exported_at=$2 WHERE id=$3",
+            exported,
+            datetime.now(TZ) if exported else None,
+            int(order_id),
+        )
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/orders/mark-exported")
+async def mark_exported(request: Request):
+    """Mark multiple orders as exported (called after XLSX export)."""
+    body = await request.json()
+    ids = body.get("ids", [])
+    if not ids:
+        return JSONResponse({"ok": False, "error": "no ids"})
+    int_ids = [int(x) for x in ids if str(x).isdigit()]
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE orders SET exported=TRUE, exported_at=$1 WHERE id = ANY($2)",
+            datetime.now(TZ), int_ids,
+        )
+    return JSONResponse({"ok": True, "marked": len(int_ids)})
+
+
+# ============================================================
 # === API: Заказы (для таблицы + экспорт) ===
 # ============================================================
 
@@ -2018,6 +2058,9 @@ async def run_migration():
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_cost NUMERIC(10,2) DEFAULT 0",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS seller_account VARCHAR(200) DEFAULT ''",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_comment TEXT DEFAULT ''",
+            # v3 — exported flag (order picked up for delivery)
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS exported BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS exported_at TIMESTAMP",
         ]
         results = []
         for m in migrations:
