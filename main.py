@@ -1351,6 +1351,93 @@ async def api_orders_daily(
 
 
 # ============================================================
+# === API: Ручное добавление заказа ===
+# ============================================================
+
+@app.post("/api/orders/manual")
+async def add_manual_order(request: Request):
+    """Добавить заказ вручную. Не перезаписывается синком."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "invalid json"})
+
+    pool = await get_db_pool()
+
+    # Generate unique external_id for manual orders
+    import uuid
+    ext_id = f"manual-{uuid.uuid4().hex[:8]}"
+    source = body.get("source", "manual")
+
+    # Parse date
+    ext_created = None
+    if body.get("date"):
+        try:
+            ext_created = datetime.fromisoformat(body["date"])
+        except Exception:
+            ext_created = datetime.now(TZ)
+    else:
+        ext_created = datetime.now(TZ)
+
+    price = float(body.get("price", 0) or 0)
+    ship = float(body.get("shipping_cost", 0) or 0)
+    total = price + ship
+
+    items = [{
+        "name": body.get("product_name", ""),
+        "qty": 1,
+        "price": str(price),
+        "sku": "",
+    }]
+
+    order_data = {
+        "external_id": ext_id,
+        "status": body.get("status", "processing"),
+        "customer_name": body.get("customer_name", ""),
+        "customer_email": body.get("customer_email", ""),
+        "customer_phone": body.get("customer_phone", ""),
+        "customer_city": body.get("customer_city", ""),
+        "customer_zip": "",
+        "customer_address": body.get("customer_address", ""),
+        "total": total,
+        "currency": "PLN",
+        "items_count": 1,
+        "items_json": json.dumps(items, ensure_ascii=False),
+        "payment_method": body.get("payment_method", ""),
+        "shipping_method": "",
+        "note": body.get("comment", ""),
+        "external_created": ext_created,
+        "shipping_cost": ship,
+        "customer_comment": body.get("comment", ""),
+        "seller_account": body.get("seller_account", ""),
+        "product_type": body.get("product_type", ""),
+        "configuration": body.get("configuration", ""),
+    }
+
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO orders (
+                external_id, source, status, customer_name, customer_email,
+                customer_phone, customer_city, customer_zip, customer_address,
+                total, currency, items_count, items_json,
+                payment_method, shipping_method, note, external_created,
+                shipping_cost, seller_account, customer_comment,
+                product_type, configuration
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+        """,
+            ext_id, source,
+            order_data["status"], order_data["customer_name"], order_data["customer_email"],
+            order_data["customer_phone"], order_data["customer_city"], order_data["customer_zip"],
+            order_data["customer_address"], total, "PLN", 1, order_data["items_json"],
+            order_data["payment_method"], "", order_data["note"], ext_created,
+            ship, order_data["seller_account"], order_data["customer_comment"],
+            order_data["product_type"], order_data["configuration"],
+        )
+
+    return JSONResponse({"ok": True, "id": ext_id})
+
+
+# ============================================================
 # === API: Заказы (для таблицы + экспорт) ===
 # ============================================================
 
