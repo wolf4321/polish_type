@@ -15,4 +15,4 @@ aiohttp>=3.9.0
 # google-ads
 # google-analytics-data
 # google-api-python-client
-# openpyxl                    # Excel отчёты (для xlsx экспорта)
+openpyxl                       # Excel отчёты (для xlsx экспорта)
