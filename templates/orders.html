@@ -170,7 +170,7 @@
             <span style="color:#9ca3af;">—</span>
             <input type="date" id="f-to">
             <button class="btn-primary" onclick="loadOrders(1)">Filter</button>
-            <button class="btn-export" onclick="exportCSV()">Export CSV</button>
+            <button class="btn-export" onclick="exportCSV()">Export XLSX</button>
             <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Sync now">Sync</button>
         </div>
 
@@ -284,6 +284,29 @@
             return;
         }
 
+        // Polish status map
+        var statusPL = {
+            'pending': 'Oczekujące',
+            'pending_payment': 'Oczekiwanie na płatność',
+            'payment_accepted': 'Płatność zaakceptowana',
+            'processing': 'W realizacji',
+            'shipped': 'Wysłane',
+            'delivered': 'Dostarczone',
+            'completed': 'Zrealizowane',
+            'cancelled': 'Anulowane',
+            'refunded': 'Zwrot',
+            'failed': 'Nieudane',
+            'on-hold': 'Wstrzymane',
+            'on_hold': 'Wstrzymane',
+            'payment_error': 'Błąd płatności',
+            'on_backorder': 'Zamówienie wsteczne',
+            'awaiting_bankwire': 'Oczekiwanie na przelew',
+            'awaiting_cash': 'Oczekiwanie na gotówkę',
+            'awaiting_check': 'Oczekiwanie na czek',
+            'remote_payment': 'Płatność zdalna',
+        };
+        function getStatusPL(s) { return statusPL[s] || s || '—'; }
+
         var html = '';
         orders.forEach(function(o) {
             var items = [];
@@ -294,7 +317,7 @@
             items.slice(0, 3).forEach(function(it) {
                 productHtml += '<span>' + it.qty + 'x ' + (it.name || '').substring(0, 50) + '</span>';
             });
-            if (items.length > 3) productHtml += '<span>+ ' + (items.length - 3) + ' more...</span>';
+            if (items.length > 3) productHtml += '<span>+ ' + (items.length - 3) + ' jeszcze...</span>';
             productHtml += '</div>';
 
             // Date
@@ -311,7 +334,7 @@
             if (productPrice < 0) productPrice = totalVal;
             var priceHtml = '<div class="price-breakdown"><b>' + fmtMoney(productPrice) + '</b>';
             if (shipCost > 0) {
-                priceHtml += ' <span class="ship">+ ' + fmtMoney(shipCost) + ' ship</span>';
+                priceHtml += ' <span class="ship">+ ' + fmtMoney(shipCost) + ' dost.</span>';
             }
             priceHtml += '<br><span style="font-size:10px;color:#374151;">= ' + fmtMoney(totalVal) + ' PLN</span></div>';
 
@@ -325,13 +348,16 @@
             // Comment (messageToSeller + NIP)
             var commentHtml = (o.customer_comment || o.note || '—');
 
+            // Status in Polish
+            var statusLabel = getStatusPL(o.status);
+
             html += '<tr>'
                 + '<td style="white-space:nowrap;">' + dt + '</td>'
                 + '<td>' + (o.product_type || '') + '</td>'
                 + '<td class="config-cell">' + (o.configuration || '') + '</td>'
                 + '<td>' + priceHtml + '</td>'
                 + '<td>' + productHtml + '</td>'
-                + '<td><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + (o.status || '—') + '</span></td>'
+                + '<td><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span></td>'
                 + '<td class="phone-cell">' + (o.customer_phone || '—') + '</td>'
                 + '<td class="address-cell">' + addrHtml + '</td>'
                 + '<td class="comment-cell">' + commentHtml + '</td>'
@@ -355,7 +381,7 @@
 
     function exportCSV() {
         var f = getFilters();
-        var url = '/api/orders/export?fmt=csv';
+        var url = '/api/orders/export?fmt=xlsx';
         if (f.source) url += '&source=' + encodeURIComponent(f.source);
         if (f.status) url += '&status=' + encodeURIComponent(f.status);
         if (f.date_from) url += '&date_from=' + f.date_from;
