@@ -1006,7 +1006,7 @@ def _parse_allegro_order(form: dict) -> dict:
         customer_comment = f"{msg_to_seller}\n{nip}".strip() if msg_to_seller else nip
 
     # Seller account name (Allegro seller login)
-    seller_account = "drogatrade"  # Default for now
+    seller_account = "mantrade"  # Default for now
 
     return {
         "external_id": str(form.get("id", "")),
@@ -1403,7 +1403,7 @@ async def export_orders(
     headers = [
         "Data", "Typ towaru", "Konfiguracja",
         "Cena towaru", "Dostawa", "Razem",
-        "Produkt", "Status", "Telefon",
+        "Produkt", "Status", "Płatność", "Telefon",
         "Adres", "Komentarz", "Źródło", "Konto"
     ]
     header_font = Font(name="Arial", bold=True, color="FFFFFF", size=11)
@@ -1470,6 +1470,7 @@ async def export_orders(
             total_val,
             product_names,
             status_pl,
+            r.get("payment_method") or "",
             r["customer_phone"] or "",
             addr_str,
             comment,
@@ -1492,7 +1493,7 @@ async def export_orders(
             ws.cell(row=row_idx, column=money_col).number_format = '#,##0.00'
 
     # Column widths
-    col_widths = [18, 14, 16, 14, 12, 14, 45, 22, 16, 35, 30, 16, 14]
+    col_widths = [18, 14, 16, 14, 12, 14, 45, 22, 25, 16, 35, 30, 16, 14]
     for i, w in enumerate(col_widths, 1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
 
@@ -1500,7 +1501,7 @@ async def export_orders(
     ws.freeze_panes = "A2"
 
     # Auto-filter
-    ws.auto_filter.ref = f"A1:M{len(rows) + 1}"
+    ws.auto_filter.ref = f"A1:N{len(rows) + 1}"
 
     # Save to bytes
     output = io.BytesIO()
