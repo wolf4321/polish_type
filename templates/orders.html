@@ -99,6 +99,8 @@
 
         tr.order-row { cursor: pointer; }
         tr.order-row:hover td { background: #f0f4ff; }
+        tr.order-row.exported td { background: #ecfdf5; }
+        tr.order-row.exported:hover td { background: #d1fae5; }
         tr.detail-row { display: none; }
         tr.detail-row.open { display: table-row; }
         tr.detail-row td { background: #f9fafb; padding: 0; border-bottom: 2px solid #e5e7eb; }
@@ -239,10 +241,11 @@
                             <th>Комментарий</th>
                             <th>Источник</th>
                             <th>Аккаунт</th>
+                            <th style="width:30px;" title="Выгружено">&#10003;</th>
                         </tr>
                     </thead>
                     <tbody id="orders-body">
-                        <tr><td colspan="13" class="empty">
+                        <tr><td colspan="14" class="empty">
                             <h4>Loading...</h4>
                         </td></tr>
                     </tbody>
@@ -324,7 +327,7 @@
     function renderOrders(orders) {
         var tbody = document.getElementById('orders-body');
         if (!orders || orders.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="13" class="empty"><h4>No orders</h4><p>Check filters or run sync</p></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="14" class="empty"><h4>No orders</h4><p>Check filters or run sync</p></td></tr>';
             return;
         }
 
@@ -409,7 +412,10 @@
             var rowId = 'detail-' + (o.id || o.external_id);
             var orderId = o.id || '';
 
-            html += '<tr class="order-row">'
+            var isExported = o.exported ? true : false;
+            var exportedClass = isExported ? ' exported' : '';
+
+            html += '<tr class="order-row' + exportedClass + '" id="row-' + orderId + '">'
                 + '<td onclick="event.stopPropagation()"><input type="checkbox" class="order-check" data-id="' + orderId + '" onchange="updateSelCount()"></td>'
                 + '<td style="white-space:nowrap;" onclick="toggleDetail(\'' + rowId + '\')">' + dt + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + (o.product_type || '') + '</td>'
@@ -423,6 +429,7 @@
                 + '<td class="comment-cell" onclick="toggleDetail(\'' + rowId + '\')">' + commentHtml + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="badge badge-' + o.source + '">' + o.source + '</span></td>'
                 + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.seller_account || '') + '</td>'
+                + '<td onclick="event.stopPropagation()"><input type="checkbox" class="exported-check" data-id="' + orderId + '"' + (isExported ? ' checked' : '') + ' onchange="toggleExported(this)"></td>'
                 + '</tr>';
 
             // --- Detail row (expandable) ---
@@ -433,7 +440,7 @@
             });
             itemsTable += '</tbody></table>';
 
-            html += '<tr class="detail-row" id="' + rowId + '"><td colspan="13"><div class="detail-panel">'
+            html += '<tr class="detail-row" id="' + rowId + '"><td colspan="14"><div class="detail-panel">'
                 + '<div class="d-group"><div class="d-label">Klient</div><div class="d-value">' + (o.customer_name || '—') + '</div></div>'
                 + '<div class="d-group"><div class="d-label">Email</div><div class="d-value">' + (o.customer_email || '—') + '</div></div>'
                 + '<div class="d-group"><div class="d-label">Telefon</div><div class="d-value">' + (o.customer_phone || '—') + '</div></div>'
@@ -526,7 +533,37 @@
         var ids = [];
         checks.forEach(function(cb) { ids.push(cb.getAttribute('data-id')); });
         if (ids.length === 0) return;
+        // Download XLSX
         window.location.href = '/api/orders/export?ids=' + ids.join(',');
+        // Mark as exported in DB + update UI
+        fetch('/api/orders/mark-exported', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ids: ids})
+        }).then(function() {
+            // Update UI: green rows + check right-side checkboxes
+            ids.forEach(function(id) {
+                var row = document.getElementById('row-' + id);
+                if (row) row.classList.add('exported');
+                var expCb = row ? row.querySelector('.exported-check') : null;
+                if (expCb) expCb.checked = true;
+            });
+        });
+    }
+
+    function toggleExported(cb) {
+        var id = cb.getAttribute('data-id');
+        var exported = cb.checked;
+        var row = document.getElementById('row-' + id);
+        if (row) {
+            if (exported) { row.classList.add('exported'); }
+            else { row.classList.remove('exported'); }
+        }
+        fetch('/api/orders/toggle-exported', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: id, exported: exported})
+        });
     }
 
     // Enter в поиске
