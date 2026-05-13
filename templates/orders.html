@@ -41,6 +41,8 @@
         .btn-export:hover { background: #047857; }
         .btn-sync { background: #f59e0b; color: #fff; }
         .btn-sync:hover { background: #d97706; }
+        .btn-add { background: #7c3aed; color: #fff; }
+        .btn-add:hover { background: #6d28d9; }
         .btn-sync.spinning { animation: spin 1s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
 
@@ -112,6 +114,27 @@
         .sync-error { color: #dc2626; }
         .sync-running { color: #f59e0b; }
 
+        /* Modal */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                         background: rgba(0,0,0,.45); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-overlay.open { display: flex; }
+        .modal { background: #fff; border-radius: 12px; padding: 28px 32px; width: 600px; max-width: 95vw;
+                 max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 30px rgba(0,0,0,.15); }
+        .modal h3 { font-size: 18px; margin-bottom: 16px; color: #1a1a2e; }
+        .modal .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+        .modal .form-group { display: flex; flex-direction: column; }
+        .modal .form-group.full { grid-column: 1 / -1; }
+        .modal label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .3px; margin-bottom: 3px; }
+        .modal input, .modal select, .modal textarea { padding: 8px 10px; border: 1px solid #e5e7eb;
+                 border-radius: 6px; font-size: 13px; font-family: inherit; }
+        .modal textarea { resize: vertical; min-height: 50px; }
+        .modal .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+        .modal .btn-cancel { background: #f3f4f6; color: #374151; padding: 8px 20px; border: none;
+                 border-radius: 6px; cursor: pointer; font-size: 13px; }
+        .modal .btn-save { background: #7c3aed; color: #fff; padding: 8px 20px; border: none;
+                 border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+        .modal .btn-save:hover { background: #6d28d9; }
+
         @media (max-width: 768px) {
             .toolbar { flex-direction: column; }
             .toolbar input[type="text"] { width: 100%; }
@@ -168,6 +191,7 @@
                 <option value="oteko">oteko.pl</option>
                 <option value="cieplarnia">cieplarnia.pl</option>
                 <option value="allegro">Allegro</option>
+                <option value="manual">Ręczne</option>
             </select>
             <select id="f-status">
                 <option value="">All statuses</option>
@@ -186,6 +210,7 @@
             <button class="btn-primary" onclick="loadOrders(1)">Filter</button>
             <button class="btn-export" onclick="exportCSV()">Export XLSX</button>
             <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Sync now">Sync</button>
+            <button class="btn-add" onclick="openAddModal()" title="Dodaj zamówienie">+ Dodaj</button>
         </div>
 
         <!-- Таблица заказов -->
@@ -479,6 +504,144 @@
     document.getElementById('f-search').addEventListener('keydown', function(e) {
         if (e.key === 'Enter') loadOrders(1);
     });
+
+    // --- Add order modal ---
+    function openAddModal() {
+        document.getElementById('add-modal').classList.add('open');
+        // Default date = now
+        var now = new Date();
+        var dtStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-'
+            + String(now.getDate()).padStart(2,'0') + 'T' + String(now.getHours()).padStart(2,'0')
+            + ':' + String(now.getMinutes()).padStart(2,'0');
+        document.getElementById('m-date').value = dtStr;
+    }
+    function closeAddModal() {
+        document.getElementById('add-modal').classList.remove('open');
+    }
+    function saveManualOrder() {
+        var data = {
+            date: document.getElementById('m-date').value,
+            source: document.getElementById('m-source').value,
+            product_name: document.getElementById('m-product').value,
+            product_type: document.getElementById('m-type').value,
+            configuration: document.getElementById('m-config').value,
+            price: parseFloat(document.getElementById('m-price').value) || 0,
+            shipping_cost: parseFloat(document.getElementById('m-shipping').value) || 0,
+            status: document.getElementById('m-status').value,
+            payment_method: document.getElementById('m-payment').value,
+            customer_name: document.getElementById('m-name').value,
+            customer_phone: document.getElementById('m-phone').value,
+            customer_city: document.getElementById('m-city').value,
+            customer_address: document.getElementById('m-address').value,
+            customer_email: document.getElementById('m-email').value,
+            comment: document.getElementById('m-comment').value,
+            seller_account: document.getElementById('m-seller').value,
+        };
+        fetch('/api/orders/manual', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d.ok) {
+                closeAddModal();
+                loadOrders(1);
+            } else {
+                alert('Błąd: ' + (d.error || 'unknown'));
+            }
+        });
+    }
     </script>
+
+    <!-- Modal: add manual order -->
+    <div class="modal-overlay" id="add-modal" onclick="if(event.target===this)closeAddModal()">
+        <div class="modal">
+            <h3>Dodaj zamówienie ręcznie</h3>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Data</label>
+                    <input type="datetime-local" id="m-date">
+                </div>
+                <div class="form-group">
+                    <label>Źródło</label>
+                    <select id="m-source">
+                        <option value="manual">Ręczne</option>
+                        <option value="dobraszklarnia">dobraszklarnia.pl</option>
+                        <option value="oteko">oteko.pl</option>
+                        <option value="cieplarnia">cieplarnia.pl</option>
+                        <option value="allegro">Allegro</option>
+                        <option value="inne">Inne</option>
+                    </select>
+                </div>
+                <div class="form-group full">
+                    <label>Nazwa produktu</label>
+                    <input type="text" id="m-product" placeholder="np. Szklarnia Mocna 3x6m 6mm">
+                </div>
+                <div class="form-group">
+                    <label>Typ towaru</label>
+                    <input type="text" id="m-type" placeholder="Szklarnia / Poliwęglan">
+                </div>
+                <div class="form-group">
+                    <label>Konfiguracja</label>
+                    <input type="text" id="m-config" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label>Cena towaru (PLN)</label>
+                    <input type="number" step="0.01" id="m-price" placeholder="0.00">
+                </div>
+                <div class="form-group">
+                    <label>Dostawa (PLN)</label>
+                    <input type="number" step="0.01" id="m-shipping" value="0" placeholder="0.00">
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="m-status">
+                        <option value="processing">W realizacji</option>
+                        <option value="payment_accepted">Płatność zaakceptowana</option>
+                        <option value="completed">Zrealizowane</option>
+                        <option value="shipped">Wysłane</option>
+                        <option value="delivered">Dostarczone</option>
+                        <option value="pending">Oczekujące</option>
+                        <option value="cancelled">Anulowane</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Płatność</label>
+                    <input type="text" id="m-payment" placeholder="Gotówka / Przelew / Blik">
+                </div>
+                <div class="form-group">
+                    <label>Imię i nazwisko klienta</label>
+                    <input type="text" id="m-name" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label>Telefon</label>
+                    <input type="text" id="m-phone" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="m-email" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label>Miasto</label>
+                    <input type="text" id="m-city" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label>Adres</label>
+                    <input type="text" id="m-address" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label>Konto sprzedawcy</label>
+                    <input type="text" id="m-seller" placeholder="np. mantrade">
+                </div>
+                <div class="form-group full">
+                    <label>Komentarz</label>
+                    <textarea id="m-comment" placeholder=""></textarea>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button class="btn-cancel" onclick="closeAddModal()">Anuluj</button>
+                <button class="btn-save" onclick="saveManualOrder()">Zapisz zamówienie</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
