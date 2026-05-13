@@ -681,20 +681,22 @@ def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
         for row in order_rows:
             raw_name = row.get("product_name", "")
             # Clean PrestaShop product name: keep only Szerokość and Długość from params
+            # Use rsplit to find the LAST '(' — avoids matching e.g. "(mleczny)" in product name
             clean_name = raw_name
-            paren_match = _re.search(r'\((.+)\)', raw_name)
-            if paren_match:
-                base_name = raw_name[:paren_match.start()].strip()
-                params_str = paren_match.group(1)
-                kept = []
-                for param in params_str.split(' - '):
-                    param = param.strip()
-                    if param.lower().startswith('szeroko') or param.lower().startswith('długo'):
-                        kept.append(param)
-                if kept:
-                    clean_name = base_name + ' (' + ' - '.join(kept) + ')'
-                else:
-                    clean_name = base_name
+            if ' - ' in raw_name and '(' in raw_name:
+                last_paren = raw_name.rfind('(')
+                if last_paren > 0 and raw_name.endswith(')'):
+                    base_name = raw_name[:last_paren].strip()
+                    params_str = raw_name[last_paren+1:-1]
+                    kept = []
+                    for param in params_str.split(' - '):
+                        param = param.strip()
+                        if param.lower().startswith('szeroko') or param.lower().startswith('długo'):
+                            kept.append(param)
+                    if kept:
+                        clean_name = base_name + ' (' + ' - '.join(kept) + ')'
+                    else:
+                        clean_name = base_name
             items.append({
                 "name": clean_name,
                 "full_name": raw_name,
