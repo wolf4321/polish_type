@@ -1506,11 +1506,19 @@ async def export_orders(
     status: str = Query(None),
     date_from: str = Query(None),
     date_to:   str = Query(None),
-    fmt: str = Query("csv"),  # csv или xlsx (xlsx добавим позже)
+    ids: str = Query(None),
+    fmt: str = Query("csv"),
 ):
     pool = await get_db_pool()
     conditions = ["1=1"]
     params = []
+
+    # Export selected IDs (checkboxes)
+    if ids:
+        id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+        if id_list:
+            params.append(id_list)
+            conditions.append(f"id = ANY(${len(params)})")
 
     if source:
         params.append(source)
