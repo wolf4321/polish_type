@@ -1779,6 +1779,51 @@ async def api_sync_log(limit: int = Query(20)):
 
 
 # ============================================================
+# === Утилита: debug — raw WooCommerce order data ===
+# ============================================================
+
+@app.get("/admin/woo-debug")
+async def woo_debug(order_id: str = Query(None)):
+    """Show raw WooCommerce line_items with meta_data for debugging."""
+    if not WOO_KEY or not WOO_SECRET:
+        return JSONResponse({"error": "no woo keys"})
+    async with aiohttp.ClientSession() as session:
+        if order_id:
+            url = f"{WOO_URL}/wp-json/wc/v3/orders/{order_id}"
+        else:
+            url = f"{WOO_URL}/wp-json/wc/v3/orders?per_page=3&orderby=date&order=desc"
+        auth = aiohttp.BasicAuth(WOO_KEY, WOO_SECRET)
+        async with session.get(url, auth=auth, ssl=False) as resp:
+            data = await resp.json(content_type=None)
+    # Extract only line_items for clarity
+    if isinstance(data, list):
+        result = []
+        for o in data:
+            result.append({
+                "id": o.get("id"),
+                "line_items": [{
+                    "name": li.get("name"),
+                    "sku": li.get("sku"),
+                    "meta_data": li.get("meta_data", []),
+                    "variation_id": li.get("variation_id"),
+                    "product_id": li.get("product_id"),
+                } for li in o.get("line_items", [])]
+            })
+        return JSONResponse(result)
+    else:
+        return JSONResponse({
+            "id": data.get("id"),
+            "line_items": [{
+                "name": li.get("name"),
+                "sku": li.get("sku"),
+                "meta_data": li.get("meta_data", []),
+                "variation_id": li.get("variation_id"),
+                "product_id": li.get("product_id"),
+            } for li in data.get("line_items", [])]
+        })
+
+
+# ============================================================
 # === Утилита: массовое обновление seller_account ===
 # ============================================================
 
