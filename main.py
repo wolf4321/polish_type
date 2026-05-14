@@ -1453,6 +1453,30 @@ async def add_manual_order(request: Request):
 
 
 # ============================================================
+# === API: Update order comment ===
+# ============================================================
+
+@app.post("/api/orders/update-comment")
+async def update_order_comment(request: Request):
+    """Update comment for any order."""
+    user = await get_current_user(request)
+    if not user or user["role"] not in ("owner", "manager"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    body = await request.json()
+    order_id = body.get("id")
+    comment = body.get("comment", "")
+    if not order_id:
+        return JSONResponse({"ok": False, "error": "no id"})
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE orders SET customer_comment=$1 WHERE id=$2",
+            comment, int(order_id),
+        )
+    return JSONResponse({"ok": True})
+
+
+# ============================================================
 # === API: Toggle exported status ===
 # ============================================================
 
@@ -1518,6 +1542,14 @@ async def api_orders(
     pool = await get_db_pool()
     conditions = ["1=1"]
     params = []
+
+    # Filter by allowed sources for this user
+    user_sources = user.get("allowed_sources", "all") if user else "all"
+    if user_sources and user_sources != "all":
+        src_list = [s.strip() for s in user_sources.split(",") if s.strip()]
+        if src_list:
+            params.append(src_list)
+            conditions.append(f"source = ANY(${len(params)})")
 
     if source:
         params.append(source)
@@ -2111,6 +2143,8 @@ async def run_migration(request: Request):
             # v3 — exported flag (order picked up for delivery)
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS exported BOOLEAN DEFAULT FALSE",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS exported_at TIMESTAMP",
+            # v4 — user source access
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_sources TEXT DEFAULT 'all'",
         ]
         results = []
         for m in migrations:
