@@ -9,13 +9,10 @@ import os
 import hashlib
 import secrets
 from datetime import datetime
-from zoneinfo import ZoneInfo
-
 from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-TZ = ZoneInfo("Europe/Warsaw")
 templates = Jinja2Templates(directory="templates")
 auth_router = APIRouter()
 
@@ -104,7 +101,7 @@ async def _create_session(user_id: int) -> str:
         )
         await conn.execute(
             "UPDATE users SET last_login=$1 WHERE id=$2",
-            datetime.now(TZ), user_id,
+            datetime.now(), user_id,
         )
     return token
 
