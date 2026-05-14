@@ -153,7 +153,8 @@
         <div class="navbar-links">
             <a href="/">Dashboard</a>
             <a href="/orders" class="active">Orders</a>
-            {% if user %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
+            {% if user and user.role == 'owner' %}<a href="/admin/users">Users</a>{% endif %}
+            {% if user %}<span style="color:#6b7280;font-size:12px;">{{ user.name }}</span><a href="/logout">Wyloguj</a>{% else %}<a href="/login">Login</a>{% endif %}
         </div>
     </div>
 
@@ -212,10 +213,12 @@
             <span style="color:#9ca3af;">—</span>
             <input type="date" id="f-to">
             <button class="btn-primary" onclick="loadOrders(1)">Filter</button>
+            {% if user and user.role in ('owner', 'manager') %}
             <button class="btn-export" onclick="exportCSV()">Export XLSX</button>
             <button class="btn-export-sel" onclick="exportSelected()" id="btn-export-sel" style="display:none;">Eksport zaznaczonych (<span id="sel-count">0</span>)</button>
             <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Sync now">Sync</button>
             <button class="btn-add" onclick="openAddModal()" title="Dodaj zamówienie">+ Dodaj</button>
+            {% endif %}
         </div>
 
         <!-- Таблица заказов -->
@@ -256,6 +259,7 @@
     </div>
 
     <script>
+    var userRole = '{{ user.role if user else "" }}';
     var currentPage = 1;
     var perPage = 50;
     var totalOrders = 0;
@@ -480,6 +484,8 @@
         if (f.date_from) url += '&date_from=' + f.date_from;
         if (f.date_to) url += '&date_to=' + f.date_to;
         window.location.href = url;
+        // Backend auto-marks exported — reload table after short delay to show green rows
+        setTimeout(function() { loadOrders(currentPage); }, 2000);
     }
 
     function syncAll() {
@@ -533,22 +539,10 @@
         var ids = [];
         checks.forEach(function(cb) { ids.push(cb.getAttribute('data-id')); });
         if (ids.length === 0) return;
-        // Download XLSX
+        // Download XLSX — backend auto-marks as exported
         window.location.href = '/api/orders/export?ids=' + ids.join(',');
-        // Mark as exported in DB + update UI
-        fetch('/api/orders/mark-exported', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ids: ids})
-        }).then(function() {
-            // Update UI: green rows + check right-side checkboxes
-            ids.forEach(function(id) {
-                var row = document.getElementById('row-' + id);
-                if (row) row.classList.add('exported');
-                var expCb = row ? row.querySelector('.exported-check') : null;
-                if (expCb) expCb.checked = true;
-            });
-        });
+        // Reload table after short delay to show green rows + checked right-side boxes
+        setTimeout(function() { loadOrders(currentPage); }, 2000);
     }
 
     function toggleExported(cb) {
