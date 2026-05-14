@@ -92,6 +92,8 @@
         .price-breakdown .ship { font-size: 10px; color: #6b7280; }
         .comment-cell { font-size: 11px; color: #4b5563; max-width: 180px;
                          white-space: pre-wrap; word-break: break-word; }
+        .editable-comment { cursor: pointer; border-bottom: 1px dashed #d1d5db; padding-bottom: 1px; }
+        .editable-comment:hover { background: #fef9c3; }
         .address-cell { font-size: 11px; color: #4b5563; max-width: 180px; }
         .phone-cell { font-size: 12px; white-space: nowrap; }
         .config-cell { font-size: 11px; color: #9ca3af; font-style: italic; }
@@ -430,7 +432,7 @@
                 + '<td style="font-size:11px;" onclick="toggleDetail(\'' + rowId + '\')">' + (o.payment_method || '—') + '</td>'
                 + '<td class="phone-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.customer_phone || '—') + '</td>'
                 + '<td class="address-cell" onclick="toggleDetail(\'' + rowId + '\')">' + addrHtml + '</td>'
-                + '<td class="comment-cell" onclick="toggleDetail(\'' + rowId + '\')">' + commentHtml + '</td>'
+                + '<td class="comment-cell" onclick="event.stopPropagation()"><span class="editable-comment" data-id="' + orderId + '" onclick="editComment(this)" title="Kliknij, aby edytować">' + commentHtml + '</span></td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="badge badge-' + o.source + '">' + o.source + '</span></td>'
                 + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.seller_account || '') + '</td>'
                 + '<td onclick="event.stopPropagation()"><input type="checkbox" class="exported-check" data-id="' + orderId + '"' + (isExported ? ' checked' : '') + ' onchange="toggleExported(this)"></td>'
@@ -557,6 +559,22 @@
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({id: id, exported: exported})
+        });
+    }
+
+    // --- Editable comment ---
+    function editComment(span) {
+        if (userRole !== 'owner' && userRole !== 'manager') return;
+        var id = span.getAttribute('data-id');
+        var currentText = span.textContent === '—' ? '' : span.textContent;
+        var newText = prompt('Komentarz:', currentText);
+        if (newText === null) return; // cancelled
+        fetch('/api/orders/update-comment', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: id, comment: newText})
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d.ok) span.textContent = newText || '—';
         });
     }
 
