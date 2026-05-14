@@ -35,7 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from auth import auth_router, get_current_user
+from auth import auth_router, get_current_user, require_user, require_role, set_db_pool, init_auth_tables
 
 
 # ============================================================
@@ -110,7 +110,11 @@ async def lifespan(app: FastAPI):
         print(f"[startup] All env var names: {list(os.environ.keys())}")
 
     pool = await get_db_pool()
+    set_db_pool(pool)  # share pool with auth module
     async with pool.acquire() as conn:
+        # Auth tables (users, sessions)
+        await init_auth_tables(conn)
+
         # Таблица лидов (из форм, звонков)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS leads (
@@ -1204,6 +1208,8 @@ async def sync_allegro(full=False):
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     user = await get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
     pool = await get_db_pool()
 
     async with pool.acquire() as conn:
@@ -1257,6 +1263,10 @@ async def index(request: Request):
 @app.get("/orders", response_class=HTMLResponse)
 async def orders_page(request: Request):
     user = await get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user["role"] == "viewer":
+        return RedirectResponse("/", status_code=302)
     return templates.TemplateResponse(
         request=request,
         name="orders.html",
@@ -1359,6 +1369,9 @@ async def api_orders_daily(
 @app.post("/api/orders/manual")
 async def add_manual_order(request: Request):
     """Добавить заказ вручную. Не перезаписывается синком."""
+    user = await get_current_user(request)
+    if not user or user["role"] not in ("owner", "manager"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
     try:
         body = await request.json()
     except Exception:
@@ -1446,6 +1459,9 @@ async def add_manual_order(request: Request):
 @app.post("/api/orders/toggle-exported")
 async def toggle_exported(request: Request):
     """Toggle exported flag for an order."""
+    user = await get_current_user(request)
+    if not user or user["role"] not in ("owner", "manager", "logistics"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
     body = await request.json()
     order_id = body.get("id")
     exported = body.get("exported", False)
@@ -1485,6 +1501,7 @@ async def mark_exported(request: Request):
 
 @app.get("/api/orders")
 async def api_orders(
+    request: Request,
     limit:  int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     source: str = Query(None),
@@ -1493,6 +1510,11 @@ async def api_orders(
     date_from: str = Query(None),
     date_to:   str = Query(None),
 ):
+    user = await get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    if user["role"] == "viewer":
+        return JSONResponse({"error": "Access denied"}, status_code=403)
     pool = await get_db_pool()
     conditions = ["1=1"]
     params = []
@@ -1530,9 +1552,20 @@ async def api_orders(
             *params[:-2]
         )
 
+    orders = [_safe_dict(r) for r in rows]
+
+    # Logistics role: hide prices and phone numbers
+    if user and user.get("role") == "logistics":
+        for o in orders:
+            o["total"] = None
+            o["shipping_cost"] = None
+            o["customer_phone"] = None
+            o["customer_email"] = None
+
     return JSONResponse({
         "total": total,
-        "orders": [_safe_dict(r) for r in rows],
+        "orders": orders,
+        "user_role": user["role"] if user else None,
     })
 
 
@@ -1542,6 +1575,7 @@ async def api_orders(
 
 @app.get("/api/orders/export")
 async def export_orders(
+    request: Request,
     source: str = Query(None),
     status: str = Query(None),
     date_from: str = Query(None),
@@ -1549,6 +1583,9 @@ async def export_orders(
     ids: str = Query(None),
     fmt: str = Query("csv"),
 ):
+    user = await get_current_user(request)
+    if not user or user["role"] not in ("owner", "manager"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
     pool = await get_db_pool()
     conditions = ["1=1"]
     params = []
@@ -1580,6 +1617,13 @@ async def export_orders(
             f"SELECT * FROM orders WHERE {where} ORDER BY COALESCE(external_created, created_at) DESC",
             *params
         )
+        # Auto-mark exported orders
+        if rows:
+            exported_ids = [r["id"] for r in rows]
+            await conn.execute(
+                "UPDATE orders SET exported=TRUE, exported_at=$1 WHERE id = ANY($2)",
+                datetime.now(TZ), exported_ids,
+            )
 
     # --- XLSX export (openpyxl) ---
     from openpyxl import Workbook
@@ -1901,8 +1945,11 @@ async def webhook_woo(request: Request):
 # ============================================================
 
 @app.get("/admin/sync")
-async def manual_sync(source: str = Query(None), full: bool = Query(False)):
+async def manual_sync(request: Request, source: str = Query(None), full: bool = Query(False)):
     """Ручной запуск синхронизации. /admin/sync?source=allegro&full=true"""
+    user = await get_current_user(request)
+    if not user or user["role"] not in ("owner", "manager"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
     if source == "dobraszklarnia":
         asyncio.create_task(sync_woocommerce(full=full))
         return JSONResponse({"ok": True, "message": f"WooCommerce sync started (full={full})"})
@@ -2042,7 +2089,10 @@ async def presta_states():
 # ============================================================
 
 @app.get("/admin/migrate")
-async def run_migration():
+async def run_migration(request: Request):
+    user = await get_current_user(request)
+    if not user or user["role"] != "owner":
+        return JSONResponse({"error": "Owner access required"}, status_code=403)
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         migrations = [
