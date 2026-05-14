@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Zarządzanie użytkownikami — EKOMAT</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+               background: #f3f4f6; color: #1f2937; }
+
+        .navbar { background: #1a1a2e; color: #fff; padding: 12px 24px;
+                  display: flex; align-items: center; justify-content: space-between; }
+        .navbar h1 { font-size: 16px; font-weight: 600; }
+        .navbar-links { display: flex; gap: 16px; align-items: center; }
+        .navbar a { color: #a5b4fc; font-size: 13px; text-decoration: none; }
+        .navbar a:hover { color: #fff; }
+        .navbar a.active { color: #fff; font-weight: 600; border-bottom: 2px solid #a5b4fc; padding-bottom: 2px; }
+
+        .container { max-width: 1000px; margin: 0 auto; padding: 24px; }
+
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .page-header h2 { font-size: 20px; color: #1a1a2e; }
+
+        .btn { padding: 8px 18px; border: none; border-radius: 8px; font-size: 13px;
+               cursor: pointer; font-weight: 500; }
+        .btn-add { background: #7c3aed; color: #fff; }
+        .btn-add:hover { background: #6d28d9; }
+        .btn-save { background: #059669; color: #fff; }
+        .btn-save:hover { background: #047857; }
+        .btn-cancel { background: #e5e7eb; color: #374151; }
+        .btn-cancel:hover { background: #d1d5db; }
+        .btn-delete { background: #dc2626; color: #fff; font-size: 12px; padding: 5px 12px; }
+        .btn-delete:hover { background: #b91c1c; }
+        .btn-edit { background: #2563eb; color: #fff; font-size: 12px; padding: 5px 12px; }
+        .btn-edit:hover { background: #1d4ed8; }
+        .btn-toggle { font-size: 12px; padding: 5px 12px; border: 1px solid #e5e7eb; background: #fff;
+                      border-radius: 6px; cursor: pointer; }
+
+        .card { background: #fff; border-radius: 10px; padding: 20px;
+                box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; padding: 10px 12px; border-bottom: 2px solid #e5e7eb;
+             color: #6b7280; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+        td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+        tr:hover td { background: #f9fafb; }
+
+        .badge { display: inline-block; padding: 3px 10px; border-radius: 12px;
+                 font-size: 11px; font-weight: 600; text-transform: uppercase; }
+        .badge-owner { background: #fef3c7; color: #92400e; }
+        .badge-manager { background: #dbeafe; color: #1e40af; }
+        .badge-logistics { background: #d1fae5; color: #065f46; }
+        .badge-viewer { background: #f3f4f6; color: #6b7280; }
+
+        .status-active { color: #059669; }
+        .status-inactive { color: #dc2626; }
+
+        .actions { display: flex; gap: 6px; }
+
+        /* Modal */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                         background: rgba(0,0,0,.4); z-index: 100; align-items: center; justify-content: center; }
+        .modal-overlay.open { display: flex; }
+        .modal { background: #fff; border-radius: 12px; padding: 28px; width: 420px;
+                 box-shadow: 0 8px 30px rgba(0,0,0,.15); }
+        .modal h3 { font-size: 18px; margin-bottom: 20px; color: #1a1a2e; }
+        .modal label { display: block; font-size: 13px; color: #6b7280; margin-bottom: 4px; font-weight: 500; }
+        .modal input, .modal select { width: 100%; padding: 9px 12px; border: 1px solid #e5e7eb;
+                                       border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+        .info-text { font-size: 12px; color: #9ca3af; margin-top: 16px; }
+        .user-email { color: #6b7280; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h1>EKOMAT Dashboard</h1>
+        <div class="navbar-links">
+            <a href="/">Dashboard</a>
+            <a href="/orders">Orders</a>
+            <a href="/admin/users" class="active">Users</a>
+            <span style="color:#6b7280;font-size:12px;">{{ user.name }} ({{ user.role }})</span>
+            <a href="/logout">Wyloguj</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="page-header">
+            <h2>Zarządzanie użytkownikami</h2>
+            <button class="btn btn-add" onclick="openModal()">+ Dodaj użytkownika</button>
+        </div>
+
+        <div class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Użytkownik</th>
+                        <th>Rola</th>
+                        <th>Status</th>
+                        <th>Ostatnie logowanie</th>
+                        <th>Utworzony</th>
+                        <th>Akcje</th>
+                    </tr>
+                </thead>
+                <tbody id="users-table">
+                    <tr><td colspan="6" style="text-align:center;color:#9ca3af;">Ładowanie...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="info-text">
+            Tylko właściciel (owner) może dodawać, edytować i usuwać użytkowników.
+        </div>
+    </div>
+
+    <!-- Add / Edit User Modal -->
+    <div class="modal-overlay" id="user-modal">
+        <div class="modal">
+            <h3 id="modal-title">Dodaj użytkownika</h3>
+            <input type="hidden" id="edit-id" value="">
+            <label>Imię i nazwisko</label>
+            <input type="text" id="f-name" placeholder="Jan Kowalski">
+            <label>Email</label>
+            <input type="email" id="f-email" placeholder="jan@ekomat.pl">
+            <label>Rola</label>
+            <select id="f-role">
+                <option value="manager">Menedżer — pełny dostęp do zamówień</option>
+                <option value="logistics">Logistyka — zamówienia bez cen i telefonów</option>
+                <option value="viewer">Podgląd — tylko dashboard</option>
+                <option value="owner">Właściciel — pełny dostęp + zarządzanie</option>
+            </select>
+            <label id="lbl-password">Hasło</label>
+            <input type="text" id="f-password" placeholder="min. 4 znaki">
+            <div id="pw-hint" style="font-size:11px;color:#9ca3af;margin-top:-10px;margin-bottom:14px;display:none;">
+                Pozostaw puste, aby nie zmieniać hasła
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-cancel" onclick="closeModal()">Anuluj</button>
+                <button class="btn btn-save" onclick="saveUser()">Zapisz</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    var roleLabels = {owner:'Właściciel', manager:'Menedżer', logistics:'Logistyka', viewer:'Podgląd'};
+    var roleBadge = {owner:'badge-owner', manager:'badge-manager', logistics:'badge-logistics', viewer:'badge-viewer'};
+
+    function loadUsers() {
+        fetch('/api/users').then(function(r){return r.json()}).then(function(d){
+            var tb = document.getElementById('users-table');
+            if (!d.users || d.users.length === 0) {
+                tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#9ca3af;">Brak użytkowników</td></tr>';
+                return;
+            }
+            var html = '';
+            d.users.forEach(function(u){
+                var lastLogin = u.last_login ? new Date(u.last_login).toLocaleString('pl-PL') : '—';
+                var created = u.created_at ? new Date(u.created_at).toLocaleDateString('pl-PL') : '—';
+                var statusClass = u.is_active ? 'status-active' : 'status-inactive';
+                var statusText = u.is_active ? 'Aktywny' : 'Nieaktywny';
+                html += '<tr>'
+                    + '<td><strong>' + u.name + '</strong><br><span class="user-email">' + u.email + '</span></td>'
+                    + '<td><span class="badge ' + (roleBadge[u.role]||'') + '">' + (roleLabels[u.role]||u.role) + '</span></td>'
+                    + '<td class="' + statusClass + '">' + statusText + '</td>'
+                    + '<td>' + lastLogin + '</td>'
+                    + '<td>' + created + '</td>'
+                    + '<td class="actions">'
+                    + '<button class="btn-edit" onclick="editUser(' + u.id + ',\'' + u.name.replace(/'/g,"\\'") + '\',\'' + u.email + '\',\'' + u.role + '\',' + u.is_active + ')">Edytuj</button>'
+                    + (u.role !== 'owner' ? ' <button class="btn-toggle" onclick="toggleActive(' + u.id + ',' + u.is_active + ')">' + (u.is_active ? 'Wyłącz' : 'Włącz') + '</button>' : '')
+                    + (u.role !== 'owner' ? ' <button class="btn-delete" onclick="deleteUser(' + u.id + ',\'' + u.name.replace(/'/g,"\\'") + '\')">Usuń</button>' : '')
+                    + '</td>'
+                    + '</tr>';
+            });
+            tb.innerHTML = html;
+        });
+    }
+
+    function openModal() {
+        document.getElementById('edit-id').value = '';
+        document.getElementById('modal-title').textContent = 'Dodaj użytkownika';
+        document.getElementById('f-name').value = '';
+        document.getElementById('f-email').value = '';
+        document.getElementById('f-email').disabled = false;
+        document.getElementById('f-role').value = 'manager';
+        document.getElementById('f-password').value = '';
+        document.getElementById('f-password').placeholder = 'min. 4 znaki';
+        document.getElementById('pw-hint').style.display = 'none';
+        document.getElementById('user-modal').classList.add('open');
+    }
+
+    function editUser(id, name, email, role, isActive) {
+        document.getElementById('edit-id').value = id;
+        document.getElementById('modal-title').textContent = 'Edytuj użytkownika';
+        document.getElementById('f-name').value = name;
+        document.getElementById('f-email').value = email;
+        document.getElementById('f-email').disabled = true;
+        document.getElementById('f-role').value = role;
+        document.getElementById('f-password').value = '';
+        document.getElementById('f-password').placeholder = 'nowe hasło (opcjonalnie)';
+        document.getElementById('pw-hint').style.display = 'block';
+        document.getElementById('user-modal').classList.add('open');
+    }
+
+    function closeModal() {
+        document.getElementById('user-modal').classList.remove('open');
+    }
+
+    function saveUser() {
+        var editId = document.getElementById('edit-id').value;
+        var data = {
+            name: document.getElementById('f-name').value.trim(),
+            email: document.getElementById('f-email').value.trim(),
+            role: document.getElementById('f-role').value,
+            password: document.getElementById('f-password').value
+        };
+        if (!data.name || !data.email) { alert('Wypełnij imię i email'); return; }
+
+        if (editId) {
+            // Edit existing
+            fetch('/api/users/' + editId, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            }).then(function(r){
+                if (!r.ok) return r.json().then(function(d){ alert(d.detail || 'Błąd'); throw 'err'; });
+                closeModal(); loadUsers();
+            }).catch(function(){});
+        } else {
+            // Create new
+            if (!data.password || data.password.length < 4) { alert('Hasło musi mieć min. 4 znaki'); return; }
+            fetch('/api/users', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            }).then(function(r){
+                if (!r.ok) return r.json().then(function(d){ alert(d.detail || 'Błąd'); throw 'err'; });
+                closeModal(); loadUsers();
+            }).catch(function(){});
+        }
+    }
+
+    function toggleActive(id, currentlyActive) {
+        var newStatus = !currentlyActive;
+        var msg = newStatus ? 'Aktywować tego użytkownika?' : 'Dezaktywować tego użytkownika? Straci dostęp.';
+        if (!confirm(msg)) return;
+        fetch('/api/users/' + id, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({is_active: newStatus})
+        }).then(function(){ loadUsers(); });
+    }
+
+    function deleteUser(id, name) {
+        if (!confirm('Na pewno usunąć użytkownika "' + name + '"? To nieodwracalne.')) return;
+        fetch('/api/users/' + id, {
+            method: 'DELETE'
+        }).then(function(){ loadUsers(); });
+    }
+
+    // Load on start
+    loadUsers();
+    </script>
+</body>
+</html>
