@@ -114,15 +114,27 @@ async def get_current_user(request: Request) -> dict | None:
         return None
     pool = await _get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            SELECT u.id, u.email, u.name, u.role, u.is_active, u.allowed_sources
-            FROM user_sessions s
-            JOIN users u ON u.id = s.user_id
-            WHERE s.token = $1 AND u.is_active = TRUE
-        """, token)
+        # Try with allowed_sources, fall back without if column doesn't exist yet
+        try:
+            row = await conn.fetchrow("""
+                SELECT u.id, u.email, u.name, u.role, u.is_active, u.allowed_sources
+                FROM user_sessions s
+                JOIN users u ON u.id = s.user_id
+                WHERE s.token = $1 AND u.is_active = TRUE
+            """, token)
+        except Exception:
+            row = await conn.fetchrow("""
+                SELECT u.id, u.email, u.name, u.role, u.is_active
+                FROM user_sessions s
+                JOIN users u ON u.id = s.user_id
+                WHERE s.token = $1 AND u.is_active = TRUE
+            """, token)
     if not row:
         return None
-    return dict(row)
+    d = dict(row)
+    if "allowed_sources" not in d:
+        d["allowed_sources"] = "all"
+    return d
 
 
 async def require_user(request: Request) -> dict:
