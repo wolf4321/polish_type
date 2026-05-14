@@ -57,6 +57,7 @@ async def init_auth_tables(conn):
             name         VARCHAR(200) NOT NULL,
             pw_hash      VARCHAR(200),
             role         VARCHAR(20) NOT NULL DEFAULT 'viewer',
+            allowed_sources TEXT DEFAULT 'all',
             is_active    BOOLEAN DEFAULT TRUE,
             invited_by   INTEGER REFERENCES users(id),
             created_at   TIMESTAMP DEFAULT NOW(),
@@ -114,7 +115,7 @@ async def get_current_user(request: Request) -> dict | None:
     pool = await _get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
-            SELECT u.id, u.email, u.name, u.role, u.is_active
+            SELECT u.id, u.email, u.name, u.role, u.is_active, u.allowed_sources
             FROM user_sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token = $1 AND u.is_active = TRUE
@@ -213,7 +214,7 @@ async def api_list_users(request: Request):
     pool = await _get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT id, email, name, role, is_active, created_at, last_login FROM users ORDER BY id"
+            "SELECT id, email, name, role, allowed_sources, is_active, created_at, last_login FROM users ORDER BY id"
         )
     users = []
     for r in rows:
@@ -222,6 +223,7 @@ async def api_list_users(request: Request):
             "email": r["email"],
             "name": r["name"],
             "role": r["role"],
+            "allowed_sources": r.get("allowed_sources", "all"),
             "is_active": r["is_active"],
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
             "last_login": r["last_login"].isoformat() if r["last_login"] else None,
@@ -241,6 +243,7 @@ async def api_create_user(request: Request):
     name = data.get("name", "").strip()
     role = data.get("role", "viewer")
     password = data.get("password", "")
+    allowed_sources = data.get("allowed_sources", "all")
 
     if not email or not name:
         raise HTTPException(400, "Email and name are required")
@@ -255,9 +258,9 @@ async def api_create_user(request: Request):
         if exists:
             raise HTTPException(409, "User with this email already exists")
         user_id = await conn.fetchval(
-            """INSERT INTO users (email, name, pw_hash, role, invited_by)
-               VALUES ($1, $2, $3, $4, $5) RETURNING id""",
-            email, name, _hash_pw(password), role, owner["id"],
+            """INSERT INTO users (email, name, pw_hash, role, allowed_sources, invited_by)
+               VALUES ($1, $2, $3, $4, $5, $6) RETURNING id""",
+            email, name, _hash_pw(password), role, allowed_sources, owner["id"],
         )
     return JSONResponse({"ok": True, "id": user_id})
 
@@ -281,13 +284,14 @@ async def api_update_user(user_id: int, request: Request):
         name = data.get("name", user["name"]).strip()
         role = data.get("role", user["role"])
         is_active = data.get("is_active", user["is_active"])
+        allowed_sources = data.get("allowed_sources", user.get("allowed_sources", "all"))
 
         if role not in ROLES:
             raise HTTPException(400, f"Invalid role: {role}")
 
         await conn.execute(
-            "UPDATE users SET name=$1, role=$2, is_active=$3 WHERE id=$4",
-            name, role, is_active, user_id,
+            "UPDATE users SET name=$1, role=$2, is_active=$3, allowed_sources=$4 WHERE id=$5",
+            name, role, is_active, allowed_sources, user_id,
         )
 
         # If password provided — update it
