@@ -1472,7 +1472,7 @@ async def toggle_exported(request: Request):
         await conn.execute(
             "UPDATE orders SET exported=$1, exported_at=$2 WHERE id=$3",
             exported,
-            datetime.now(TZ) if exported else None,
+            datetime.now() if exported else None,
             int(order_id),
         )
     return JSONResponse({"ok": True})
@@ -1490,7 +1490,7 @@ async def mark_exported(request: Request):
     async with pool.acquire() as conn:
         await conn.execute(
             "UPDATE orders SET exported=TRUE, exported_at=$1 WHERE id = ANY($2)",
-            datetime.now(TZ), int_ids,
+            datetime.now(), int_ids,
         )
     return JSONResponse({"ok": True, "marked": len(int_ids)})
 
@@ -1622,7 +1622,7 @@ async def export_orders(
             exported_ids = [r["id"] for r in rows]
             await conn.execute(
                 "UPDATE orders SET exported=TRUE, exported_at=$1 WHERE id = ANY($2)",
-                datetime.now(TZ), exported_ids,
+                datetime.now(), exported_ids,
             )
 
     # --- XLSX export (openpyxl) ---
