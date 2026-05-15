@@ -35,7 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from auth import auth_router, get_current_user, require_user, require_role, set_db_pool, init_auth_tables
+from auth import auth_router, get_current_user, require_user, has_perm, set_db_pool, init_auth_tables
 
 
 # ============================================================
@@ -1265,7 +1265,7 @@ async def orders_page(request: Request):
     user = await get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=302)
-    if user["role"] == "viewer":
+    if not has_perm(user, "orders"):
         return RedirectResponse("/", status_code=302)
     return templates.TemplateResponse(
         request=request,
@@ -1370,7 +1370,7 @@ async def api_orders_daily(
 async def add_manual_order(request: Request):
     """Добавить заказ вручную. Не перезаписывается синком."""
     user = await get_current_user(request)
-    if not user or user["role"] not in ("owner", "manager"):
+    if not user or not has_perm(user, "add_orders"):
         return JSONResponse({"error": "Access denied"}, status_code=403)
     try:
         body = await request.json()
@@ -1460,7 +1460,7 @@ async def add_manual_order(request: Request):
 async def update_order_comment(request: Request):
     """Update comment for any order."""
     user = await get_current_user(request)
-    if not user or user["role"] not in ("owner", "manager"):
+    if not user or not has_perm(user, "edit_comments"):
         return JSONResponse({"error": "Access denied"}, status_code=403)
     body = await request.json()
     order_id = body.get("id")
@@ -1484,7 +1484,7 @@ async def update_order_comment(request: Request):
 async def toggle_exported(request: Request):
     """Toggle exported flag for an order."""
     user = await get_current_user(request)
-    if not user or user["role"] not in ("owner", "manager", "logistics"):
+    if not user or not has_perm(user, "mark_delivery"):
         return JSONResponse({"error": "Access denied"}, status_code=403)
     body = await request.json()
     order_id = body.get("id")
@@ -1537,7 +1537,7 @@ async def api_orders(
     user = await get_current_user(request)
     if not user:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    if user["role"] == "viewer":
+    if not has_perm(user, "orders"):
         return JSONResponse({"error": "Access denied"}, status_code=403)
     pool = await get_db_pool()
     conditions = ["1=1"]
@@ -1586,18 +1586,22 @@ async def api_orders(
 
     orders = [_safe_dict(r) for r in rows]
 
-    # Logistics role: hide prices and phone numbers
-    if user and user.get("role") == "logistics":
+    # Hide prices if no "prices" permission
+    if not has_perm(user, "prices"):
         for o in orders:
             o["total"] = None
             o["shipping_cost"] = None
+
+    # Hide phones if no "phones" permission
+    if not has_perm(user, "phones"):
+        for o in orders:
             o["customer_phone"] = None
             o["customer_email"] = None
 
     return JSONResponse({
         "total": total,
         "orders": orders,
-        "user_role": user["role"] if user else None,
+        "permissions": user.get("permissions", ""),
     })
 
 
@@ -1616,7 +1620,7 @@ async def export_orders(
     fmt: str = Query("csv"),
 ):
     user = await get_current_user(request)
-    if not user or user["role"] not in ("owner", "manager"):
+    if not user or not has_perm(user, "export"):
         return JSONResponse({"error": "Access denied"}, status_code=403)
     pool = await get_db_pool()
     conditions = ["1=1"]
@@ -1980,7 +1984,7 @@ async def webhook_woo(request: Request):
 async def manual_sync(request: Request, source: str = Query(None), full: bool = Query(False)):
     """Ручной запуск синхронизации. /admin/sync?source=allegro&full=true"""
     user = await get_current_user(request)
-    if not user or user["role"] not in ("owner", "manager"):
+    if not user or not has_perm(user, "sync"):
         return JSONResponse({"error": "Access denied"}, status_code=403)
     if source == "dobraszklarnia":
         asyncio.create_task(sync_woocommerce(full=full))
@@ -2123,8 +2127,8 @@ async def presta_states():
 @app.get("/admin/migrate")
 async def run_migration(request: Request):
     user = await get_current_user(request)
-    if not user or user["role"] != "owner":
-        return JSONResponse({"error": "Owner access required"}, status_code=403)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Admin access required"}, status_code=403)
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         migrations = [
@@ -2145,6 +2149,8 @@ async def run_migration(request: Request):
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS exported_at TIMESTAMP",
             # v4 — user source access
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_sources TEXT DEFAULT 'all'",
+            # v5 — permission-based access
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT DEFAULT ''",
         ]
         results = []
         for m in migrations:
