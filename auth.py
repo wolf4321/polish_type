@@ -97,6 +97,16 @@ async def init_auth_tables(conn):
         )
     """)
 
+    # Migrate: add columns that may not exist yet (for existing DBs)
+    for col_migration in [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_sources TEXT DEFAULT 'all'",
+    ]:
+        try:
+            await conn.execute(col_migration)
+        except Exception:
+            pass  # column already exists or other benign error
+
     # Bootstrap: create owner if no users exist
     count = await conn.fetchval("SELECT COUNT(*) FROM users")
     if count == 0:
