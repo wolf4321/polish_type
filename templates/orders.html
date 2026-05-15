@@ -155,7 +155,7 @@
         <div class="navbar-links">
             <a href="/">Dashboard</a>
             <a href="/orders" class="active">Orders</a>
-            {% if user and user.role == 'owner' %}<a href="/admin/users">Users</a>{% endif %}
+            {% if user and 'manage_users' in (user.permissions or '').split(',') %}<a href="/admin/users">Users</a>{% endif %}
             {% if user %}<span style="color:#6b7280;font-size:12px;">{{ user.name }}</span><a href="/logout">Wyloguj</a>{% else %}<a href="/login">Login</a>{% endif %}
         </div>
     </div>
@@ -215,10 +215,14 @@
             <span style="color:#9ca3af;">—</span>
             <input type="date" id="f-to">
             <button class="btn-primary" onclick="loadOrders(1)">Filter</button>
-            {% if user and user.role in ('owner', 'manager') %}
+            {% if user and 'export' in (user.permissions or '').split(',') %}
             <button class="btn-export" onclick="exportCSV()">Export XLSX</button>
             <button class="btn-export-sel" onclick="exportSelected()" id="btn-export-sel" style="display:none;">Eksport zaznaczonych (<span id="sel-count">0</span>)</button>
+            {% endif %}
+            {% if user and 'sync' in (user.permissions or '').split(',') %}
             <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Sync now">Sync</button>
+            {% endif %}
+            {% if user and 'add_orders' in (user.permissions or '').split(',') %}
             <button class="btn-add" onclick="openAddModal()" title="Dodaj zamówienie">+ Dodaj</button>
             {% endif %}
         </div>
@@ -261,7 +265,8 @@
     </div>
 
     <script>
-    var userRole = '{{ user.role if user else "" }}';
+    var userPerms = '{{ user.permissions if user else "" }}'.split(',');
+    function hasPerm(p) { return userPerms.indexOf(p) !== -1; }
     var currentPage = 1;
     var perPage = 50;
     var totalOrders = 0;
@@ -564,7 +569,7 @@
 
     // --- Editable comment ---
     function editComment(span) {
-        if (userRole !== 'owner' && userRole !== 'manager') return;
+        if (!hasPerm('edit_comments')) return;
         var id = span.getAttribute('data-id');
         var currentText = span.textContent === '—' ? '' : span.textContent;
         var newText = prompt('Komentarz:', currentText);
