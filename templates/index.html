@@ -75,8 +75,8 @@
         <h1>EKOMAT Dashboard</h1>
         <div class="navbar-links">
             <a href="/" class="active">Dashboard</a>
-            {% if user and user.role != 'viewer' %}<a href="/orders">Orders</a>{% endif %}
-            {% if user and user.role == 'owner' %}<a href="/admin/users">Users</a>{% endif %}
+            {% if user and 'orders' in (user.permissions or '').split(',') %}<a href="/orders">Orders</a>{% endif %}
+            {% if user and 'manage_users' in (user.permissions or '').split(',') %}<a href="/admin/users">Users</a>{% endif %}
             {% if user %}<span style="color:#6b7280;font-size:12px;">{{ user.name }}</span><a href="/logout">Wyloguj</a>{% else %}<a href="/login">Login</a>{% endif %}
         </div>
     </div>
@@ -89,7 +89,7 @@
                 <div class="value">{{ total_orders }}</div>
                 <div class="sub">+{{ today_orders }} today</div>
             </div>
-            {% if user and user.role in ('owner', 'manager') %}
+            {% if user and 'prices' in (user.permissions or '').split(',') %}
             <div class="stat-card">
                 <div class="label">Revenue (PLN)</div>
                 <div class="value">{{ "{:,.0f}".format(total_revenue).replace(",", " ") }}</div>
