@@ -1,7 +1,7 @@
 """
-auth.py — Role-based auth for EKOMAT Dashboard.
-Roles: owner, manager, logistics, viewer.
-Login via email + password.  Users managed by owner only.
+auth.py — Permission-based auth for EKOMAT Dashboard.
+Each user has a set of permissions (checkboxes).
+Owner manages users and assigns permissions.
 Sessions stored in DB (survive restarts).
 """
 
@@ -16,14 +16,21 @@ from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory="templates")
 auth_router = APIRouter()
 
-# ── Roles ──
-ROLES = ("owner", "manager", "logistics", "viewer")
-ROLE_LABELS = {
-    "owner":     "Właściciel",
-    "manager":   "Menedżer",
-    "logistics": "Logistyka",
-    "viewer":    "Podgląd",
-}
+# ── All available permissions ──
+ALL_PERMISSIONS = [
+    ("dashboard",     "Dashboard",              "Widzi dashboard ze statystykami"),
+    ("orders",        "Zamówienia",             "Widzi tabelę zamówień"),
+    ("prices",        "Ceny i przychody",       "Widzi ceny, koszty dostawy, przychody"),
+    ("phones",        "Telefony klientów",      "Widzi numery telefonów"),
+    ("export",        "Eksport XLSX",           "Może eksportować zamówienia"),
+    ("sync",          "Synchronizacja",         "Może uruchamiać sync"),
+    ("add_orders",    "Dodawanie zamówień",     "Może dodawać zamówienia ręcznie"),
+    ("edit_comments", "Edycja komentarzy",      "Może edytować komentarze"),
+    ("mark_delivery", "Oznaczanie dostawy",     "Może oznaczać zamówienia jako dostarczone"),
+    ("manage_users",  "Zarządzanie użytkownikami", "Może dodawać/edytować/usuwać użytkowników"),
+]
+
+OWNER_PERMS = ",".join(p[0] for p in ALL_PERMISSIONS)
 
 # ── DB pool (shared with main.py — injected at startup) ──
 _pool = None
@@ -44,6 +51,22 @@ def _hash_pw(password: str) -> str:
     return hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
 
 
+# ── Permission helpers ──
+def parse_perms(perms_str: str) -> set:
+    """Parse comma-separated permissions string into a set."""
+    if not perms_str:
+        return set()
+    return {p.strip() for p in perms_str.split(",") if p.strip()}
+
+
+def has_perm(user: dict, perm: str) -> bool:
+    """Check if user has a specific permission."""
+    if not user:
+        return False
+    perms = parse_perms(user.get("permissions", ""))
+    return perm in perms
+
+
 # ============================================================
 # DB Init — create tables for users & sessions
 # ============================================================
@@ -57,6 +80,7 @@ async def init_auth_tables(conn):
             name         VARCHAR(200) NOT NULL,
             pw_hash      VARCHAR(200),
             role         VARCHAR(20) NOT NULL DEFAULT 'viewer',
+            permissions  TEXT DEFAULT '',
             allowed_sources TEXT DEFAULT 'all',
             is_active    BOOLEAN DEFAULT TRUE,
             invited_by   INTEGER REFERENCES users(id),
@@ -80,11 +104,17 @@ async def init_auth_tables(conn):
         owner_pw = os.getenv("OWNER_PASSWORD", "admin")
         owner_name = os.getenv("OWNER_NAME", "Admin")
         await conn.execute(
-            """INSERT INTO users (email, name, pw_hash, role)
-               VALUES ($1, $2, $3, 'owner')""",
-            owner_email, owner_name, _hash_pw(owner_pw),
+            """INSERT INTO users (email, name, pw_hash, role, permissions)
+               VALUES ($1, $2, $3, 'owner', $4)""",
+            owner_email, owner_name, _hash_pw(owner_pw), OWNER_PERMS,
         )
         print(f"[auth] Bootstrap owner created: {owner_email}")
+    else:
+        # Ensure existing owners have all permissions
+        await conn.execute(
+            "UPDATE users SET permissions=$1 WHERE role='owner'",
+            OWNER_PERMS,
+        )
 
 
 # ============================================================
@@ -92,7 +122,6 @@ async def init_auth_tables(conn):
 # ============================================================
 
 async def _create_session(user_id: int) -> str:
-    """Create a session token for user, store in DB."""
     token = secrets.token_hex(32)
     pool = await _get_pool()
     async with pool.acquire() as conn:
@@ -108,16 +137,16 @@ async def _create_session(user_id: int) -> str:
 
 
 async def get_current_user(request: Request) -> dict | None:
-    """Get current user from session cookie. Returns dict with id, email, name, role."""
+    """Get current user from session cookie."""
     token = request.cookies.get("session_token")
     if not token:
         return None
     pool = await _get_pool()
     async with pool.acquire() as conn:
-        # Try with allowed_sources, fall back without if column doesn't exist yet
         try:
             row = await conn.fetchrow("""
-                SELECT u.id, u.email, u.name, u.role, u.is_active, u.allowed_sources
+                SELECT u.id, u.email, u.name, u.role, u.is_active,
+                       u.permissions, u.allowed_sources
                 FROM user_sessions s
                 JOIN users u ON u.id = s.user_id
                 WHERE s.token = $1 AND u.is_active = TRUE
@@ -132,24 +161,17 @@ async def get_current_user(request: Request) -> dict | None:
     if not row:
         return None
     d = dict(row)
+    if "permissions" not in d:
+        d["permissions"] = OWNER_PERMS if d.get("role") == "owner" else ""
     if "allowed_sources" not in d:
         d["allowed_sources"] = "all"
     return d
 
 
 async def require_user(request: Request) -> dict:
-    """Require authenticated user. Redirects to /login if not found."""
     user = await get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return user
-
-
-async def require_role(request: Request, *roles) -> dict:
-    """Require user with specific role(s)."""
-    user = await require_user(request)
-    if user["role"] not in roles:
-        raise HTTPException(status_code=403, detail="Access denied")
     return user
 
 
@@ -171,7 +193,7 @@ async def login_post(request: Request, email: str = Form(...), password: str = F
     pool = await _get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT id, pw_hash, role, is_active FROM users WHERE email=$1",
+            "SELECT id, pw_hash, is_active FROM users WHERE email=$1",
             email,
         )
     if not row or row["pw_hash"] != _hash_pw(password):
@@ -184,7 +206,6 @@ async def login_post(request: Request, email: str = Form(...), password: str = F
             request=request, name="login.html",
             context={"error": "Konto jest nieaktywne. Skontaktuj się z właścicielem."},
         )
-
     token = await _create_session(row["id"])
     resp = RedirectResponse("/", status_code=302)
     resp.set_cookie("session_token", token, httponly=True, max_age=86400 * 30)
@@ -204,29 +225,29 @@ async def logout(request: Request):
 
 
 # ============================================================
-# User Management API (owner only)
+# User Management API (manage_users permission required)
 # ============================================================
 
 @auth_router.get("/admin/users", response_class=HTMLResponse)
 async def admin_users_page(request: Request):
     user = await get_current_user(request)
-    if not user or user["role"] != "owner":
+    if not user or not has_perm(user, "manage_users"):
         return RedirectResponse("/login", status_code=302)
     return templates.TemplateResponse(
         request=request, name="admin_users.html",
-        context={"user": user, "roles": ROLES, "role_labels": ROLE_LABELS},
+        context={"user": user, "all_permissions": ALL_PERMISSIONS},
     )
 
 
 @auth_router.get("/api/users")
 async def api_list_users(request: Request):
     user = await get_current_user(request)
-    if not user or user["role"] != "owner":
-        raise HTTPException(403, "Only owner can manage users")
+    if not user or not has_perm(user, "manage_users"):
+        raise HTTPException(403, "Access denied")
     pool = await _get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT id, email, name, role, allowed_sources, is_active, created_at, last_login FROM users ORDER BY id"
+            "SELECT id, email, name, role, permissions, is_active, created_at, last_login FROM users ORDER BY id"
         )
     users = []
     for r in rows:
@@ -234,8 +255,8 @@ async def api_list_users(request: Request):
             "id": r["id"],
             "email": r["email"],
             "name": r["name"],
-            "role": r["role"],
-            "allowed_sources": r.get("allowed_sources", "all"),
+            "role": r.get("role", ""),
+            "permissions": r.get("permissions", ""),
             "is_active": r["is_active"],
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
             "last_login": r["last_login"].isoformat() if r["last_login"] else None,
@@ -245,24 +266,24 @@ async def api_list_users(request: Request):
 
 @auth_router.post("/api/users")
 async def api_create_user(request: Request):
-    """Owner creates a new user."""
+    """Create a new user with specific permissions."""
     owner = await get_current_user(request)
-    if not owner or owner["role"] != "owner":
-        raise HTTPException(403, "Only owner can add users")
+    if not owner or not has_perm(owner, "manage_users"):
+        raise HTTPException(403, "Access denied")
 
     data = await request.json()
     email = (data.get("email") or "").strip().lower()
     name = data.get("name", "").strip()
-    role = data.get("role", "viewer")
     password = data.get("password", "")
-    allowed_sources = data.get("allowed_sources", "all")
+    permissions = data.get("permissions", "")
 
     if not email or not name:
         raise HTTPException(400, "Email and name are required")
-    if role not in ROLES:
-        raise HTTPException(400, f"Invalid role: {role}")
     if not password or len(password) < 4:
         raise HTTPException(400, "Password must be at least 4 characters")
+
+    # Determine role from permissions
+    role = "owner" if "manage_users" in permissions else "user"
 
     pool = await _get_pool()
     async with pool.acquire() as conn:
@@ -270,20 +291,20 @@ async def api_create_user(request: Request):
         if exists:
             raise HTTPException(409, "User with this email already exists")
         user_id = await conn.fetchval(
-            """INSERT INTO users (email, name, pw_hash, role, allowed_sources, invited_by)
+            """INSERT INTO users (email, name, pw_hash, role, permissions, invited_by)
                VALUES ($1, $2, $3, $4, $5, $6) RETURNING id""",
-            email, name, _hash_pw(password), role, allowed_sources, owner["id"],
+            email, name, _hash_pw(password), role, permissions, owner["id"],
         )
     return JSONResponse({"ok": True, "id": user_id})
 
 
 @auth_router.put("/api/users/{user_id}")
 async def api_update_user(user_id: int, request: Request):
-    """Owner updates user role, name, active status."""
-    owner = await get_current_user(request)
-    if not owner or owner["role"] != "owner":
-        raise HTTPException(403, "Only owner can edit users")
-    if user_id == owner["id"]:
+    """Update user permissions, name, active status."""
+    caller = await get_current_user(request)
+    if not caller or not has_perm(caller, "manage_users"):
+        raise HTTPException(403, "Access denied")
+    if user_id == caller["id"]:
         raise HTTPException(400, "Cannot edit your own account here")
 
     data = await request.json()
@@ -294,16 +315,14 @@ async def api_update_user(user_id: int, request: Request):
             raise HTTPException(404, "User not found")
 
         name = data.get("name", user["name"]).strip()
-        role = data.get("role", user["role"])
         is_active = data.get("is_active", user["is_active"])
-        allowed_sources = data.get("allowed_sources", user.get("allowed_sources", "all"))
+        permissions = data.get("permissions", user.get("permissions", ""))
 
-        if role not in ROLES:
-            raise HTTPException(400, f"Invalid role: {role}")
+        role = "owner" if "manage_users" in permissions else "user"
 
         await conn.execute(
-            "UPDATE users SET name=$1, role=$2, is_active=$3, allowed_sources=$4 WHERE id=$5",
-            name, role, is_active, allowed_sources, user_id,
+            "UPDATE users SET name=$1, role=$2, is_active=$3, permissions=$4 WHERE id=$5",
+            name, role, is_active, permissions, user_id,
         )
 
         # If password provided — update it
@@ -323,13 +342,11 @@ async def api_update_user(user_id: int, request: Request):
 
 @auth_router.delete("/api/users/{user_id}")
 async def api_delete_user(user_id: int, request: Request):
-    """Owner deletes a user."""
-    owner = await get_current_user(request)
-    if not owner or owner["role"] != "owner":
-        raise HTTPException(403, "Only owner can delete users")
-    if user_id == owner["id"]:
+    caller = await get_current_user(request)
+    if not caller or not has_perm(caller, "manage_users"):
+        raise HTTPException(403, "Access denied")
+    if user_id == caller["id"]:
         raise HTTPException(400, "Cannot delete your own account")
-
     pool = await _get_pool()
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM user_sessions WHERE user_id=$1", user_id)
@@ -343,7 +360,6 @@ async def api_delete_user(user_id: int, request: Request):
 
 @auth_router.post("/api/me/password")
 async def api_change_password(request: Request):
-    """Any user can change their own password."""
     user = await get_current_user(request)
     if not user:
         raise HTTPException(401, "Not authenticated")
