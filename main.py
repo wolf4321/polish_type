@@ -58,15 +58,37 @@ PRESTA_OTEKO_KEY = os.getenv("PRESTA_OTEKO_KEY", "")
 PRESTA_CIEP_URL  = os.getenv("PRESTA_CIEP_URL", "https://cieplarnia.pl")
 PRESTA_CIEP_KEY  = os.getenv("PRESTA_CIEP_KEY", "")
 
-# Allegro — drogatrade
-ALLEGRO_CLIENT_ID     = os.getenv("ALLEGRO_CLIENT_ID", "")
-ALLEGRO_CLIENT_SECRET = os.getenv("ALLEGRO_CLIENT_SECRET", "")
-ALLEGRO_REFRESH_TOKEN = os.getenv("ALLEGRO_REFRESH_TOKEN", "")
-ALLEGRO_API_URL       = "https://api.allegro.pl"
-ALLEGRO_AUTH_URL      = "https://allegro.pl/auth/oauth/token"
+# Allegro — multi-account support
+# Account 1: ALLEGRO_CLIENT_ID / ALLEGRO_CLIENT_SECRET / ALLEGRO_REFRESH_TOKEN / ALLEGRO_SELLER_NAME
+# Account 2: ALLEGRO2_CLIENT_ID / ALLEGRO2_CLIENT_SECRET / ALLEGRO2_REFRESH_TOKEN / ALLEGRO2_SELLER_NAME
+# ... up to ALLEGRO10_*
+ALLEGRO_API_URL  = "https://api.allegro.pl"
+ALLEGRO_AUTH_URL = "https://allegro.pl/auth/oauth/token"
 
-# In-memory token cache for Allegro
-_allegro_token = {"access_token": "", "expires_at": 0}
+def _load_allegro_accounts():
+    """Load all Allegro accounts from env vars."""
+    accounts = []
+    # First account: ALLEGRO_* (no number)
+    prefixes = [("ALLEGRO", "")] + [(f"ALLEGRO{i}", str(i)) for i in range(2, 11)]
+    for prefix, suffix in prefixes:
+        cid = os.getenv(f"{prefix}_CLIENT_ID", "")
+        csecret = os.getenv(f"{prefix}_CLIENT_SECRET", "")
+        rt = os.getenv(f"{prefix}_REFRESH_TOKEN", "")
+        name = os.getenv(f"{prefix}_SELLER_NAME", f"allegro{suffix}" if suffix else "mantrade")
+        if cid and csecret:
+            accounts.append({
+                "name": name,
+                "client_id": cid,
+                "client_secret": csecret,
+                "refresh_token": rt,
+                "prefix": prefix,
+            })
+    return accounts
+
+ALLEGRO_ACCOUNTS = _load_allegro_accounts()
+
+# In-memory token cache per account: { "account_name": {"access_token": ..., "expires_at": ..., "refresh_token": ...} }
+_allegro_tokens = {}
 
 # Bitrix24 (фаза 3 — пока закомментировано)
 # BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL")
@@ -216,7 +238,8 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(sync_presta_ciep, CronTrigger(minute="*/15"), id="sync_ciep", replace_existing=True)
     scheduler.add_job(sync_allegro, CronTrigger(minute="*/15"), id="sync_allegro", replace_existing=True)
     scheduler.start()
-    print("[startup] scheduler started — syncing every 15 min (woo + oteko + ciep + allegro)")
+    allegro_names = [a["name"] for a in ALLEGRO_ACCOUNTS]
+    print(f"[startup] scheduler started — syncing every 15 min (woo + oteko + ciep + allegro x{len(ALLEGRO_ACCOUNTS)}: {allegro_names})")
 
     yield
 
@@ -859,53 +882,64 @@ async def sync_presta_ciep(full=False):
 
 import time as _time
 
-async def _allegro_db_get_refresh_token():
-    """Read the latest refresh token from DB (survives restarts)."""
+async def _allegro_db_get_refresh_token(account_name: str):
+    """Read the latest refresh token for a specific account from DB."""
     try:
         pool = await get_db_pool()
+        db_key = f"allegro_refresh_token_{account_name}"
         async with pool.acquire() as conn:
+            # Try new key format first, fallback to old format for backward compat
             row = await conn.fetchval(
-                "SELECT value FROM app_settings WHERE key='allegro_refresh_token'"
+                "SELECT value FROM app_settings WHERE key=$1", db_key
             )
+            if not row and account_name == "mantrade":
+                row = await conn.fetchval(
+                    "SELECT value FROM app_settings WHERE key='allegro_refresh_token'"
+                )
             return row
     except Exception:
         return None
 
 
-async def _allegro_db_save_refresh_token(token: str):
-    """Save new refresh token to DB so it survives restarts."""
+async def _allegro_db_save_refresh_token(account_name: str, token: str):
+    """Save new refresh token for a specific account to DB."""
     try:
         pool = await get_db_pool()
+        db_key = f"allegro_refresh_token_{account_name}"
         async with pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO app_settings (key, value, updated_at)
-                VALUES ('allegro_refresh_token', $1, NOW())
-                ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()
-            """, token)
+                VALUES ($1, $2, NOW())
+                ON CONFLICT (key) DO UPDATE SET value=$2, updated_at=NOW()
+            """, db_key, token)
     except Exception as e:
-        print(f"[allegro] WARNING: could not save refresh_token to DB: {e}")
+        print(f"[allegro:{account_name}] WARNING: could not save refresh_token to DB: {e}")
 
 
-async def _allegro_get_token(session: aiohttp.ClientSession) -> str:
-    """Get a valid Allegro access token, refreshing if needed."""
-    global _allegro_token
+async def _allegro_get_token(session: aiohttp.ClientSession, account: dict) -> str:
+    """Get a valid Allegro access token for a specific account, refreshing if needed."""
+    global _allegro_tokens
 
+    name = account["name"]
     now = _time.time()
-    if _allegro_token["access_token"] and _allegro_token["expires_at"] > now + 60:
-        return _allegro_token["access_token"]
 
-    # Priority: memory → DB → env var
+    # Check cache
+    cached = _allegro_tokens.get(name, {})
+    if cached.get("access_token") and cached.get("expires_at", 0) > now + 60:
+        return cached["access_token"]
+
+    # Priority: memory cache → DB → env var
     current_rt = (
-        _allegro_token.get("refresh_token")
-        or await _allegro_db_get_refresh_token()
-        or ALLEGRO_REFRESH_TOKEN
+        cached.get("refresh_token")
+        or await _allegro_db_get_refresh_token(name)
+        or account.get("refresh_token", "")
     )
 
     if not current_rt:
-        raise Exception("No Allegro refresh token available (check env var or re-authorize)")
+        raise Exception(f"No Allegro refresh token for account '{name}' (check env var {account['prefix']}_REFRESH_TOKEN)")
 
     # Refresh the token
-    auth = aiohttp.BasicAuth(ALLEGRO_CLIENT_ID, ALLEGRO_CLIENT_SECRET)
+    auth = aiohttp.BasicAuth(account["client_id"], account["client_secret"])
     data = {
         "grant_type": "refresh_token",
         "refresh_token": current_rt,
@@ -913,21 +947,23 @@ async def _allegro_get_token(session: aiohttp.ClientSession) -> str:
     async with session.post(ALLEGRO_AUTH_URL, data=data, auth=auth) as resp:
         if resp.status != 200:
             text = await resp.text()
-            raise Exception(f"Allegro token refresh failed {resp.status}: {text[:300]}")
+            raise Exception(f"Allegro token refresh failed for '{name}' {resp.status}: {text[:300]}")
         body = await resp.json()
 
-    _allegro_token["access_token"] = body["access_token"]
-    _allegro_token["expires_at"] = now + body.get("expires_in", 3600) - 60
+    _allegro_tokens[name] = {
+        "access_token": body["access_token"],
+        "expires_at": now + body.get("expires_in", 3600) - 60,
+    }
 
     # Store new refresh_token in memory + DB (Allegro rotates them on each use!)
     new_rt = body.get("refresh_token")
     if new_rt:
-        _allegro_token["refresh_token"] = new_rt
-        await _allegro_db_save_refresh_token(new_rt)
+        _allegro_tokens[name]["refresh_token"] = new_rt
+        await _allegro_db_save_refresh_token(name, new_rt)
         if new_rt != current_rt:
-            print(f"[allegro] refresh_token rotated and saved to DB")
+            print(f"[allegro:{name}] refresh_token rotated and saved to DB")
 
-    return _allegro_token["access_token"]
+    return _allegro_tokens[name]["access_token"]
 
 
 async def _allegro_fetch_orders(session: aiohttp.ClientSession, token: str,
@@ -965,7 +1001,7 @@ async def _allegro_fetch_orders(session: aiohttp.ClientSession, token: str,
         return forms, total_count
 
 
-def _parse_allegro_order(form: dict) -> dict:
+def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
     """Map Allegro checkout-form → our unified order format."""
     buyer = form.get("buyer") or {}
     delivery = form.get("delivery") or {}
@@ -1064,8 +1100,8 @@ def _parse_allegro_order(form: dict) -> dict:
     if nip:
         customer_comment = f"{msg_to_seller}\n{nip}".strip() if msg_to_seller else nip
 
-    # Seller account name (Allegro seller login)
-    seller_account = "mantrade"  # Default for now
+    # Seller account name
+    seller_account = seller_name
 
     return {
         "external_id": str(form.get("id", "")),
@@ -1090,37 +1126,35 @@ def _parse_allegro_order(form: dict) -> dict:
     }
 
 
-async def sync_allegro(full=False):
-    """Background task: sync orders from Allegro (drogatrade).
-    full=True — ignore date filter, fetch ALL orders (up to 12 months).
-    """
-    if not ALLEGRO_CLIENT_ID or not ALLEGRO_CLIENT_SECRET or not ALLEGRO_REFRESH_TOKEN:
-        return
-
+async def _sync_allegro_account(account: dict, full=False):
+    """Sync orders from a single Allegro account."""
+    name = account["name"]
     source = "allegro"
     pool = await get_db_pool()
 
-    # Find last sync date (skip if full resync)
+    # Find last sync date for this seller account
     updated_after = None
     if not full:
         async with pool.acquire() as conn:
             last = await conn.fetchval(
-                "SELECT MAX(external_created) FROM orders WHERE source=$1", source
+                "SELECT MAX(external_created) FROM orders WHERE source=$1 AND seller_account=$2",
+                source, name
             )
             order_count = await conn.fetchval(
-                "SELECT COUNT(*) FROM orders WHERE source=$1", source
+                "SELECT COUNT(*) FROM orders WHERE source=$1 AND seller_account=$2",
+                source, name
             )
         if last and order_count and order_count > 10:
-            # Only use date filter if we already have a decent number of orders
             updated_after = (last - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
     if full:
-        print("[sync-allegro] FULL resync — fetching all orders")
+        print(f"[sync-allegro:{name}] FULL resync — fetching all orders")
 
     log_id = None
     async with pool.acquire() as conn:
         log_id = await conn.fetchval(
-            "INSERT INTO sync_log (source, status) VALUES ($1, 'running') RETURNING id", source
+            "INSERT INTO sync_log (source, status) VALUES ($1, 'running') RETURNING id",
+            f"allegro:{name}"
         )
 
     new_count = 0
@@ -1129,14 +1163,12 @@ async def sync_allegro(full=False):
 
     try:
         async with aiohttp.ClientSession() as session:
-            token = await _allegro_get_token(session)
+            token = await _allegro_get_token(session, account)
 
-            # Allegro returns max ~3 months per query.
-            # For full resync, iterate in 3-month windows going back 12 months.
             if full:
                 now = datetime.utcnow()
                 date_ranges = []
-                for m in range(4):  # 4 windows × 3 months = 12 months back
+                for m in range(4):
                     range_end = now - timedelta(days=90 * m)
                     range_start = now - timedelta(days=90 * (m + 1))
                     date_ranges.append((
@@ -1144,26 +1176,24 @@ async def sync_allegro(full=False):
                         range_end.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
                     ))
             else:
-                # Normal incremental sync — single pass
                 date_ranges = [(updated_after, None)]
 
             for dr_start, dr_end in date_ranges:
                 offset = 0
                 while True:
-                    # Build params
                     forms, total = await _allegro_fetch_orders(
                         session, token,
                         offset=offset, limit=100, updated_after=dr_start
                     )
                     if offset == 0:
-                        print(f"[sync-allegro] page offset=0, API total={total}, fetched={len(forms)}, range={dr_start}..{dr_end}")
+                        print(f"[sync-allegro:{name}] offset=0, total={total}, fetched={len(forms)}, range={dr_start}..{dr_end}")
                     if not forms:
                         break
 
                     async with pool.acquire() as conn:
                         for form in forms:
                             try:
-                                parsed = _parse_allegro_order(form)
+                                parsed = _parse_allegro_order(form, seller_name=name)
                                 result = await _save_order(conn, source, parsed)
                                 if result == "new":
                                     new_count += 1
@@ -1178,7 +1208,7 @@ async def sync_allegro(full=False):
                             except Exception as e_order:
                                 skip_count += 1
                                 order_id = form.get("id", "?")
-                                print(f"[sync-allegro] SKIP order {order_id}: {e_order}")
+                                print(f"[sync-allegro:{name}] SKIP order {order_id}: {e_order}")
 
                     offset += len(forms)
                     if offset >= total or len(forms) < 100:
@@ -1189,16 +1219,28 @@ async def sync_allegro(full=False):
                 "UPDATE sync_log SET status='ok', orders_new=$1, orders_upd=$2, finished_at=NOW() WHERE id=$3",
                 new_count, upd_count, log_id
             )
-        print(f"[sync-allegro] done: +{new_count} new, ~{upd_count} updated, skipped={skip_count}")
+        print(f"[sync-allegro:{name}] done: +{new_count} new, ~{upd_count} updated, skipped={skip_count}")
 
     except Exception as e:
-        print(f"[sync-allegro] ERROR: {e}")
+        print(f"[sync-allegro:{name}] ERROR: {e}")
         traceback.print_exc()
         async with pool.acquire() as conn:
             await conn.execute(
                 "UPDATE sync_log SET status='error', error=$1, finished_at=NOW() WHERE id=$2",
                 str(e)[:500], log_id
             )
+
+
+async def sync_allegro(full=False):
+    """Sync orders from ALL configured Allegro accounts."""
+    if not ALLEGRO_ACCOUNTS:
+        return
+    for account in ALLEGRO_ACCOUNTS:
+        try:
+            await _sync_allegro_account(account, full=full)
+        except Exception as e:
+            print(f"[sync-allegro:{account['name']}] FATAL: {e}")
+            traceback.print_exc()
 
 
 # ============================================================
@@ -1997,15 +2039,26 @@ async def manual_sync(request: Request, source: str = Query(None), full: bool = 
         return JSONResponse({"ok": True, "message": f"Cieplarnia sync started (full={full})"})
 
     elif source == "allegro":
+        # Sync all Allegro accounts, or a specific one via ?seller=name
+        seller = request.query_params.get("seller", "")
+        if seller:
+            acc = next((a for a in ALLEGRO_ACCOUNTS if a["name"] == seller), None)
+            if acc:
+                asyncio.create_task(_sync_allegro_account(acc, full=full))
+                return JSONResponse({"ok": True, "message": f"Allegro:{seller} sync started (full={full})"})
+            else:
+                return JSONResponse({"ok": False, "error": f"Allegro account '{seller}' not found"}, status_code=404)
         asyncio.create_task(sync_allegro(full=full))
-        return JSONResponse({"ok": True, "message": f"Allegro sync started (full={full})"})
+        names = [a["name"] for a in ALLEGRO_ACCOUNTS]
+        return JSONResponse({"ok": True, "message": f"Allegro sync started for {names} (full={full})"})
     else:
         # Синк всех
         asyncio.create_task(sync_woocommerce(full=full))
         asyncio.create_task(sync_presta_oteko(full=full))
         asyncio.create_task(sync_presta_ciep(full=full))
         asyncio.create_task(sync_allegro(full=full))
-        return JSONResponse({"ok": True, "message": f"All syncs started (full={full})"})
+        names = [a["name"] for a in ALLEGRO_ACCOUNTS]
+        return JSONResponse({"ok": True, "message": f"All syncs started (full={full}), allegro accounts: {names}"})
 
 
 @app.get("/api/sync-log")
@@ -2070,10 +2123,11 @@ async def woo_debug(order_id: str = Query(None)):
 
 @app.get("/admin/fix-seller-account")
 async def fix_seller_account():
+    """Fix empty seller_account → 'mantrade' for existing Allegro orders."""
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         res = await conn.execute(
-            "UPDATE orders SET seller_account='mantrade' WHERE source='allegro' AND (seller_account IS NULL OR seller_account='' OR seller_account='drogatrade')"
+            "UPDATE orders SET seller_account='mantrade' WHERE source='allegro' AND (seller_account IS NULL OR seller_account='')"
         )
     return JSONResponse({"ok": True, "updated": str(res)})
 
