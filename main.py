@@ -1561,6 +1561,26 @@ async def mark_exported(request: Request):
     return JSONResponse({"ok": True, "marked": len(int_ids)})
 
 
+@app.post("/api/orders/toggle-priority")
+async def toggle_priority(request: Request):
+    """Toggle priority flag for an order."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "orders"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    body = await request.json()
+    order_id = body.get("id")
+    is_priority = body.get("is_priority", False)
+    if not order_id:
+        return JSONResponse({"ok": False, "error": "no id"})
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE orders SET is_priority=$1 WHERE id=$2",
+            is_priority, int(order_id),
+        )
+    return JSONResponse({"ok": True})
+
+
 # ============================================================
 # === API: Заказы (для таблицы + экспорт) ===
 # ============================================================
@@ -1576,6 +1596,8 @@ async def api_orders(
     search: str = Query(None),
     date_from: str = Query(None),
     date_to:   str = Query(None),
+    exported: str = Query(None),
+    priority: str = Query(None),
 ):
     user = await get_current_user(request)
     if not user:
@@ -1625,6 +1647,12 @@ async def api_orders(
     if date_to:
         params.append(date.fromisoformat(date_to))
         conditions.append(f"COALESCE(external_created, created_at)::date <= ${len(params)}")
+    if exported == "yes":
+        conditions.append("exported = TRUE")
+    elif exported == "no":
+        conditions.append("(exported IS NULL OR exported = FALSE)")
+    if priority == "yes":
+        conditions.append("is_priority = TRUE")
 
     where = " AND ".join(conditions)
 
@@ -1632,7 +1660,7 @@ async def api_orders(
     q = f"""
         SELECT * FROM orders
         WHERE {where}
-        ORDER BY COALESCE(external_created, created_at) DESC
+        ORDER BY is_priority DESC NULLS LAST, COALESCE(external_created, created_at) DESC
         LIMIT ${len(params)-1} OFFSET ${len(params)}
     """
 
@@ -1674,6 +1702,7 @@ async def export_orders(
     source: str = Query(None),
     seller: str = Query(None),
     status: str = Query(None),
+    exported: str = Query(None),
     date_from: str = Query(None),
     date_to:   str = Query(None),
     ids: str = Query(None),
@@ -1702,6 +1731,10 @@ async def export_orders(
     if status:
         params.append(status)
         conditions.append(f"status = ${len(params)}")
+    if exported == "yes":
+        conditions.append("exported = TRUE")
+    elif exported == "no":
+        conditions.append("(exported IS NULL OR exported = FALSE)")
     if date_from:
         params.append(date.fromisoformat(date_from))
         conditions.append(f"COALESCE(external_created, created_at)::date >= ${len(params)}")
@@ -2222,6 +2255,8 @@ async def run_migration(request: Request):
             # v3 — exported flag (order picked up for delivery)
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS exported BOOLEAN DEFAULT FALSE",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS exported_at TIMESTAMP",
+            # v3.1 — priority flag
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_priority BOOLEAN DEFAULT FALSE",
             # v4 — user source access
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_sources TEXT DEFAULT 'all'",
             # v5 — permission-based access
