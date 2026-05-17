@@ -1571,6 +1571,7 @@ async def api_orders(
     limit:  int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     source: str = Query(None),
+    seller: str = Query(None),
     status: str = Query(None),
     search: str = Query(None),
     date_from: str = Query(None),
@@ -1586,16 +1587,32 @@ async def api_orders(
     params = []
 
     # Filter by allowed sources for this user
+    # allowed_sources can contain: "dobraszklarnia,allegro,allegro:mantrade,allegro:drogatrade"
+    # Plain values (e.g. "allegro") filter by source column
+    # Colon values (e.g. "allegro:mantrade") filter by source + seller_account
     user_sources = user.get("allowed_sources", "all") if user else "all"
     if user_sources and user_sources != "all":
         src_list = [s.strip() for s in user_sources.split(",") if s.strip()]
         if src_list:
-            params.append(src_list)
-            conditions.append(f"source = ANY(${len(params)})")
+            plain_sources = [s for s in src_list if ":" not in s]
+            seller_pairs = [s.split(":", 1) for s in src_list if ":" in s]
+            src_conds = []
+            if plain_sources:
+                params.append(plain_sources)
+                src_conds.append(f"source = ANY(${len(params)})")
+            for src, slr in seller_pairs:
+                params.append(src)
+                params.append(slr)
+                src_conds.append(f"(source = ${len(params)-1} AND seller_account = ${len(params)})")
+            if src_conds:
+                conditions.append(f"({' OR '.join(src_conds)})")
 
     if source:
         params.append(source)
         conditions.append(f"source = ${len(params)}")
+    if seller:
+        params.append(seller)
+        conditions.append(f"seller_account = ${len(params)}")
     if status:
         params.append(status)
         conditions.append(f"status = ${len(params)}")
@@ -1655,6 +1672,7 @@ async def api_orders(
 async def export_orders(
     request: Request,
     source: str = Query(None),
+    seller: str = Query(None),
     status: str = Query(None),
     date_from: str = Query(None),
     date_to:   str = Query(None),
@@ -1678,6 +1696,9 @@ async def export_orders(
     if source:
         params.append(source)
         conditions.append(f"source = ${len(params)}")
+    if seller:
+        params.append(seller)
+        conditions.append(f"seller_account = ${len(params)}")
     if status:
         params.append(status)
         conditions.append(f"status = ${len(params)}")
