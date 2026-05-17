@@ -178,6 +178,32 @@
                 </div>
             </div>
 
+            <div class="perms-section">
+                <div class="section-title">Dostęp do źródeł</div>
+                <div class="perm-row">
+                    <input type="checkbox" id="src-all" value="all" onchange="toggleSrcAll(this)" checked>
+                    <label for="src-all">Wszystkie sklepy</label>
+                </div>
+                <div id="src-checkboxes">
+                    <div class="perm-row">
+                        <input type="checkbox" class="src-check" value="dobraszklarnia" id="s-dobra">
+                        <label for="s-dobra">dobraszklarnia.pl</label>
+                    </div>
+                    <div class="perm-row">
+                        <input type="checkbox" class="src-check" value="oteko" id="s-oteko">
+                        <label for="s-oteko">oteko.pl</label>
+                    </div>
+                    <div class="perm-row">
+                        <input type="checkbox" class="src-check" value="cieplarnia" id="s-ciep">
+                        <label for="s-ciep">cieplarnia.pl</label>
+                    </div>
+                    <div class="perm-row">
+                        <input type="checkbox" class="src-check" value="allegro" id="s-allegro">
+                        <label for="s-allegro">Allegro</label>
+                    </div>
+                </div>
+            </div>
+
             <label>Hasło</label>
             <input type="text" id="f-password" placeholder="min. 4 znaki">
             <div id="pw-hint" style="font-size:11px;color:#9ca3af;margin-top:-10px;margin-bottom:14px;display:none;">
@@ -225,7 +251,7 @@
                     + '<td class="' + statusClass + '">' + statusText + '</td>'
                     + '<td style="font-size:12px;">' + lastLogin + '</td>'
                     + '<td class="actions">'
-                    + '<button class="btn-edit" onclick=\'editUser(' + JSON.stringify({id:u.id,name:u.name,email:u.email,permissions:u.permissions||"",is_active:u.is_active}) + ')\'>Edytuj</button>'
+                    + '<button class="btn-edit" onclick=\'editUser(' + JSON.stringify({id:u.id,name:u.name,email:u.email,permissions:u.permissions||"",allowed_sources:u.allowed_sources||"all",is_active:u.is_active}) + ')\'>Edytuj</button>'
                     + ' <button class="btn-toggle" onclick="toggleActive(' + u.id + ',' + u.is_active + ')">' + (u.is_active ? 'Wyłącz' : 'Włącz') + '</button>'
                     + ' <button class="btn-delete" onclick="deleteUser(' + u.id + ',\'' + u.name.replace(/'/g,"\\'") + '\')">Usuń</button>'
                     + '</td>'
@@ -261,6 +287,37 @@
         cb.addEventListener('change', updateSelectAll);
     });
 
+    // --- Source access ---
+    function toggleSrcAll(cb) {
+        var srcChecks = document.querySelectorAll('.src-check');
+        if (cb.checked) {
+            srcChecks.forEach(function(s) { s.checked = false; s.disabled = true; });
+        } else {
+            srcChecks.forEach(function(s) { s.disabled = false; });
+        }
+    }
+    function setSources(srcStr) {
+        var srcAll = document.getElementById('src-all');
+        var srcChecks = document.querySelectorAll('.src-check');
+        if (!srcStr || srcStr === 'all') {
+            srcAll.checked = true;
+            srcChecks.forEach(function(s) { s.checked = false; s.disabled = true; });
+        } else {
+            srcAll.checked = false;
+            var selected = srcStr.split(',').map(function(s){return s.trim();});
+            srcChecks.forEach(function(s) {
+                s.disabled = false;
+                s.checked = selected.indexOf(s.value) >= 0;
+            });
+        }
+    }
+    function getSources() {
+        if (document.getElementById('src-all').checked) return 'all';
+        var selected = [];
+        document.querySelectorAll('.src-check:checked').forEach(function(cb) { selected.push(cb.value); });
+        return selected.join(',') || 'all';
+    }
+
     function openModal() {
         document.getElementById('edit-id').value = '';
         document.getElementById('modal-title').textContent = 'Dodaj użytkownika';
@@ -271,6 +328,7 @@
         document.getElementById('f-password').placeholder = 'min. 4 znaki';
         document.getElementById('pw-hint').style.display = 'none';
         setPerms('dashboard,orders');
+        setSources('all');
         document.getElementById('user-modal').classList.add('open');
     }
 
@@ -284,6 +342,7 @@
         document.getElementById('f-password').placeholder = 'nowe hasło (opcjonalnie)';
         document.getElementById('pw-hint').style.display = 'block';
         setPerms(u.permissions);
+        setSources(u.allowed_sources || 'all');
         document.getElementById('user-modal').classList.add('open');
     }
 
@@ -297,7 +356,8 @@
             name: document.getElementById('f-name').value.trim(),
             email: document.getElementById('f-email').value.trim(),
             password: document.getElementById('f-password').value,
-            permissions: getPerms()
+            permissions: getPerms(),
+            allowed_sources: getSources()
         };
         if (!data.name || !data.email) { alert('Wypełnij imię i email'); return; }
 
