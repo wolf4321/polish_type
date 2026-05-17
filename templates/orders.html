@@ -103,6 +103,11 @@
         tr.order-row:hover td { background: #f0f4ff; }
         tr.order-row.exported td { background: #ecfdf5; }
         tr.order-row.exported:hover td { background: #d1fae5; }
+        .star-btn { cursor: pointer; font-size: 18px; border: none; background: none; padding: 0 2px; line-height: 1; }
+        .star-btn:hover { transform: scale(1.3); }
+        .star-btn.active { color: #ff6600; text-shadow: 0 0 6px #ff4400, 0 0 12px #ff2200; }
+        .star-btn:not(.active) { color: #d1d5db; }
+        .order-extid { font-size: 10px; color: #9ca3af; margin-top: 2px; }
         tr.detail-row { display: none; }
         tr.detail-row.open { display: table-row; }
         tr.detail-row td { background: #f9fafb; padding: 0; border-bottom: 2px solid #e5e7eb; }
@@ -217,6 +222,15 @@
                 <option value="delivered">Delivered</option>
                 <option value="on-hold">On hold</option>
             </select>
+            <select id="f-exported">
+                <option value="">Eksport: wszystkie</option>
+                <option value="yes">Wyeksportowane</option>
+                <option value="no">Niewyeksportowane</option>
+            </select>
+            <select id="f-priority">
+                <option value="">Priorytet: wszystkie</option>
+                <option value="yes">Ważne ★</option>
+            </select>
             <input type="date" id="f-from">
             <span style="color:#9ca3af;">—</span>
             <input type="date" id="f-to">
@@ -244,6 +258,7 @@
                     <thead>
                         <tr>
                             <th style="width:30px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
+                            <th style="width:30px;" title="Важное">★</th>
                             <th>Дата</th>
                             <th>Тип товара</th>
                             <th>Комплектация</th>
@@ -310,6 +325,8 @@
             source: source,
             seller: seller,
             status: document.getElementById('f-status').value,
+            exported: document.getElementById('f-exported').value,
+            priority: document.getElementById('f-priority').value,
             search: document.getElementById('f-search').value,
             date_from: document.getElementById('f-from').value,
             date_to: document.getElementById('f-to').value,
@@ -338,6 +355,8 @@
         if (f.source) url += '&source=' + encodeURIComponent(f.source);
         if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
         if (f.status) url += '&status=' + encodeURIComponent(f.status);
+        if (f.exported) url += '&exported=' + f.exported;
+        if (f.priority) url += '&priority=' + f.priority;
         if (f.search) url += '&search=' + encodeURIComponent(f.search);
         if (f.date_from) url += '&date_from=' + f.date_from;
         if (f.date_to) url += '&date_to=' + f.date_to;
@@ -441,9 +460,12 @@
 
             var isExported = o.exported ? true : false;
             var exportedClass = isExported ? ' exported' : '';
+            var isPriority = o.is_priority ? true : false;
+            var starClass = isPriority ? 'star-btn active' : 'star-btn';
 
             html += '<tr class="order-row' + exportedClass + '" id="row-' + orderId + '">'
                 + '<td onclick="event.stopPropagation()"><input type="checkbox" class="order-check" data-id="' + orderId + '" onchange="updateSelCount()"></td>'
+                + '<td onclick="event.stopPropagation()"><button class="' + starClass + '" data-id="' + orderId + '" onclick="togglePriority(this)">★</button></td>'
                 + '<td style="white-space:nowrap;" onclick="toggleDetail(\'' + rowId + '\')">' + dt + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + (o.product_type || '') + '</td>'
                 + '<td class="config-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.configuration || '') + '</td>'
@@ -454,7 +476,7 @@
                 + '<td class="phone-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.customer_phone || '—') + '</td>'
                 + '<td class="address-cell" onclick="toggleDetail(\'' + rowId + '\')">' + addrHtml + '</td>'
                 + '<td class="comment-cell" onclick="event.stopPropagation()"><span class="editable-comment" data-id="' + orderId + '" onclick="editComment(this)" title="Kliknij, aby edytować">' + commentHtml + '</span></td>'
-                + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="badge badge-' + o.source + '">' + o.source + '</span></td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="badge badge-' + o.source + '">' + o.source + '</span><div class="order-extid">' + ((o.external_id || '').replace(/[^0-9]/g, '') || '') + '</div></td>'
                 + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.seller_account || '') + '</td>'
                 + '<td onclick="event.stopPropagation()"><input type="checkbox" class="exported-check" data-id="' + orderId + '"' + (isExported ? ' checked' : '') + ' onchange="toggleExported(this)"></td>'
                 + '</tr>';
@@ -505,6 +527,7 @@
         if (f.source) url += '&source=' + encodeURIComponent(f.source);
         if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
         if (f.status) url += '&status=' + encodeURIComponent(f.status);
+        if (f.exported) url += '&exported=' + f.exported;
         if (f.date_from) url += '&date_from=' + f.date_from;
         if (f.date_to) url += '&date_to=' + f.date_to;
         window.location.href = url;
@@ -581,6 +604,19 @@
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({id: id, exported: exported})
+        });
+    }
+
+    function togglePriority(btn) {
+        var id = btn.getAttribute('data-id');
+        var isActive = btn.classList.contains('active');
+        var newState = !isActive;
+        if (newState) { btn.classList.add('active'); }
+        else { btn.classList.remove('active'); }
+        fetch('/api/orders/toggle-priority', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: id, is_priority: newState})
         });
     }
 
