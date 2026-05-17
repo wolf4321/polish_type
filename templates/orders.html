@@ -197,7 +197,13 @@
                 <option value="dobraszklarnia">dobraszklarnia.pl</option>
                 <option value="oteko">oteko.pl</option>
                 <option value="cieplarnia">cieplarnia.pl</option>
-                <option value="allegro">Allegro</option>
+                <option value="allegro">Allegro (все)</option>
+                <option value="allegro:mantrade">Allegro: mantrade</option>
+                <option value="allegro:drogatrade">Allegro: drogatrade</option>
+                <option value="allegro:mega-agronom">Allegro: mega-agronom</option>
+                <option value="allegro:oteko_pl">Allegro: oteko_pl</option>
+                <option value="allegro:dobraszklarniapl">Allegro: dobraszklarniapl</option>
+                <option value="allegro:cieplarnia_pl">Allegro: cieplarnia_pl</option>
                 <option value="manual">Ręczne</option>
             </select>
             <select id="f-status">
@@ -292,8 +298,17 @@
     }
 
     function getFilters() {
+        var srcVal = document.getElementById('f-source').value;
+        var source = srcVal;
+        var seller = '';
+        if (srcVal.indexOf(':') !== -1) {
+            var parts = srcVal.split(':');
+            source = parts[0];
+            seller = parts[1];
+        }
         return {
-            source: document.getElementById('f-source').value,
+            source: source,
+            seller: seller,
             status: document.getElementById('f-status').value,
             search: document.getElementById('f-search').value,
             date_from: document.getElementById('f-from').value,
@@ -321,6 +336,7 @@
         var offset = (page - 1) * perPage;
         var url = '/api/orders?limit=' + perPage + '&offset=' + offset;
         if (f.source) url += '&source=' + encodeURIComponent(f.source);
+        if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
         if (f.status) url += '&status=' + encodeURIComponent(f.status);
         if (f.search) url += '&search=' + encodeURIComponent(f.search);
         if (f.date_from) url += '&date_from=' + f.date_from;
@@ -487,6 +503,7 @@
         var f = getFilters();
         var url = '/api/orders/export?fmt=xlsx';
         if (f.source) url += '&source=' + encodeURIComponent(f.source);
+        if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
         if (f.status) url += '&status=' + encodeURIComponent(f.status);
         if (f.date_from) url += '&date_from=' + f.date_from;
         if (f.date_to) url += '&date_to=' + f.date_to;
