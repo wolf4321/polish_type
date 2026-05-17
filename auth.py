@@ -267,6 +267,7 @@ async def api_list_users(request: Request):
             "name": r["name"],
             "role": r.get("role", ""),
             "permissions": r.get("permissions", ""),
+            "allowed_sources": r.get("allowed_sources", "all"),
             "is_active": r["is_active"],
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
             "last_login": r["last_login"].isoformat() if r["last_login"] else None,
@@ -286,6 +287,7 @@ async def api_create_user(request: Request):
     name = data.get("name", "").strip()
     password = data.get("password", "")
     permissions = data.get("permissions", "")
+    allowed_sources = data.get("allowed_sources", "all")
 
     if not email or not name:
         raise HTTPException(400, "Email and name are required")
@@ -301,9 +303,9 @@ async def api_create_user(request: Request):
         if exists:
             raise HTTPException(409, "User with this email already exists")
         user_id = await conn.fetchval(
-            """INSERT INTO users (email, name, pw_hash, role, permissions, invited_by)
-               VALUES ($1, $2, $3, $4, $5, $6) RETURNING id""",
-            email, name, _hash_pw(password), role, permissions, owner["id"],
+            """INSERT INTO users (email, name, pw_hash, role, permissions, allowed_sources, invited_by)
+               VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id""",
+            email, name, _hash_pw(password), role, permissions, allowed_sources, owner["id"],
         )
     return JSONResponse({"ok": True, "id": user_id})
 
@@ -327,12 +329,13 @@ async def api_update_user(user_id: int, request: Request):
         name = data.get("name", user["name"]).strip()
         is_active = data.get("is_active", user["is_active"])
         permissions = data.get("permissions", user.get("permissions", ""))
+        allowed_sources = data.get("allowed_sources", user.get("allowed_sources", "all"))
 
         role = "owner" if "manage_users" in permissions else "user"
 
         await conn.execute(
-            "UPDATE users SET name=$1, role=$2, is_active=$3, permissions=$4 WHERE id=$5",
-            name, role, is_active, permissions, user_id,
+            "UPDATE users SET name=$1, role=$2, is_active=$3, permissions=$4, allowed_sources=$5 WHERE id=$6",
+            name, role, is_active, permissions, allowed_sources, user_id,
         )
 
         # If password provided — update it
