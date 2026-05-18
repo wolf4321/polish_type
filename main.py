@@ -1252,6 +1252,13 @@ async def index(request: Request):
     user = await get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=302)
+    # If user has no dashboard permission — redirect to orders (if they have it) or show empty
+    if not has_perm(user, "dashboard"):
+        if has_perm(user, "orders"):
+            return RedirectResponse("/orders", status_code=302)
+        return templates.TemplateResponse(
+            request=request, name="no_access.html", context={"user": user}
+        )
     pool = await get_db_pool()
 
     async with pool.acquire() as conn:
@@ -1322,9 +1329,13 @@ async def orders_page(request: Request):
 
 @app.get("/api/stats")
 async def api_stats(
+    request: Request,
     date_from: str = Query(None),
     date_to:   str = Query(None),
 ):
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "dashboard"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
     pool = await get_db_pool()
     d_from = date.fromisoformat(date_from) if date_from else date.today() - timedelta(days=30)
     d_to   = date.fromisoformat(date_to)   if date_to   else date.today()
@@ -1369,10 +1380,14 @@ async def api_stats(
 
 @app.get("/api/orders/daily")
 async def api_orders_daily(
+    request: Request,
     date_from: str = Query(None),
     date_to:   str = Query(None),
     source:    str = Query(None),
 ):
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "dashboard"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
     pool = await get_db_pool()
     d_from = date.fromisoformat(date_from) if date_from else date.today() - timedelta(days=30)
     d_to   = date.fromisoformat(date_to)   if date_to   else date.today()
