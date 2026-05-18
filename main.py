@@ -1334,7 +1334,7 @@ async def api_stats(
     date_to:   str = Query(None),
 ):
     user = await get_current_user(request)
-    if not user or not has_perm(user, "dashboard"):
+    if not user or not (has_perm(user, "dashboard") or has_perm(user, "orders")):
         return JSONResponse({"error": "Access denied"}, status_code=403)
     pool = await get_db_pool()
     d_from = date.fromisoformat(date_from) if date_from else date.today() - timedelta(days=30)
@@ -1386,7 +1386,7 @@ async def api_orders_daily(
     source:    str = Query(None),
 ):
     user = await get_current_user(request)
-    if not user or not has_perm(user, "dashboard"):
+    if not user or not (has_perm(user, "dashboard") or has_perm(user, "orders")):
         return JSONResponse({"error": "Access denied"}, status_code=403)
     pool = await get_db_pool()
     d_from = date.fromisoformat(date_from) if date_from else date.today() - timedelta(days=30)
