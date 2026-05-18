@@ -172,10 +172,12 @@
                 <div class="label">All orders</div>
                 <div class="value" id="s-total">—</div>
             </div>
+            {% if user and 'prices' in (user.permissions or '').split(',') %}
             <div class="stat-card">
                 <div class="label">Revenue (PLN)</div>
                 <div class="value" id="s-revenue">—</div>
             </div>
+            {% endif %}
             <div class="stat-card">
                 <div class="label">dobraszklarnia.pl</div>
                 <div class="value" id="s-woo">—</div>
@@ -339,7 +341,8 @@
         fetch(url).then(function(r) { return r.json(); }).then(function(d) {
             var o = d.orders;
             document.getElementById('s-total').textContent = fmt(o.total);
-            document.getElementById('s-revenue').textContent = fmtMoney(o.revenue);
+            var revEl = document.getElementById('s-revenue');
+            if (revEl) revEl.textContent = fmtMoney(o.revenue);
             document.getElementById('s-woo').textContent = fmt(o.woo_count);
             document.getElementById('s-oteko').textContent = fmt(o.oteko_count);
             document.getElementById('s-ciep').textContent = fmt(o.ciep_count);
