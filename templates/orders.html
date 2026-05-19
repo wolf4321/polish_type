@@ -67,6 +67,7 @@
         .badge-oteko { background: #fef3c7; color: #92400e; }
         .badge-cieplarnia { background: #d1fae5; color: #065f46; }
         .badge-allegro { background: #fff0e6; color: #cc4800; }
+        .badge-manual { background: #f3e8ff; color: #7c3aed; }
 
         .status-processing, .status-payment_accepted { color: #2563eb; font-weight: 600; }
         .status-completed, .status-delivered { color: #059669; font-weight: 600; }
@@ -103,11 +104,6 @@
         tr.order-row:hover td { background: #f0f4ff; }
         tr.order-row.exported td { background: #ecfdf5; }
         tr.order-row.exported:hover td { background: #d1fae5; }
-        .star-btn { cursor: pointer; font-size: 18px; border: none; background: none; padding: 0 2px; line-height: 1; }
-        .star-btn:hover { transform: scale(1.3); }
-        .star-btn.active { color: #ff6600; text-shadow: 0 0 6px #ff4400, 0 0 12px #ff2200; }
-        .star-btn:not(.active) { color: #d1d5db; }
-        .order-extid { font-size: 10px; color: #9ca3af; margin-top: 2px; }
         tr.detail-row { display: none; }
         tr.detail-row.open { display: table-row; }
         tr.detail-row td { background: #f9fafb; padding: 0; border-bottom: 2px solid #e5e7eb; }
@@ -172,12 +168,10 @@
                 <div class="label">All orders</div>
                 <div class="value" id="s-total">—</div>
             </div>
-            {% if user and 'prices' in (user.permissions or '').split(',') %}
             <div class="stat-card">
                 <div class="label">Revenue (PLN)</div>
                 <div class="value" id="s-revenue">—</div>
             </div>
-            {% endif %}
             <div class="stat-card">
                 <div class="label">dobraszklarnia.pl</div>
                 <div class="value" id="s-woo">—</div>
@@ -223,15 +217,8 @@
                 <option value="shipped">Shipped</option>
                 <option value="delivered">Delivered</option>
                 <option value="on-hold">On hold</option>
-            </select>
-            <select id="f-exported">
-                <option value="">Eksport: wszystkie</option>
-                <option value="yes">Wyeksportowane</option>
-                <option value="no">Niewyeksportowane</option>
-            </select>
-            <select id="f-priority">
-                <option value="">Priorytet: wszystkie</option>
-                <option value="yes">Ważne ★</option>
+                <option value="awaiting_cod">Płatność przy odbiorze</option>
+                <option value="awaiting_proforma">Oczekiwanie na proformę</option>
             </select>
             <input type="date" id="f-from">
             <span style="color:#9ca3af;">—</span>
@@ -260,10 +247,10 @@
                     <thead>
                         <tr>
                             <th style="width:30px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
-                            <th style="width:30px;" title="Важное">★</th>
                             <th>Дата</th>
                             <th>Тип товара</th>
                             <th>Комплектация</th>
+                            <th>Faktura</th>
                             <th>Цена + доставка</th>
                             <th>Продукт</th>
                             <th>Статус</th>
@@ -327,8 +314,6 @@
             source: source,
             seller: seller,
             status: document.getElementById('f-status').value,
-            exported: document.getElementById('f-exported').value,
-            priority: document.getElementById('f-priority').value,
             search: document.getElementById('f-search').value,
             date_from: document.getElementById('f-from').value,
             date_to: document.getElementById('f-to').value,
@@ -341,8 +326,7 @@
         fetch(url).then(function(r) { return r.json(); }).then(function(d) {
             var o = d.orders;
             document.getElementById('s-total').textContent = fmt(o.total);
-            var revEl = document.getElementById('s-revenue');
-            if (revEl) revEl.textContent = fmtMoney(o.revenue);
+            document.getElementById('s-revenue').textContent = fmtMoney(o.revenue);
             document.getElementById('s-woo').textContent = fmt(o.woo_count);
             document.getElementById('s-oteko').textContent = fmt(o.oteko_count);
             document.getElementById('s-ciep').textContent = fmt(o.ciep_count);
@@ -358,8 +342,6 @@
         if (f.source) url += '&source=' + encodeURIComponent(f.source);
         if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
         if (f.status) url += '&status=' + encodeURIComponent(f.status);
-        if (f.exported) url += '&exported=' + f.exported;
-        if (f.priority) url += '&priority=' + f.priority;
         if (f.search) url += '&search=' + encodeURIComponent(f.search);
         if (f.date_from) url += '&date_from=' + f.date_from;
         if (f.date_to) url += '&date_to=' + f.date_to;
@@ -411,18 +393,33 @@
             'payu_started': 'Płatność PayU rozpoczęta',
             'payu_awaiting': 'PayU oczekuje na odbiór',
             'payu_cancelled': 'PayU anulowana',
+            'awaiting_proforma': 'Oczekujemy na opłacenie Proformy',
         };
         function getStatusPL(s) { return statusPL[s] || s || '—'; }
+
+        function shortenProduct(name) {
+            // Extract dimensions like 3x4, 3x6, 3x8 and thickness like 4mm, 6mm
+            if (!name) return '';
+            var dims = name.match(/(\d+)\s*[x×\*]\s*(\d+)/i);
+            var thick = name.match(/(\d+)\s*mm/i);
+            if (dims) {
+                var short = dims[1] + 'x' + dims[2];
+                if (thick) short += ' ' + thick[1] + 'mm';
+                return short;
+            }
+            return name.length > 40 ? name.substring(0, 37) + '...' : name;
+        }
 
         var html = '';
         orders.forEach(function(o) {
             var items = [];
             try { items = JSON.parse(o.items_json || '[]'); } catch(e) {}
 
-            // Product names
+            // Product names — shortened to dimensions
             var productHtml = '<div class="items-list">';
             items.slice(0, 3).forEach(function(it) {
-                productHtml += '<span>' + it.qty + 'x ' + (it.name || '').substring(0, 50) + '</span>';
+                var shortName = shortenProduct(it.full_name || it.name || '');
+                productHtml += '<span>' + it.qty + 'x ' + shortName + '</span>';
             });
             if (items.length > 3) productHtml += '<span>+ ' + (items.length - 3) + ' jeszcze...</span>';
             productHtml += '</div>';
@@ -463,15 +460,13 @@
 
             var isExported = o.exported ? true : false;
             var exportedClass = isExported ? ' exported' : '';
-            var isPriority = o.is_priority ? true : false;
-            var starClass = isPriority ? 'star-btn active' : 'star-btn';
 
             html += '<tr class="order-row' + exportedClass + '" id="row-' + orderId + '">'
                 + '<td onclick="event.stopPropagation()"><input type="checkbox" class="order-check" data-id="' + orderId + '" onchange="updateSelCount()"></td>'
-                + '<td onclick="event.stopPropagation()"><button class="' + starClass + '" data-id="' + orderId + '" onclick="togglePriority(this)">★</button></td>'
                 + '<td style="white-space:nowrap;" onclick="toggleDetail(\'' + rowId + '\')">' + dt + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + (o.product_type || '') + '</td>'
                 + '<td class="config-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.configuration || '') + '</td>'
+                + '<td style="font-size:11px;" onclick="toggleDetail(\'' + rowId + '\')">' + (o.invoice_nip || '') + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + priceHtml + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + productHtml + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span></td>'
@@ -479,20 +474,34 @@
                 + '<td class="phone-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.customer_phone || '—') + '</td>'
                 + '<td class="address-cell" onclick="toggleDetail(\'' + rowId + '\')">' + addrHtml + '</td>'
                 + '<td class="comment-cell" onclick="event.stopPropagation()"><span class="editable-comment" data-id="' + orderId + '" onclick="editComment(this)" title="Kliknij, aby edytować">' + commentHtml + '</span></td>'
-                + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="badge badge-' + o.source + '">' + o.source + '</span><div class="order-extid">' + ((o.external_id || '').replace(/[^0-9]/g, '') || '') + '</div></td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="badge badge-' + o.source + '">' + (o.source || '').toUpperCase() + '</span>'
+                + '<div class="order-extid">' + ((o.external_id || '').replace(/[^0-9]/g, '') || '') + '</div>'
+                + (o.created_by_email ? '<div class="order-extid">' + o.created_by_email + '</div>' : '')
+                + '</td>'
                 + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.seller_account || '') + '</td>'
                 + '<td onclick="event.stopPropagation()"><input type="checkbox" class="exported-check" data-id="' + orderId + '"' + (isExported ? ' checked' : '') + ' onchange="toggleExported(this)"></td>'
                 + '</tr>';
 
             // --- Detail row (expandable) ---
-            var itemsTable = '<table><thead><tr><th>Produkt</th><th>SKU</th><th>Ilość</th><th>Cena</th></tr></thead><tbody>';
+            var itemsTable = '<table><thead><tr><th>Produkt</th><th>SKU</th><th>Ilość</th><th>Cena brutto</th></tr></thead><tbody>';
             items.forEach(function(it) {
                 var fullName = it.full_name || it.name || '';
-                itemsTable += '<tr><td>' + fullName + '</td><td>' + (it.sku || '—') + '</td><td>' + it.qty + '</td><td>' + fmtMoney(it.price) + ' PLN</td></tr>';
+                var bruttoPrice = (parseFloat(it.price) || 0) * 1.23;
+                itemsTable += '<tr><td>' + fullName + '</td><td>' + (it.sku || '—') + '</td><td>' + it.qty + '</td><td>' + fmtMoney(bruttoPrice) + ' PLN</td></tr>';
             });
             itemsTable += '</tbody></table>';
 
-            html += '<tr class="detail-row" id="' + rowId + '"><td colspan="14"><div class="detail-panel">'
+            // Manual order actions
+            var isManual = (o.external_id || '').indexOf('manual') === 0;
+            var manualActions = '';
+            if (isManual && hasPerm('add_orders')) {
+                manualActions = '<div class="d-group" style="grid-column:1/-1;margin-top:8px;">'
+                    + '<button class="btn-primary" style="margin-right:8px;font-size:12px;padding:4px 12px;" onclick="editManualOrder(' + orderId + ')">Edytuj</button>'
+                    + '<button style="background:#ef4444;color:#fff;border:none;border-radius:4px;font-size:12px;padding:4px 12px;cursor:pointer;" onclick="deleteManualOrder(' + orderId + ')">Usuń</button>'
+                    + '</div>';
+            }
+
+            html += '<tr class="detail-row" id="' + rowId + '"><td colspan="15"><div class="detail-panel">'
                 + '<div class="d-group"><div class="d-label">Klient</div><div class="d-value">' + (o.customer_name || '—') + '</div></div>'
                 + '<div class="d-group"><div class="d-label">Email</div><div class="d-value">' + (o.customer_email || '—') + '</div></div>'
                 + '<div class="d-group"><div class="d-label">Telefon</div><div class="d-value">' + (o.customer_phone || '—') + '</div></div>'
@@ -501,8 +510,10 @@
                 + '<div class="d-group"><div class="d-label">Płatność</div><div class="d-value">' + (o.payment_method || '—') + '</div></div>'
                 + '<div class="d-group"><div class="d-label">Status</div><div class="d-value"><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span> (' + (o.status || '') + ')</div></div>'
                 + '<div class="d-group"><div class="d-label">ID zamówienia</div><div class="d-value">#' + (o.external_id || o.id) + '</div></div>'
+                + (o.invoice_nip ? '<div class="d-group"><div class="d-label">NIP (Faktura)</div><div class="d-value">' + o.invoice_nip + '</div></div>' : '')
                 + '<div class="d-group"><div class="d-label">Komentarz</div><div class="d-value">' + (o.customer_comment || o.note || '—') + '</div></div>'
                 + '<div class="d-items"><div class="d-label">Pozycje zamówienia</div>' + itemsTable + '</div>'
+                + manualActions
                 + '</div></td></tr>';
         });
         tbody.innerHTML = html;
@@ -530,7 +541,6 @@
         if (f.source) url += '&source=' + encodeURIComponent(f.source);
         if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
         if (f.status) url += '&status=' + encodeURIComponent(f.status);
-        if (f.exported) url += '&exported=' + f.exported;
         if (f.date_from) url += '&date_from=' + f.date_from;
         if (f.date_to) url += '&date_to=' + f.date_to;
         window.location.href = url;
@@ -610,19 +620,6 @@
         });
     }
 
-    function togglePriority(btn) {
-        var id = btn.getAttribute('data-id');
-        var isActive = btn.classList.contains('active');
-        var newState = !isActive;
-        if (newState) { btn.classList.add('active'); }
-        else { btn.classList.remove('active'); }
-        fetch('/api/orders/toggle-priority', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({id: id, is_priority: newState})
-        });
-    }
-
     // --- Editable comment ---
     function editComment(span) {
         if (!hasPerm('edit_comments')) return;
@@ -644,18 +641,89 @@
         if (e.key === 'Enter') loadOrders(1);
     });
 
-    // --- Add order modal ---
+    // --- Add/Edit order modal ---
+    var editingOrderId = null;
+
     function openAddModal() {
+        editingOrderId = null;
+        document.getElementById('modal-order-title').textContent = 'Dodaj zamówienie ręcznie';
         document.getElementById('add-modal').classList.add('open');
-        // Default date = now
         var now = new Date();
         var dtStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-'
             + String(now.getDate()).padStart(2,'0') + 'T' + String(now.getHours()).padStart(2,'0')
             + ':' + String(now.getMinutes()).padStart(2,'0');
         document.getElementById('m-date').value = dtStr;
+        document.getElementById('m-source').value = 'manual';
+        document.getElementById('m-product').value = '';
+        document.getElementById('m-type').value = '';
+        document.getElementById('m-config').value = '';
+        document.getElementById('m-price').value = '';
+        document.getElementById('m-shipping').value = '0';
+        document.getElementById('m-status').value = 'awaiting_cod';
+        document.getElementById('m-payment').value = '';
+        document.getElementById('m-name').value = '';
+        document.getElementById('m-phone').value = '';
+        document.getElementById('m-city').value = '';
+        document.getElementById('m-address').value = '';
+        document.getElementById('m-email').value = '';
+        document.getElementById('m-comment').value = '';
+        document.getElementById('m-seller').value = '';
     }
     function closeAddModal() {
         document.getElementById('add-modal').classList.remove('open');
+        editingOrderId = null;
+    }
+    function editManualOrder(orderId) {
+        // Find order data from loaded orders
+        fetch('/api/orders?limit=1&offset=0&search=&source=&status=').then(function(r){return r.json();}).then(function(){
+            // Easier: fetch single order by iterating rendered data
+        });
+        // Use data from DOM — fetch order by id
+        fetch('/api/orders?limit=1000&offset=0').then(function(r){return r.json();}).then(function(d) {
+            var order = null;
+            d.orders.forEach(function(o) { if (o.id == orderId) order = o; });
+            if (!order) { alert('Nie znaleziono zamówienia'); return; }
+            editingOrderId = orderId;
+            document.getElementById('modal-order-title').textContent = 'Edytuj zamówienie #' + orderId;
+            document.getElementById('add-modal').classList.add('open');
+            // Fill form
+            var dt = order.external_created || order.created_at || '';
+            if (dt) {
+                var d2 = new Date(dt);
+                var dtStr = d2.getFullYear() + '-' + String(d2.getMonth()+1).padStart(2,'0') + '-'
+                    + String(d2.getDate()).padStart(2,'0') + 'T' + String(d2.getHours()).padStart(2,'0')
+                    + ':' + String(d2.getMinutes()).padStart(2,'0');
+                document.getElementById('m-date').value = dtStr;
+            }
+            document.getElementById('m-source').value = order.source || 'manual';
+            var items = [];
+            try { items = JSON.parse(order.items_json || '[]'); } catch(e) {}
+            document.getElementById('m-product').value = items.length > 0 ? (items[0].full_name || items[0].name || '') : '';
+            document.getElementById('m-type').value = order.product_type || '';
+            document.getElementById('m-config').value = order.configuration || '';
+            var shipCost = parseFloat(order.shipping_cost || 0);
+            var totalVal = parseFloat(order.total || 0);
+            document.getElementById('m-price').value = (totalVal - shipCost).toFixed(2);
+            document.getElementById('m-shipping').value = shipCost.toFixed(2);
+            document.getElementById('m-status').value = order.status || 'awaiting_cod';
+            document.getElementById('m-payment').value = order.payment_method || '';
+            document.getElementById('m-name').value = order.customer_name || '';
+            document.getElementById('m-phone').value = order.customer_phone || '';
+            document.getElementById('m-city').value = order.customer_city || '';
+            document.getElementById('m-address').value = order.customer_address || '';
+            document.getElementById('m-email').value = order.customer_email || '';
+            document.getElementById('m-comment').value = order.customer_comment || order.note || '';
+            document.getElementById('m-seller').value = order.seller_account || '';
+        });
+    }
+    function deleteManualOrder(orderId) {
+        if (!confirm('Na pewno usunąć zamówienie #' + orderId + '?')) return;
+        fetch('/api/orders/manual/' + orderId, { method: 'DELETE' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.ok) loadOrders(currentPage);
+                else alert('Błąd: ' + (d.error || 'unknown'));
+            });
     }
     function saveManualOrder() {
         var data = {
@@ -676,14 +744,16 @@
             comment: document.getElementById('m-comment').value,
             seller_account: document.getElementById('m-seller').value,
         };
-        fetch('/api/orders/manual', {
-            method: 'POST',
+        var url = editingOrderId ? '/api/orders/manual/' + editingOrderId : '/api/orders/manual';
+        var method = editingOrderId ? 'PUT' : 'POST';
+        fetch(url, {
+            method: method,
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(data)
         }).then(function(r) { return r.json(); }).then(function(d) {
             if (d.ok) {
                 closeAddModal();
-                loadOrders(1);
+                loadOrders(currentPage);
             } else {
                 alert('Błąd: ' + (d.error || 'unknown'));
             }
@@ -694,7 +764,7 @@
     <!-- Modal: add manual order -->
     <div class="modal-overlay" id="add-modal" onclick="if(event.target===this)closeAddModal()">
         <div class="modal">
-            <h3>Dodaj zamówienie ręcznie</h3>
+            <h3 id="modal-order-title">Dodaj zamówienie ręcznie</h3>
             <div class="form-grid">
                 <div class="form-group">
                     <label>Data</label>
@@ -734,13 +804,8 @@
                 <div class="form-group">
                     <label>Status</label>
                     <select id="m-status">
-                        <option value="processing">W realizacji</option>
-                        <option value="payment_accepted">Płatność zaakceptowana</option>
-                        <option value="completed">Zrealizowane</option>
-                        <option value="shipped">Wysłane</option>
-                        <option value="delivered">Dostarczone</option>
-                        <option value="pending">Oczekujące</option>
-                        <option value="cancelled">Anulowane</option>
+                        <option value="awaiting_cod">Płatność przy odbiorze</option>
+                        <option value="awaiting_proforma">Oczekujemy na opłacenie Proformy</option>
                     </select>
                 </div>
                 <div class="form-group">
