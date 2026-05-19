@@ -324,7 +324,7 @@ async def _save_order(conn, source: str, order_data: dict):
                 total=$8, currency=$9, items_count=$10, items_json=$11,
                 payment_method=$12, shipping_method=$13, note=$14,
                 external_created=$15, shipping_cost=$18,
-                seller_account=$19, customer_comment=$20,
+                seller_account=$19, customer_comment=$20, invoice_nip=$21,
                 updated_at=NOW()
             WHERE source=$16 AND external_id=$17
         """,
@@ -347,6 +347,7 @@ async def _save_order(conn, source: str, order_data: dict):
             float(order_data.get("shipping_cost", 0)),
             order_data.get("seller_account", ""),
             order_data.get("customer_comment", ""),
+            order_data.get("invoice_nip", ""),
         )
         return "updated"
     else:
@@ -356,8 +357,8 @@ async def _save_order(conn, source: str, order_data: dict):
                 customer_phone, customer_city, customer_zip, customer_address,
                 total, currency, items_count, items_json,
                 payment_method, shipping_method, note, external_created,
-                shipping_cost, seller_account, customer_comment
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+                shipping_cost, seller_account, customer_comment, invoice_nip
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
         """,
             ext_id, source,
             order_data.get("status", ""),
@@ -378,6 +379,7 @@ async def _save_order(conn, source: str, order_data: dict):
             float(order_data.get("shipping_cost", 0)),
             order_data.get("seller_account", ""),
             order_data.get("customer_comment", ""),
+            order_data.get("invoice_nip", ""),
         )
         return "new"
 
@@ -1093,12 +1095,13 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
     # Seller comment / message to seller + NIP
     msg_to_seller = form.get("messageToSeller", "") or ""
     invoice = form.get("invoice") or {}
-    nip = invoice.get("naturalPerson") if invoice.get("naturalPerson") else ""
+    invoice_nip = ""
     if invoice.get("company") and invoice["company"].get("taxId"):
-        nip = f"NIP: {invoice['company']['taxId']}"
+        invoice_nip = invoice["company"]["taxId"]
+    nip_label = f"NIP: {invoice_nip}" if invoice_nip else ""
     customer_comment = msg_to_seller
-    if nip:
-        customer_comment = f"{msg_to_seller}\n{nip}".strip() if msg_to_seller else nip
+    if nip_label:
+        customer_comment = f"{msg_to_seller}\n{nip_label}".strip() if msg_to_seller else nip_label
 
     # Seller account name
     seller_account = seller_name
@@ -1118,6 +1121,7 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
         "items_json": json.dumps(items, ensure_ascii=False),
         "shipping_cost": ship_cost,
         "customer_comment": customer_comment,
+        "invoice_nip": invoice_nip,
         "seller_account": seller_account,
         "payment_method": payment_label,
         "shipping_method": delivery.get("method", {}).get("name", ""),
@@ -1494,8 +1498,8 @@ async def add_manual_order(request: Request):
                 total, currency, items_count, items_json,
                 payment_method, shipping_method, note, external_created,
                 shipping_cost, seller_account, customer_comment,
-                product_type, configuration
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+                product_type, configuration, created_by_email
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
         """,
             ext_id, source,
             order_data["status"], order_data["customer_name"], order_data["customer_email"],
@@ -1504,9 +1508,81 @@ async def add_manual_order(request: Request):
             order_data["payment_method"], "", order_data["note"], ext_created,
             ship, order_data["seller_account"], order_data["customer_comment"],
             order_data["product_type"], order_data["configuration"],
+            user.get("email", ""),
         )
 
     return JSONResponse({"ok": True, "id": ext_id})
+
+
+@app.put("/api/orders/manual/{order_id}")
+async def edit_manual_order(order_id: int, request: Request):
+    """Edit a manually created order."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "add_orders"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    body = await request.json()
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT source, external_id FROM orders WHERE id=$1", order_id)
+        if not row or not (row["external_id"] or "").startswith("manual"):
+            return JSONResponse({"ok": False, "error": "Only manual orders can be edited"}, status_code=400)
+
+        price = float(body.get("price", 0) or 0)
+        ship = float(body.get("shipping_cost", 0) or 0)
+        total = price + ship
+        items = [{"name": body.get("product_name", ""), "qty": 1, "price": str(price), "sku": ""}]
+
+        ext_created = None
+        if body.get("date"):
+            try:
+                ext_created = datetime.fromisoformat(body["date"])
+            except Exception:
+                ext_created = None
+
+        await conn.execute("""
+            UPDATE orders SET
+                status=$1, customer_name=$2, customer_phone=$3, customer_city=$4,
+                customer_address=$5, total=$6, items_json=$7, payment_method=$8,
+                customer_comment=$9, shipping_cost=$10, seller_account=$11,
+                product_type=$12, configuration=$13, customer_email=$14,
+                external_created=COALESCE($15, external_created),
+                source=$16, updated_at=NOW()
+            WHERE id=$17
+        """,
+            body.get("status", "processing"),
+            body.get("customer_name", ""),
+            body.get("customer_phone", ""),
+            body.get("customer_city", ""),
+            body.get("customer_address", ""),
+            total,
+            json.dumps(items, ensure_ascii=False),
+            body.get("payment_method", ""),
+            body.get("comment", ""),
+            ship,
+            body.get("seller_account", ""),
+            body.get("product_type", ""),
+            body.get("configuration", ""),
+            body.get("customer_email", ""),
+            ext_created,
+            body.get("source", "manual"),
+            order_id,
+        )
+    return JSONResponse({"ok": True})
+
+
+@app.delete("/api/orders/manual/{order_id}")
+async def delete_manual_order(order_id: int, request: Request):
+    """Delete a manually created order."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "add_orders"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT external_id FROM orders WHERE id=$1", order_id)
+        if not row or not (row["external_id"] or "").startswith("manual"):
+            return JSONResponse({"ok": False, "error": "Only manual orders can be deleted"}, status_code=400)
+        await conn.execute("DELETE FROM orders WHERE id=$1", order_id)
+    return JSONResponse({"ok": True})
 
 
 # ============================================================
@@ -2272,6 +2348,9 @@ async def run_migration(request: Request):
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS exported_at TIMESTAMP",
             # v3.1 — priority flag
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_priority BOOLEAN DEFAULT FALSE",
+            # v3.2 — invoice NIP + created_by
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_nip VARCHAR(50) DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS created_by_email VARCHAR(200) DEFAULT ''",
             # v4 — user source access
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_sources TEXT DEFAULT 'all'",
             # v5 — permission-based access
