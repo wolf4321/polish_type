@@ -257,7 +257,7 @@ async def api_list_users(request: Request):
     pool = await _get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT id, email, name, role, permissions, is_active, created_at, last_login FROM users ORDER BY id"
+            "SELECT id, email, name, role, permissions, allowed_sources, is_active, created_at, last_login FROM users ORDER BY id"
         )
     users = []
     for r in rows:
