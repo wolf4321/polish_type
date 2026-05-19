@@ -142,6 +142,11 @@
                  border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
         .modal .btn-save:hover { background: #6d28d9; }
 
+        .star-btn { background: none; border: none; cursor: pointer; font-size: 18px; color: #d1d5db; line-height: 1; padding: 2px; }
+        .star-btn:hover { color: #fbbf24; }
+        .star-btn.active { color: #ff6600; text-shadow: 0 0 6px rgba(255,0,0,.4); }
+        .order-extid { font-size: 10px; color: #9ca3af; margin-top: 2px; }
+
         @media (max-width: 768px) {
             .toolbar { flex-direction: column; }
             .toolbar input[type="text"] { width: 100%; }
@@ -220,6 +225,15 @@
                 <option value="awaiting_cod">Płatność przy odbiorze</option>
                 <option value="awaiting_proforma">Oczekiwanie na proformę</option>
             </select>
+            <select id="f-exported">
+                <option value="">Eksport: wszystkie</option>
+                <option value="yes">Wyeksportowane</option>
+                <option value="no">Niewyeksportowane</option>
+            </select>
+            <select id="f-priority">
+                <option value="">Priorytet: wszystkie</option>
+                <option value="yes">Ważne ★</option>
+            </select>
             <input type="date" id="f-from">
             <span style="color:#9ca3af;">—</span>
             <input type="date" id="f-to">
@@ -247,6 +261,7 @@
                     <thead>
                         <tr>
                             <th style="width:30px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
+                            <th style="width:30px;" title="Priorytet">★</th>
                             <th>Дата</th>
                             <th>Тип товара</th>
                             <th>Комплектация</th>
@@ -264,7 +279,7 @@
                         </tr>
                     </thead>
                     <tbody id="orders-body">
-                        <tr><td colspan="14" class="empty">
+                        <tr><td colspan="16" class="empty">
                             <h4>Loading...</h4>
                         </td></tr>
                     </tbody>
@@ -317,6 +332,8 @@
             search: document.getElementById('f-search').value,
             date_from: document.getElementById('f-from').value,
             date_to: document.getElementById('f-to').value,
+            exported: document.getElementById('f-exported').value,
+            priority: document.getElementById('f-priority').value,
         };
     }
 
@@ -345,6 +362,8 @@
         if (f.search) url += '&search=' + encodeURIComponent(f.search);
         if (f.date_from) url += '&date_from=' + f.date_from;
         if (f.date_to) url += '&date_to=' + f.date_to;
+        if (f.exported) url += '&exported=' + f.exported;
+        if (f.priority) url += '&priority=' + f.priority;
 
         fetch(url).then(function(r) { return r.json(); }).then(function(d) {
             totalOrders = d.total;
@@ -358,7 +377,7 @@
     function renderOrders(orders) {
         var tbody = document.getElementById('orders-body');
         if (!orders || orders.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="14" class="empty"><h4>No orders</h4><p>Check filters or run sync</p></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="16" class="empty"><h4>No orders</h4><p>Check filters or run sync</p></td></tr>';
             return;
         }
 
@@ -461,8 +480,10 @@
             var isExported = o.exported ? true : false;
             var exportedClass = isExported ? ' exported' : '';
 
+            var starActive = o.is_priority ? ' active' : '';
             html += '<tr class="order-row' + exportedClass + '" id="row-' + orderId + '">'
                 + '<td onclick="event.stopPropagation()"><input type="checkbox" class="order-check" data-id="' + orderId + '" onchange="updateSelCount()"></td>'
+                + '<td onclick="event.stopPropagation()"><button class="star-btn' + starActive + '" data-id="' + orderId + '" onclick="togglePriority(this)">★</button></td>'
                 + '<td style="white-space:nowrap;" onclick="toggleDetail(\'' + rowId + '\')">' + dt + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + (o.product_type || '') + '</td>'
                 + '<td class="config-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.configuration || '') + '</td>'
@@ -501,7 +522,7 @@
                     + '</div>';
             }
 
-            html += '<tr class="detail-row" id="' + rowId + '"><td colspan="15"><div class="detail-panel">'
+            html += '<tr class="detail-row" id="' + rowId + '"><td colspan="16"><div class="detail-panel">'
                 + '<div class="d-group"><div class="d-label">Klient</div><div class="d-value">' + (o.customer_name || '—') + '</div></div>'
                 + '<div class="d-group"><div class="d-label">Email</div><div class="d-value">' + (o.customer_email || '—') + '</div></div>'
                 + '<div class="d-group"><div class="d-label">Telefon</div><div class="d-value">' + (o.customer_phone || '—') + '</div></div>'
@@ -617,6 +638,20 @@
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({id: id, exported: exported})
+        });
+    }
+
+    // --- Toggle priority star ---
+    function togglePriority(btn) {
+        var id = btn.getAttribute('data-id');
+        var isActive = btn.classList.contains('active');
+        var newVal = !isActive;
+        if (newVal) { btn.classList.add('active'); }
+        else { btn.classList.remove('active'); }
+        fetch('/api/orders/toggle-priority', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: parseInt(id), is_priority: newVal})
         });
     }
 
