@@ -486,35 +486,31 @@ def _parse_woo_order(woo: dict) -> dict:
     # Customer comment
     customer_comment = woo.get("customer_note", "") or ""
 
-    # NIP extraction — check billing fields and meta_data
+    # NIP extraction — from WooCommerce billing fields and meta_data
     invoice_nip = ""
-    # Direct billing field (some Polish NIP plugins)
-    for bkey in ("nip", "vat", "company_nip", "tax_id", "vat_number", "nip_number"):
+    # 1) Direct billing field
+    for bkey in ("nip", "company_nip", "nip_number"):
         bval = billing.get(bkey)
         if bval and str(bval).strip():
             invoice_nip = str(bval).strip()
             break
-    # Search in order meta_data — any key containing nip/vat/tax
+    # 2) Search meta_data: specifically _billing_nip / billing_nip (the actual NIP value)
     if not invoice_nip:
-        nip_keys_found = []
         for m in woo.get("meta_data", []):
-            key = (m.get("key") or "")
-            val = m.get("value") or ""
-            key_low = key.lower()
-            # Collect all NIP/VAT related meta keys for debug
-            if any(k in key_low for k in ("nip", "vat", "tax_id", "faktura", "invoice")):
-                nip_keys_found.append(f"{key}={val}")
-                if val and str(val).strip() and not invoice_nip:
-                    invoice_nip = str(val).strip()
-        if nip_keys_found:
-            print(f"[woo-nip] order {woo.get('id')}: found keys: {nip_keys_found}, extracted: {invoice_nip}")
-    # Debug: log billing keys for first few orders to find NIP field name
-    if not invoice_nip and billing:
-        billing_keys = [k for k in billing.keys() if k not in ('first_name','last_name','email','phone','address_1','address_2','city','state','postcode','country')]
-        if billing_keys:
-            billing_vals = {k: billing[k] for k in billing_keys if billing[k]}
-            if billing_vals:
-                print(f"[woo-nip] order {woo.get('id')}: extra billing fields: {billing_vals}")
+            key = (m.get("key") or "").lower().strip()
+            val = str(m.get("value") or "").strip()
+            # Only exact NIP keys — NOT _billing_vat_field (that's a flag, not NIP)
+            if key in ("_billing_nip", "billing_nip", "_nip", "nip") and val and len(val) >= 5:
+                invoice_nip = val
+                break
+    # 3) If still nothing, try vat_number keys
+    if not invoice_nip:
+        for m in woo.get("meta_data", []):
+            key = (m.get("key") or "").lower().strip()
+            val = str(m.get("value") or "").strip()
+            if key in ("_vat_number", "vat_number", "_tax_id", "tax_id") and val and len(val) >= 5:
+                invoice_nip = val
+                break
 
     return {
         "external_id": str(woo["id"]),
@@ -816,17 +812,18 @@ def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
 
     # NIP extraction from PrestaShop address/customer
     invoice_nip = ""
+    _bad_nip = {"", "0", "-", "--", ".", "n/a", "brak", "none", "null"}
     # Check address fields
     for nip_field in ("vat_number", "dni", "nip", "company_nip"):
         val = address.get(nip_field)
-        if val and str(val).strip() and str(val).strip() != "0":
+        if val and str(val).strip().lower() not in _bad_nip and len(str(val).strip()) >= 5:
             invoice_nip = str(val).strip()
             break
     # Check customer fields
     if not invoice_nip:
         for nip_field in ("vat_number", "dni", "nip", "siret"):
             val = customer.get(nip_field)
-            if val and str(val).strip() and str(val).strip() != "0":
+            if val and str(val).strip().lower() not in _bad_nip and len(str(val).strip()) >= 5:
                 invoice_nip = str(val).strip()
                 break
     # Try company field with NIP regex
