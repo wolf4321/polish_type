@@ -345,6 +345,7 @@ async def _save_order(conn, source: str, order_data: dict):
                 payment_method=$12, shipping_method=$13, note=$14,
                 external_created=$15, shipping_cost=$18,
                 seller_account=$19, customer_comment=$20, invoice_nip=$21,
+                product_type=$22,
                 updated_at=NOW()
             WHERE source=$16 AND external_id=$17
         """,
@@ -368,6 +369,7 @@ async def _save_order(conn, source: str, order_data: dict):
             order_data.get("seller_account", ""),
             order_data.get("customer_comment", ""),
             order_data.get("invoice_nip", ""),
+            order_data.get("product_type", ""),
         )
         return "updated"
     else:
@@ -377,8 +379,9 @@ async def _save_order(conn, source: str, order_data: dict):
                 customer_phone, customer_city, customer_zip, customer_address,
                 total, currency, items_count, items_json,
                 payment_method, shipping_method, note, external_created,
-                shipping_cost, seller_account, customer_comment, invoice_nip
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+                shipping_cost, seller_account, customer_comment, invoice_nip,
+                product_type
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
         """,
             ext_id, source,
             order_data.get("status", ""),
@@ -400,6 +403,7 @@ async def _save_order(conn, source: str, order_data: dict):
             order_data.get("seller_account", ""),
             order_data.get("customer_comment", ""),
             order_data.get("invoice_nip", ""),
+            order_data.get("product_type", ""),
         )
         return "new"
 
@@ -452,6 +456,34 @@ def _is_valid_nip(val: str) -> bool:
     # Must contain at least 5 digit characters
     digits = _re_nip.findall(r'\d', v)
     return len(digits) >= 5
+
+
+def _detect_product_type(items: list) -> str:
+    """Auto-detect product type from item names/SKUs.
+    Returns: 'Теплица', 'Поликарбонат', 'Теплица + Поликарбонат', or ''
+    """
+    has_szklarnia = False
+    has_poliweglan = False
+    for item in items:
+        name_lower = (item.get("full_name") or item.get("name") or "").lower()
+        sku_lower = (item.get("sku") or "").lower()
+        combined = name_lower + " " + sku_lower
+        if any(kw in combined for kw in ("szklarnia", "szklarni", "теплиц", "cieplarni", "greenhouse", "tunel")):
+            has_szklarnia = True
+        if any(kw in combined for kw in ("poliwęglan", "poliwegl", "поликарбонат", "polycarbonate", "komorow", "lity")):
+            has_poliweglan = True
+        # SKU-based detection: common patterns
+        if any(kw in sku_lower for kw in ("szk", "lux", "eco", "eko")):
+            has_szklarnia = True
+        if any(kw in sku_lower for kw in ("pc", "poly", "poliw")):
+            has_poliweglan = True
+    if has_szklarnia and has_poliweglan:
+        return "Теплица + Поликарбонат"
+    if has_szklarnia:
+        return "Теплица"
+    if has_poliweglan:
+        return "Поликарбонат"
+    return ""
 
 
 def _parse_woo_order(woo: dict) -> dict:
@@ -527,15 +559,28 @@ def _parse_woo_order(woo: dict) -> dict:
                 invoice_nip = val
                 print(f"[woo-nip] order {woo_id}: found in meta '{key}' = {invoice_nip}")
                 break
+    # Prefer shipping (recipient) data over billing (payer) for name & address
+    shipping = woo.get("shipping", {})
+    recip_name = f"{shipping.get('first_name', '')} {shipping.get('last_name', '')}".strip()
+    if not recip_name:
+        recip_name = f"{billing.get('first_name', '')} {billing.get('last_name', '')}".strip()
+    recip_city = shipping.get("city") or billing.get("city", "")
+    recip_zip = shipping.get("postcode") or billing.get("postcode", "")
+    recip_addr = f"{shipping.get('address_1', '')} {shipping.get('address_2', '')}".strip()
+    if not recip_addr:
+        recip_addr = f"{billing.get('address_1', '')} {billing.get('address_2', '')}".strip()
+    # Phone: shipping may have it (WC 8.3+), fall back to billing
+    recip_phone = shipping.get("phone") or billing.get("phone", "")
+
     return {
         "external_id": str(woo["id"]),
         "status": woo.get("status", "unknown"),
-        "customer_name": f"{billing.get('first_name', '')} {billing.get('last_name', '')}".strip(),
+        "customer_name": recip_name,
         "customer_email": billing.get("email", ""),
-        "customer_phone": billing.get("phone", ""),
-        "customer_city": billing.get("city", ""),
-        "customer_zip": billing.get("postcode", ""),
-        "customer_address": f"{billing.get('address_1', '')} {billing.get('address_2', '')}".strip(),
+        "customer_phone": recip_phone,
+        "customer_city": recip_city,
+        "customer_zip": recip_zip,
+        "customer_address": recip_addr,
         "total": float(woo.get("total", 0)),
         "currency": woo.get("currency", "PLN"),
         "items_count": len(items),
@@ -548,6 +593,7 @@ def _parse_woo_order(woo: dict) -> dict:
         "customer_comment": customer_comment,
         "seller_account": "",
         "invoice_nip": invoice_nip,
+        "product_type": _detect_product_type(items),
     }
 
 
@@ -812,9 +858,10 @@ def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
     status_id = str(order.get("current_state", ""))
     status = PRESTA_STATUS_MAP.get(status_id, f"state_{status_id}")
 
-    cust_name = f"{customer.get('firstname', '')} {customer.get('lastname', '')}".strip()
+    # Prefer delivery address name (recipient) over customer (account holder)
+    cust_name = f"{address.get('firstname', '')} {address.get('lastname', '')}".strip()
     if not cust_name:
-        cust_name = f"{address.get('firstname', '')} {address.get('lastname', '')}".strip()
+        cust_name = f"{customer.get('firstname', '')} {customer.get('lastname', '')}".strip()
 
     # Shipping cost
     ship_cost = 0.0
@@ -884,6 +931,7 @@ def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
         "customer_comment": customer_comment,
         "seller_account": "",
         "invoice_nip": invoice_nip,
+        "product_type": _detect_product_type(items),
     }
 
 
@@ -1112,13 +1160,13 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
     payment = form.get("payment") or {}
     summary = form.get("summary") or {}
 
-    # Build buyer name
-    buyer_name = ""
-    if buyer.get("firstName") or buyer.get("lastName"):
-        buyer_name = f"{buyer.get('firstName', '')} {buyer.get('lastName', '')}".strip()
-    if not buyer_name:
-        buyer_name = address.get("firstName", "") + " " + address.get("lastName", "")
-        buyer_name = buyer_name.strip()
+    # Build recipient name (delivery address = who receives the package)
+    recipient_name = ""
+    if address.get("firstName") or address.get("lastName"):
+        recipient_name = f"{address.get('firstName', '')} {address.get('lastName', '')}".strip()
+    # Fallback to buyer name if delivery address has no name
+    if not recipient_name:
+        recipient_name = f"{buyer.get('firstName', '')} {buyer.get('lastName', '')}".strip()
 
     # Items — use external.id (sygnatura) as the display name if available
     items = []
@@ -1226,9 +1274,9 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
     return {
         "external_id": str(form.get("id", "")),
         "status": status,
-        "customer_name": buyer_name,
+        "customer_name": recipient_name,
         "customer_email": buyer.get("email", ""),
-        "customer_phone": buyer.get("phoneNumber") or address.get("phoneNumber", ""),
+        "customer_phone": address.get("phoneNumber", "") or buyer.get("phoneNumber", ""),
         "customer_city": address.get("city", ""),
         "customer_zip": address.get("zipCode", "") or address.get("postCode", ""),
         "customer_address": f"{address.get('street', '')}".strip(),
@@ -1239,6 +1287,7 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
         "shipping_cost": ship_cost,
         "customer_comment": customer_comment,
         "invoice_nip": invoice_nip,
+        "product_type": _detect_product_type(items),
         "seller_account": seller_account,
         "payment_method": payment_label,
         "shipping_method": delivery.get("method", {}).get("name", ""),
