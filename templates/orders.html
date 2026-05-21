@@ -54,11 +54,14 @@
                        display: flex; justify-content: space-between; align-items: center; }
         .card-header h3 { font-size: 15px; font-weight: 600; }
 
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
         th { text-align: left; padding: 10px 12px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
              font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase;
-             letter-spacing: .3px; position: sticky; top: 0; overflow: hidden; resize: horizontal; min-width: 30px; }
-        td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+             letter-spacing: .3px; position: sticky; top: 0; position: relative; }
+        th .col-resizer { position: absolute; right: 0; top: 0; width: 5px; height: 100%;
+             cursor: col-resize; background: transparent; z-index: 10; }
+        th .col-resizer:hover, th .col-resizer.active { background: #a5b4fc; }
+        td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; overflow: hidden; text-overflow: ellipsis; }
         tr:hover td { background: #f9fafb; }
 
         .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px;
@@ -244,6 +247,7 @@
             {% endif %}
             {% if user and 'sync' in (user.permissions or '').split(',') %}
             <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Sync now">Sync</button>
+            <button class="btn-sync" onclick="fullResync()" id="btn-full-sync" title="Pełna resynchronizacja (odświeża NIP, dane)" style="background:#dc2626;">Full Sync</button>
             {% endif %}
             {% if user and 'add_orders' in (user.permissions or '').split(',') %}
             <button class="btn-add" onclick="openAddModal()" title="Dodaj zamówienie">+ Dodaj</button>
@@ -587,6 +591,26 @@
         });
     }
 
+    function fullResync() {
+        if (!confirm('Pełna resynchronizacja wszystkich zamówień?\nTo może potrwać kilka minut.\nNIP i inne dane zostaną zaktualizowane.')) return;
+        var btn = document.getElementById('btn-full-sync');
+        btn.textContent = 'Syncing...';
+        btn.disabled = true;
+        var sources = ['dobraszklarnia', 'oteko', 'cieplarnia', 'allegro'];
+        var done = 0;
+        sources.forEach(function(src) {
+            fetch('/admin/sync?source=' + src + '&full=true').then(function(r) { return r.json(); }).then(function() {
+                done++;
+                btn.textContent = 'Full Sync (' + done + '/' + sources.length + ')';
+                if (done === sources.length) {
+                    btn.textContent = 'Full Sync';
+                    btn.disabled = false;
+                    setTimeout(function() { loadOrders(currentPage); loadSyncInfo(); }, 10000);
+                }
+            });
+        });
+    }
+
     function loadSyncInfo() {
         fetch('/api/sync-log?limit=5').then(function(r) { return r.json(); }).then(function(d) {
             var el = document.getElementById('sync-info');
@@ -800,6 +824,37 @@
             }
         });
     }
+
+    // --- Column resizer ---
+    (function() {
+        var thCells = document.querySelectorAll('thead th');
+        thCells.forEach(function(th) {
+            var resizer = document.createElement('div');
+            resizer.className = 'col-resizer';
+            th.appendChild(resizer);
+            var startX, startW;
+            resizer.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                startX = e.pageX;
+                startW = th.offsetWidth;
+                resizer.classList.add('active');
+                function onMove(ev) {
+                    var diff = ev.pageX - startX;
+                    var newW = Math.max(30, startW + diff);
+                    th.style.width = newW + 'px';
+                    th.style.minWidth = newW + 'px';
+                }
+                function onUp() {
+                    resizer.classList.remove('active');
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                }
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+        });
+    })();
     </script>
 
     <!-- Modal: add manual order -->
