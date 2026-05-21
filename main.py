@@ -486,6 +486,26 @@ def _parse_woo_order(woo: dict) -> dict:
     # Customer comment
     customer_comment = woo.get("customer_note", "") or ""
 
+    # NIP extraction — check billing fields and meta_data
+    invoice_nip = ""
+    # Direct billing field (some Polish NIP plugins)
+    if billing.get("nip"):
+        invoice_nip = str(billing["nip"]).strip()
+    elif billing.get("vat"):
+        invoice_nip = str(billing["vat"]).strip()
+    elif billing.get("company_nip"):
+        invoice_nip = str(billing["company_nip"]).strip()
+    # Search in order meta_data
+    if not invoice_nip:
+        for m in woo.get("meta_data", []):
+            key = (m.get("key") or "").lower()
+            val = m.get("value") or ""
+            if key in ("_billing_nip", "billing_nip", "_nip", "nip", "_billing_vat", "billing_vat",
+                        "_vat_number", "vat_number", "_billing_company_nip", "billing_company_nip"):
+                if val and str(val).strip():
+                    invoice_nip = str(val).strip()
+                    break
+
     return {
         "external_id": str(woo["id"]),
         "status": woo.get("status", "unknown"),
@@ -506,6 +526,7 @@ def _parse_woo_order(woo: dict) -> dict:
         "shipping_cost": ship_cost,
         "customer_comment": customer_comment,
         "seller_account": "",
+        "invoice_nip": invoice_nip,
     }
 
 
@@ -783,6 +804,21 @@ def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
     if note_text:
         customer_comment = note_text
 
+    # NIP extraction from PrestaShop address/customer
+    invoice_nip = ""
+    if address.get("vat_number"):
+        invoice_nip = str(address["vat_number"]).strip()
+    elif address.get("dni"):
+        invoice_nip = str(address["dni"]).strip()
+    elif customer.get("vat_number"):
+        invoice_nip = str(customer["vat_number"]).strip()
+    elif address.get("company") and str(address.get("company", "")).strip():
+        # Sometimes NIP is embedded in company field as "Firma NIP: 1234567890"
+        import re as _re2
+        nip_match = _re2.search(r'(?:NIP|nip)[:\s]*(\d[\d\s-]{8,}\d)', str(address.get("company", "")))
+        if nip_match:
+            invoice_nip = nip_match.group(1).replace(" ", "").replace("-", "")
+
     return {
         "external_id": str(order.get("id", "")),
         "status": status,
@@ -803,6 +839,7 @@ def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
         "shipping_cost": ship_cost,
         "customer_comment": customer_comment,
         "seller_account": "",
+        "invoice_nip": invoice_nip,
     }
 
 
@@ -1536,16 +1573,20 @@ async def add_manual_order(request: Request):
 
 @app.put("/api/orders/manual/{order_id}")
 async def edit_manual_order(order_id: int, request: Request):
-    """Edit a manually created order."""
+    """Edit a manually created order. Creator or superadmin can edit."""
     user = await get_current_user(request)
     if not user or not has_perm(user, "add_orders"):
         return JSONResponse({"error": "Access denied"}, status_code=403)
     body = await request.json()
     pool = await get_db_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT source, external_id FROM orders WHERE id=$1", order_id)
+        row = await conn.fetchrow("SELECT source, external_id, created_by_email FROM orders WHERE id=$1", order_id)
         if not row or not (row["external_id"] or "").startswith("manual"):
             return JSONResponse({"ok": False, "error": "Only manual orders can be edited"}, status_code=400)
+        # Only creator or superadmin can edit
+        if not has_perm(user, "manage_users"):
+            if (row["created_by_email"] or "") != (user.get("email", "") or ""):
+                return JSONResponse({"ok": False, "error": "Możesz edytować tylko swoje zamówienia"}, status_code=403)
 
         price = float(body.get("price", 0) or 0)
         ship = float(body.get("shipping_cost", 0) or 0)
@@ -1592,10 +1633,10 @@ async def edit_manual_order(order_id: int, request: Request):
 
 @app.delete("/api/orders/manual/{order_id}")
 async def delete_manual_order(order_id: int, request: Request):
-    """Delete a manually created order."""
+    """Delete a manually created order. Only superadmin (manage_users) can delete."""
     user = await get_current_user(request)
-    if not user or not has_perm(user, "add_orders"):
-        return JSONResponse({"error": "Access denied"}, status_code=403)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Tylko superadmin może usuwać zamówienia"}, status_code=403)
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT external_id FROM orders WHERE id=$1", order_id)
