@@ -54,11 +54,12 @@
                        display: flex; justify-content: space-between; align-items: center; }
         .card-header h3 { font-size: 15px; font-weight: 600; }
 
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { text-align: left; padding: 10px 12px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
+        table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+        th { text-align: left; padding: 10px 8px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
              font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase;
-             letter-spacing: .3px; position: sticky; top: 0; }
-        td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+             letter-spacing: .3px; position: sticky; top: 0; overflow: hidden; text-overflow: ellipsis; }
+        td { padding: 10px 8px; border-bottom: 1px solid #f3f4f6; vertical-align: top;
+             overflow: hidden; text-overflow: ellipsis; }
         tr:hover td { background: #f9fafb; }
 
         .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px;
@@ -270,22 +271,22 @@
                 <table>
                     <thead>
                         <tr>
-                            <th style="width:30px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
-                            <th style="width:30px;" title="Priorytet">★</th>
-                            <th style="width:30px;" title="Wyeksportowano">&#10003;</th>
-                            <th>Дата<span class="col-resize"></span></th>
-                            <th>Тип товара<span class="col-resize"></span></th>
-                            <th>Комплектация<span class="col-resize"></span></th>
-                            <th>Faktura<span class="col-resize"></span></th>
-                            <th>Цена + доставка<span class="col-resize"></span></th>
-                            <th>Продукт<span class="col-resize"></span></th>
-                            <th>Статус<span class="col-resize"></span></th>
-                            <th>Оплата<span class="col-resize"></span></th>
-                            <th>Телефон<span class="col-resize"></span></th>
-                            <th>Адрес<span class="col-resize"></span></th>
-                            <th>Комментарий<span class="col-resize"></span></th>
-                            <th>Источник<span class="col-resize"></span></th>
-                            <th>Аккаунт</th>
+                            <th style="width:36px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
+                            <th style="width:36px;" title="Priorytet">★</th>
+                            <th style="width:36px;" title="Wyeksportowano">&#10003;</th>
+                            <th style="width:120px;">Дата<span class="col-resize"></span></th>
+                            <th style="width:80px;">Тип товара<span class="col-resize"></span></th>
+                            <th style="width:100px;">Комплектация<span class="col-resize"></span></th>
+                            <th style="width:100px;">Faktura<span class="col-resize"></span></th>
+                            <th style="width:100px;">Цена + доставка<span class="col-resize"></span></th>
+                            <th style="width:200px;">Продукт<span class="col-resize"></span></th>
+                            <th style="width:120px;">Статус<span class="col-resize"></span></th>
+                            <th style="width:100px;">Оплата<span class="col-resize"></span></th>
+                            <th style="width:100px;">Телефон<span class="col-resize"></span></th>
+                            <th style="width:140px;">Адрес<span class="col-resize"></span></th>
+                            <th style="width:120px;">Комментарий<span class="col-resize"></span></th>
+                            <th style="width:100px;">Источник<span class="col-resize"></span></th>
+                            <th style="width:100px;">Аккаунт</th>
                         </tr>
                     </thead>
                     <tbody id="orders-body">
