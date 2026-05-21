@@ -1926,8 +1926,12 @@ async def debug_nip(request: Request):
         total = await conn.fetchval(
             "SELECT COUNT(*) FROM orders WHERE invoice_nip IS NOT NULL AND invoice_nip != ''"
         )
+        by_source = await conn.fetch(
+            "SELECT source, COUNT(*) as cnt FROM orders WHERE invoice_nip IS NOT NULL AND invoice_nip != '' GROUP BY source"
+        )
     return JSONResponse({
         "total_with_nip": total,
+        "by_source": {r["source"]: r["cnt"] for r in by_source},
         "samples": [_safe_dict(r) for r in rows]
     })
 
