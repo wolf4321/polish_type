@@ -54,14 +54,15 @@
                        display: flex; justify-content: space-between; align-items: center; }
         .card-header h3 { font-size: 15px; font-weight: 600; }
 
-        table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
         th { text-align: left; padding: 10px 12px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
              font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase;
              letter-spacing: .3px; position: sticky; top: 0; position: relative; }
-        th .col-resizer { position: absolute; right: 0; top: 0; width: 5px; height: 100%;
-             cursor: col-resize; background: transparent; z-index: 10; }
-        th .col-resizer:hover, th .col-resizer.active { background: #a5b4fc; }
-        td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; overflow: hidden; text-overflow: ellipsis; }
+        th .col-resizer { position: absolute; right: -2px; top: 4px; bottom: 4px; width: 4px;
+             cursor: col-resize; z-index: 10; background: #d1d5db; border-radius: 2px; opacity: 0.5; }
+        th:hover .col-resizer { opacity: 1; background: #9ca3af; }
+        th .col-resizer:hover, th .col-resizer.active { background: #6366f1 !important; opacity: 1 !important; }
+        td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
         tr:hover td { background: #f9fafb; }
 
         .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px;
@@ -825,28 +826,47 @@
         });
     }
 
-    // --- Column resizer ---
-    (function() {
-        var thCells = document.querySelectorAll('thead th');
+    // --- Column resizer (visible handle between columns) ---
+    function initColumnResizers() {
+        var table = document.querySelector('table');
+        if (!table) return;
+        var thCells = table.querySelectorAll('thead th');
+        // First: set explicit widths from current computed widths
         thCells.forEach(function(th) {
-            var resizer = document.createElement('div');
-            resizer.className = 'col-resizer';
-            th.appendChild(resizer);
-            var startX, startW;
-            resizer.addEventListener('mousedown', function(e) {
+            th.style.width = th.offsetWidth + 'px';
+        });
+        table.style.tableLayout = 'fixed';
+        // Remove old resizers if any
+        table.querySelectorAll('.col-resizer').forEach(function(r) { r.remove(); });
+        // Add resizer handles
+        thCells.forEach(function(th, idx) {
+            if (idx === thCells.length - 1) return; // skip last column
+            var handle = document.createElement('div');
+            handle.className = 'col-resizer';
+            th.appendChild(handle);
+            handle.addEventListener('mousedown', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
-                startX = e.pageX;
-                startW = th.offsetWidth;
-                resizer.classList.add('active');
+                var startX = e.pageX;
+                var startW = th.offsetWidth;
+                var nextTh = thCells[idx + 1];
+                var nextW = nextTh ? nextTh.offsetWidth : 0;
+                handle.classList.add('active');
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
                 function onMove(ev) {
                     var diff = ev.pageX - startX;
                     var newW = Math.max(30, startW + diff);
                     th.style.width = newW + 'px';
-                    th.style.minWidth = newW + 'px';
+                    if (nextTh) {
+                        var newNextW = Math.max(30, nextW - diff);
+                        nextTh.style.width = newNextW + 'px';
+                    }
                 }
                 function onUp() {
-                    resizer.classList.remove('active');
+                    handle.classList.remove('active');
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
                     document.removeEventListener('mousemove', onMove);
                     document.removeEventListener('mouseup', onUp);
                 }
@@ -854,7 +874,15 @@
                 document.addEventListener('mouseup', onUp);
             });
         });
-    })();
+    }
+    // Init after first render
+    setTimeout(initColumnResizers, 500);
+    // Re-init after each loadOrders
+    var _origLoadOrders = loadOrders;
+    loadOrders = function(page) {
+        _origLoadOrders(page);
+        setTimeout(initColumnResizers, 800);
+    };
     </script>
 
     <!-- Modal: add manual order -->
