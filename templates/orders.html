@@ -57,7 +57,7 @@
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
         th { text-align: left; padding: 10px 12px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
              font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase;
-             letter-spacing: .3px; position: sticky; top: 0; }
+             letter-spacing: .3px; position: sticky; top: 0; overflow: hidden; resize: horizontal; min-width: 30px; }
         td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
         tr:hover td { background: #f9fafb; }
 
@@ -91,7 +91,7 @@
 
         .price-breakdown { font-size: 12px; }
         .price-breakdown .ship { font-size: 10px; color: #6b7280; }
-        .comment-cell { font-size: 11px; color: #4b5563; max-width: 180px;
+        .comment-cell { font-size: 13px; color: #dc2626; font-weight: 600; max-width: 200px;
                          white-space: pre-wrap; word-break: break-word; }
         .editable-comment { cursor: pointer; border-bottom: 1px dashed #d1d5db; padding-bottom: 1px; }
         .editable-comment:hover { background: #fef9c3; }
@@ -291,7 +291,9 @@
 
     <script>
     var userPerms = '{{ user.permissions if user else "" }}'.split(',');
+    var userEmail = '{{ user.email if user else "" }}';
     function hasPerm(p) { return userPerms.indexOf(p) !== -1; }
+    var isSuperAdmin = hasPerm('manage_users');
     var currentPage = 1;
     var perPage = 50;
     var totalOrders = 0;
@@ -436,11 +438,11 @@
 
             // Product names — shortened to dimensions
             var productHtml = '<div class="items-list">';
-            items.slice(0, 3).forEach(function(it) {
+            items.slice(0, 2).forEach(function(it) {
                 var shortName = shortenProduct(it.full_name || it.name || '');
                 productHtml += '<span>' + it.qty + 'x ' + shortName + '</span>';
             });
-            if (items.length > 3) productHtml += '<span>+ ' + (items.length - 3) + ' jeszcze...</span>';
+            if (items.length > 2) productHtml += '<span>+ ' + (items.length - 2) + ' jeszcze...</span>';
             productHtml += '</div>';
 
             // Date
@@ -499,7 +501,7 @@
                 + '<div class="order-extid">' + ((o.external_id || '').replace(/[^0-9]/g, '') || '') + '</div>'
                 + (o.created_by_email ? '<div class="order-extid">' + o.created_by_email + '</div>' : '')
                 + '</td>'
-                + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.seller_account || '') + '</td>'
+                + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.source === 'allegro' ? (o.customer_name || '') : (o.seller_account || '')) + '</td>'
                 + '<td onclick="event.stopPropagation()"><input type="checkbox" class="exported-check" data-id="' + orderId + '"' + (isExported ? ' checked' : '') + ' onchange="toggleExported(this)"></td>'
                 + '</tr>';
 
@@ -512,14 +514,18 @@
             });
             itemsTable += '</tbody></table>';
 
-            // Manual order actions
+            // Manual order actions — edit: creator or superadmin, delete: only superadmin
             var isManual = (o.external_id || '').indexOf('manual') === 0;
             var manualActions = '';
-            if (isManual && hasPerm('add_orders')) {
-                manualActions = '<div class="d-group" style="grid-column:1/-1;margin-top:8px;">'
-                    + '<button class="btn-primary" style="margin-right:8px;font-size:12px;padding:4px 12px;" onclick="editManualOrder(' + orderId + ')">Edytuj</button>'
-                    + '<button style="background:#ef4444;color:#fff;border:none;border-radius:4px;font-size:12px;padding:4px 12px;cursor:pointer;" onclick="deleteManualOrder(' + orderId + ')">Usuń</button>'
-                    + '</div>';
+            if (isManual) {
+                var canEdit = isSuperAdmin || (hasPerm('add_orders') && o.created_by_email === userEmail);
+                var canDelete = isSuperAdmin;
+                if (canEdit || canDelete) {
+                    manualActions = '<div class="d-group" style="grid-column:1/-1;margin-top:8px;">';
+                    if (canEdit) manualActions += '<button class="btn-primary" style="margin-right:8px;font-size:12px;padding:4px 12px;" onclick="editManualOrder(' + orderId + ')">Edytuj</button>';
+                    if (canDelete) manualActions += '<button style="background:#ef4444;color:#fff;border:none;border-radius:4px;font-size:12px;padding:4px 12px;cursor:pointer;" onclick="deleteManualOrder(' + orderId + ')">Usuń</button>';
+                    manualActions += '</div>';
+                }
             }
 
             html += '<tr class="detail-row" id="' + rowId + '"><td colspan="16"><div class="detail-panel">'
@@ -805,16 +811,8 @@
                     <label>Data</label>
                     <input type="datetime-local" id="m-date">
                 </div>
-                <div class="form-group">
-                    <label>Źródło</label>
-                    <select id="m-source">
-                        <option value="manual">Ręczne</option>
-                        <option value="dobraszklarnia">dobraszklarnia.pl</option>
-                        <option value="oteko">oteko.pl</option>
-                        <option value="cieplarnia">cieplarnia.pl</option>
-                        <option value="allegro">Allegro</option>
-                        <option value="inne">Inne</option>
-                    </select>
+                <div class="form-group" style="display:none;">
+                    <input type="hidden" id="m-source" value="manual">
                 </div>
                 <div class="form-group full">
                     <label>Nazwa produktu</label>
