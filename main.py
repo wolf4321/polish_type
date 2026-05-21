@@ -527,17 +527,6 @@ def _parse_woo_order(woo: dict) -> dict:
                 invoice_nip = val
                 print(f"[woo-nip] order {woo_id}: found in meta '{key}' = {invoice_nip}")
                 break
-    # 4) Debug: if no NIP found, log all meta keys containing 'nip','vat','tax','faktura','invoice'
-    if not invoice_nip:
-        nip_related = []
-        for m in woo.get("meta_data", []):
-            mk = (m.get("key") or "").lower()
-            mv = str(m.get("value") or "").strip()
-            if any(kw in mk for kw in ("nip", "vat", "tax", "faktur", "invoice", "billing_n")):
-                nip_related.append(f"{m.get('key')}={mv[:60]}")
-        if nip_related:
-            print(f"[woo-nip-debug] order {woo_id}: related meta = {nip_related}")
-
     return {
         "external_id": str(woo["id"]),
         "status": woo.get("status", "unknown"),
@@ -596,15 +585,6 @@ async def sync_woocommerce(full=False):
                 orders = await _woo_fetch_orders(session, page=page, per_page=50, after=after)
                 if not orders:
                     break
-
-                # Debug: log billing keys of first order on first page
-                if page == 1 and orders:
-                    first = orders[0]
-                    b = first.get("billing", {})
-                    all_bkeys = list(b.keys())
-                    meta_keys = [m.get("key") for m in first.get("meta_data", []) if m.get("key")]
-                    print(f"[woo-debug] first order {first.get('id')}: billing keys={all_bkeys}")
-                    print(f"[woo-debug] first order {first.get('id')}: meta keys={meta_keys[:30]}")
 
                 async with pool.acquire() as conn:
                     for woo_order in orders:
@@ -1217,10 +1197,7 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
     msg_to_seller = form.get("messageToSeller", "") or ""
     invoice = form.get("invoice") or {}
     invoice_nip = ""
-    # Debug: log invoice structure for first few orders
     form_id = form.get("id", "?")
-    if invoice:
-        print(f"[allegro-nip-debug] order {form_id}: invoice keys={list(invoice.keys())}, invoice={str(invoice)[:200]}")
     # Try invoice.company.taxId (old format)
     if invoice.get("company") and invoice["company"].get("taxId"):
         invoice_nip = invoice["company"]["taxId"]
@@ -1331,12 +1308,6 @@ async def _sync_allegro_account(account: dict, full=False):
                     )
                     if offset == 0:
                         print(f"[sync-allegro:{name}] offset=0, total={total}, fetched={len(forms)}, range={dr_start}..{dr_end}")
-                        # Debug: dump first order structure to see if 'invoice' key exists
-                        if forms:
-                            f0 = forms[0]
-                            print(f"[allegro-debug] first order keys: {list(f0.keys())}")
-                            inv = f0.get("invoice")
-                            print(f"[allegro-debug] first order invoice: {str(inv)[:300]}")
                     if not forms:
                         break
 
