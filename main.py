@@ -501,11 +501,13 @@ def _parse_woo_order(woo: dict) -> dict:
 
     # NIP extraction — from WooCommerce billing fields and meta_data
     invoice_nip = ""
+    woo_id = woo.get("id", "?")
     # 1) Direct billing field
     for bkey in ("nip", "company_nip", "nip_number"):
         bval = billing.get(bkey)
         if _is_valid_nip(str(bval or "")):
             invoice_nip = str(bval).strip()
+            print(f"[woo-nip] order {woo_id}: found in billing.{bkey} = {invoice_nip}")
             break
     # 2) Search meta_data: specifically _billing_nip / billing_nip (the actual NIP value)
     if not invoice_nip:
@@ -514,6 +516,7 @@ def _parse_woo_order(woo: dict) -> dict:
             val = str(m.get("value") or "").strip()
             if key in ("_billing_nip", "billing_nip", "_nip", "nip") and _is_valid_nip(val):
                 invoice_nip = val
+                print(f"[woo-nip] order {woo_id}: found in meta '{key}' = {invoice_nip}")
                 break
     # 3) If still nothing, try vat_number keys
     if not invoice_nip:
@@ -522,7 +525,18 @@ def _parse_woo_order(woo: dict) -> dict:
             val = str(m.get("value") or "").strip()
             if key in ("_vat_number", "vat_number", "_tax_id", "tax_id") and _is_valid_nip(val):
                 invoice_nip = val
+                print(f"[woo-nip] order {woo_id}: found in meta '{key}' = {invoice_nip}")
                 break
+    # 4) Debug: if no NIP found, log all meta keys containing 'nip','vat','tax','faktura','invoice'
+    if not invoice_nip:
+        nip_related = []
+        for m in woo.get("meta_data", []):
+            mk = (m.get("key") or "").lower()
+            mv = str(m.get("value") or "").strip()
+            if any(kw in mk for kw in ("nip", "vat", "tax", "faktur", "invoice", "billing_n")):
+                nip_related.append(f"{m.get('key')}={mv[:60]}")
+        if nip_related:
+            print(f"[woo-nip-debug] order {woo_id}: related meta = {nip_related}")
 
     return {
         "external_id": str(woo["id"]),
@@ -583,6 +597,15 @@ async def sync_woocommerce(full=False):
                 if not orders:
                     break
 
+                # Debug: log billing keys of first order on first page
+                if page == 1 and orders:
+                    first = orders[0]
+                    b = first.get("billing", {})
+                    all_bkeys = list(b.keys())
+                    meta_keys = [m.get("key") for m in first.get("meta_data", []) if m.get("key")]
+                    print(f"[woo-debug] first order {first.get('id')}: billing keys={all_bkeys}")
+                    print(f"[woo-debug] first order {first.get('id')}: meta keys={meta_keys[:30]}")
+
                 async with pool.acquire() as conn:
                     for woo_order in orders:
                         parsed = _parse_woo_order(woo_order)
@@ -608,7 +631,13 @@ async def sync_woocommerce(full=False):
                 "UPDATE sync_log SET status='ok', orders_new=$1, orders_upd=$2, finished_at=NOW() WHERE id=$3",
                 new_count, upd_count, log_id
             )
-        print(f"[sync-woo] done: +{new_count} new, ~{upd_count} updated")
+        # Count orders with NIP in DB after sync
+        async with pool.acquire() as conn:
+            nip_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM orders WHERE source=$1 AND invoice_nip IS NOT NULL AND invoice_nip != ''",
+                source
+            )
+        print(f"[sync-woo] done: +{new_count} new, ~{upd_count} updated, {nip_count} orders have NIP in DB")
 
     except Exception as e:
         print(f"[sync-woo] ERROR: {e}")
@@ -1876,6 +1905,30 @@ async def api_orders(
         "total": total,
         "orders": orders,
         "permissions": user.get("permissions", ""),
+    })
+
+
+# ============================================================
+# === API: Диагностика NIP ===
+# ============================================================
+
+@app.get("/api/debug/nip")
+async def debug_nip(request: Request):
+    """Диагностика: показать заказы с NIP в БД."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "superadmin only"}, status_code=403)
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, source, external_id, customer_name, invoice_nip FROM orders WHERE invoice_nip IS NOT NULL AND invoice_nip != '' LIMIT 50"
+        )
+        total = await conn.fetchval(
+            "SELECT COUNT(*) FROM orders WHERE invoice_nip IS NOT NULL AND invoice_nip != ''"
+        )
+    return JSONResponse({
+        "total_with_nip": total,
+        "samples": [_safe_dict(r) for r in rows]
     })
 
 
