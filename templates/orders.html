@@ -263,6 +263,7 @@
                         <tr>
                             <th style="width:30px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
                             <th style="width:30px;" title="Priorytet">★</th>
+                            <th style="width:30px;" title="Wyeksportowano">&#10003;</th>
                             <th>Дата</th>
                             <th>Тип товара</th>
                             <th>Комплектация</th>
@@ -276,7 +277,6 @@
                             <th>Комментарий</th>
                             <th>Источник</th>
                             <th>Аккаунт</th>
-                            <th style="width:30px;" title="Выгружено">&#10003;</th>
                         </tr>
                     </thead>
                     <tbody id="orders-body">
@@ -487,6 +487,7 @@
             html += '<tr class="order-row' + exportedClass + '" id="row-' + orderId + '">'
                 + '<td onclick="event.stopPropagation()"><input type="checkbox" class="order-check" data-id="' + orderId + '" onchange="updateSelCount()"></td>'
                 + '<td onclick="event.stopPropagation()"><button class="star-btn' + starActive + '" data-id="' + orderId + '" onclick="togglePriority(this)">★</button></td>'
+                + '<td onclick="event.stopPropagation()"><input type="checkbox" class="exported-check" data-id="' + orderId + '"' + (isExported ? ' checked' : '') + ' onchange="toggleExported(this)"></td>'
                 + '<td style="white-space:nowrap;" onclick="toggleDetail(\'' + rowId + '\')">' + dt + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + (o.product_type || '') + '</td>'
                 + '<td class="config-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.configuration || '') + '</td>'
@@ -503,7 +504,6 @@
                 + (o.created_by_email ? '<div class="order-extid">' + o.created_by_email + '</div>' : '')
                 + '</td>'
                 + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.source === 'allegro' ? (o.customer_name || '') : (o.seller_account || '')) + '</td>'
-                + '<td onclick="event.stopPropagation()"><input type="checkbox" class="exported-check" data-id="' + orderId + '"' + (isExported ? ' checked' : '') + ' onchange="toggleExported(this)"></td>'
                 + '</tr>';
 
             // --- Detail row (expandable) ---
