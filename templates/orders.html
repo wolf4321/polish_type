@@ -147,6 +147,15 @@
         .star-btn.active { color: #ff6600; text-shadow: 0 0 6px rgba(255,0,0,.4); }
         .order-extid { font-size: 10px; color: #9ca3af; margin-top: 2px; }
 
+        /* Column resizer */
+        th { position: relative; }
+        th .col-resize {
+            position: absolute; right: 0; top: 0; bottom: 0; width: 4px;
+            cursor: col-resize; background: #d1d5db;
+            opacity: 0; transition: opacity .15s;
+        }
+        th:hover .col-resize, th .col-resize.active { opacity: 1; }
+
         @media (max-width: 768px) {
             .toolbar { flex-direction: column; }
             .toolbar input[type="text"] { width: 100%; }
@@ -264,18 +273,18 @@
                             <th style="width:30px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
                             <th style="width:30px;" title="Priorytet">★</th>
                             <th style="width:30px;" title="Wyeksportowano">&#10003;</th>
-                            <th>Дата</th>
-                            <th>Тип товара</th>
-                            <th>Комплектация</th>
-                            <th>Faktura</th>
-                            <th>Цена + доставка</th>
-                            <th>Продукт</th>
-                            <th>Статус</th>
-                            <th>Оплата</th>
-                            <th>Телефон</th>
-                            <th>Адрес</th>
-                            <th>Комментарий</th>
-                            <th>Источник</th>
+                            <th>Дата<span class="col-resize"></span></th>
+                            <th>Тип товара<span class="col-resize"></span></th>
+                            <th>Комплектация<span class="col-resize"></span></th>
+                            <th>Faktura<span class="col-resize"></span></th>
+                            <th>Цена + доставка<span class="col-resize"></span></th>
+                            <th>Продукт<span class="col-resize"></span></th>
+                            <th>Статус<span class="col-resize"></span></th>
+                            <th>Оплата<span class="col-resize"></span></th>
+                            <th>Телефон<span class="col-resize"></span></th>
+                            <th>Адрес<span class="col-resize"></span></th>
+                            <th>Комментарий<span class="col-resize"></span></th>
+                            <th>Источник<span class="col-resize"></span></th>
                             <th>Аккаунт</th>
                         </tr>
                     </thead>
@@ -821,6 +830,38 @@
             }
         });
     }
+
+    // --- Column resizer ---
+    (function() {
+        var grips = document.querySelectorAll('.col-resize');
+        var startX, startW, th;
+        grips.forEach(function(grip) {
+            grip.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                th = grip.parentElement;
+                startX = e.pageX;
+                startW = th.offsetWidth;
+                grip.classList.add('active');
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+        });
+        function onMove(e) {
+            if (!th) return;
+            var w = startW + (e.pageX - startX);
+            if (w > 30) th.style.width = w + 'px';
+        }
+        function onUp() {
+            if (th) {
+                var grip = th.querySelector('.col-resize');
+                if (grip) grip.classList.remove('active');
+            }
+            th = null;
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        }
+    })();
 
     </script>
 
