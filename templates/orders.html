@@ -57,11 +57,7 @@
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
         th { text-align: left; padding: 10px 12px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
              font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase;
-             letter-spacing: .3px; position: sticky; top: 0; position: relative; }
-        th .col-grip { position: absolute; right: 0; top: 0; bottom: 0; width: 8px;
-             cursor: col-resize; z-index: 10; border-right: 2px solid #e5e7eb; }
-        th .col-grip:hover { border-right-color: #6366f1; }
-        th .col-grip.dragging { border-right-color: #6366f1; }
+             letter-spacing: .3px; position: sticky; top: 0; }
         td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
         tr:hover td { background: #f9fafb; }
 
@@ -826,48 +822,6 @@
         });
     }
 
-    // --- Column resizer ---
-    function initColumnResizers() {
-        var table = document.querySelector('table');
-        if (!table) return;
-        var ths = table.querySelectorAll('thead th');
-        // Remove old grips
-        table.querySelectorAll('.col-grip').forEach(function(g) { g.remove(); });
-        ths.forEach(function(th, i) {
-            if (i >= ths.length - 1) return;
-            var grip = document.createElement('div');
-            grip.className = 'col-grip';
-            th.style.position = 'relative';
-            th.appendChild(grip);
-            grip.addEventListener('mousedown', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                var x0 = e.pageX;
-                var w0 = th.getBoundingClientRect().width;
-                grip.classList.add('dragging');
-                document.body.style.cursor = 'col-resize';
-                document.body.style.userSelect = 'none';
-                function mv(ev) {
-                    th.style.width = Math.max(30, w0 + ev.pageX - x0) + 'px';
-                }
-                function up() {
-                    grip.classList.remove('dragging');
-                    document.body.style.cursor = '';
-                    document.body.style.userSelect = '';
-                    document.removeEventListener('mousemove', mv);
-                    document.removeEventListener('mouseup', up);
-                }
-                document.addEventListener('mousemove', mv);
-                document.addEventListener('mouseup', up);
-            });
-        });
-    }
-    setTimeout(initColumnResizers, 500);
-    var _origLoadOrders = loadOrders;
-    loadOrders = function(page) {
-        _origLoadOrders(page);
-        setTimeout(initColumnResizers, 800);
-    };
     </script>
 
     <!-- Modal: add manual order -->
