@@ -489,22 +489,32 @@ def _parse_woo_order(woo: dict) -> dict:
     # NIP extraction — check billing fields and meta_data
     invoice_nip = ""
     # Direct billing field (some Polish NIP plugins)
-    if billing.get("nip"):
-        invoice_nip = str(billing["nip"]).strip()
-    elif billing.get("vat"):
-        invoice_nip = str(billing["vat"]).strip()
-    elif billing.get("company_nip"):
-        invoice_nip = str(billing["company_nip"]).strip()
-    # Search in order meta_data
+    for bkey in ("nip", "vat", "company_nip", "tax_id", "vat_number", "nip_number"):
+        bval = billing.get(bkey)
+        if bval and str(bval).strip():
+            invoice_nip = str(bval).strip()
+            break
+    # Search in order meta_data — any key containing nip/vat/tax
     if not invoice_nip:
+        nip_keys_found = []
         for m in woo.get("meta_data", []):
-            key = (m.get("key") or "").lower()
+            key = (m.get("key") or "")
             val = m.get("value") or ""
-            if key in ("_billing_nip", "billing_nip", "_nip", "nip", "_billing_vat", "billing_vat",
-                        "_vat_number", "vat_number", "_billing_company_nip", "billing_company_nip"):
-                if val and str(val).strip():
+            key_low = key.lower()
+            # Collect all NIP/VAT related meta keys for debug
+            if any(k in key_low for k in ("nip", "vat", "tax_id", "faktura", "invoice")):
+                nip_keys_found.append(f"{key}={val}")
+                if val and str(val).strip() and not invoice_nip:
                     invoice_nip = str(val).strip()
-                    break
+        if nip_keys_found:
+            print(f"[woo-nip] order {woo.get('id')}: found keys: {nip_keys_found}, extracted: {invoice_nip}")
+    # Debug: log billing keys for first few orders to find NIP field name
+    if not invoice_nip and billing:
+        billing_keys = [k for k in billing.keys() if k not in ('first_name','last_name','email','phone','address_1','address_2','city','state','postcode','country')]
+        if billing_keys:
+            billing_vals = {k: billing[k] for k in billing_keys if billing[k]}
+            if billing_vals:
+                print(f"[woo-nip] order {woo.get('id')}: extra billing fields: {billing_vals}")
 
     return {
         "external_id": str(woo["id"]),
@@ -806,18 +816,35 @@ def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
 
     # NIP extraction from PrestaShop address/customer
     invoice_nip = ""
-    if address.get("vat_number"):
-        invoice_nip = str(address["vat_number"]).strip()
-    elif address.get("dni"):
-        invoice_nip = str(address["dni"]).strip()
-    elif customer.get("vat_number"):
-        invoice_nip = str(customer["vat_number"]).strip()
-    elif address.get("company") and str(address.get("company", "")).strip():
-        # Sometimes NIP is embedded in company field as "Firma NIP: 1234567890"
+    # Check address fields
+    for nip_field in ("vat_number", "dni", "nip", "company_nip"):
+        val = address.get(nip_field)
+        if val and str(val).strip() and str(val).strip() != "0":
+            invoice_nip = str(val).strip()
+            break
+    # Check customer fields
+    if not invoice_nip:
+        for nip_field in ("vat_number", "dni", "nip", "siret"):
+            val = customer.get(nip_field)
+            if val and str(val).strip() and str(val).strip() != "0":
+                invoice_nip = str(val).strip()
+                break
+    # Try company field with NIP regex
+    if not invoice_nip and address.get("company") and str(address.get("company", "")).strip():
         import re as _re2
         nip_match = _re2.search(r'(?:NIP|nip)[:\s]*(\d[\d\s-]{8,}\d)', str(address.get("company", "")))
         if nip_match:
             invoice_nip = nip_match.group(1).replace(" ", "").replace("-", "")
+    # Debug logging
+    order_id = order.get("id", "?")
+    if invoice_nip:
+        print(f"[presta-nip] order {order_id}: NIP={invoice_nip}")
+    else:
+        # Log available address/customer fields for debug
+        addr_nip_fields = {k: address.get(k) for k in ("vat_number", "dni", "company", "nip") if address.get(k) and str(address.get(k)).strip() and str(address.get(k)).strip() != "0"}
+        cust_nip_fields = {k: customer.get(k) for k in ("vat_number", "dni", "siret", "company") if customer.get(k) and str(customer.get(k)).strip() and str(customer.get(k)).strip() != "0"}
+        if addr_nip_fields or cust_nip_fields:
+            print(f"[presta-nip] order {order_id}: addr={addr_nip_fields}, cust={cust_nip_fields}")
 
     return {
         "external_id": str(order.get("id", "")),
