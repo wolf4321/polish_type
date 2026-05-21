@@ -1221,12 +1221,23 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
     form_id = form.get("id", "?")
     if invoice:
         print(f"[allegro-nip-debug] order {form_id}: invoice keys={list(invoice.keys())}, invoice={str(invoice)[:200]}")
+    # Try invoice.company.taxId (old format)
     if invoice.get("company") and invoice["company"].get("taxId"):
         invoice_nip = invoice["company"]["taxId"]
+    # Try invoice.address.company.taxId (current Allegro API format)
+    if not invoice_nip:
+        inv_addr = invoice.get("address") or {}
+        inv_company = inv_addr.get("company") or {}
+        if inv_company.get("taxId"):
+            invoice_nip = inv_company["taxId"]
+        # Also check ids array: [{"type": "PL_NIP", "value": "..."}]
+        if not invoice_nip and inv_company.get("ids"):
+            for id_obj in inv_company["ids"]:
+                if id_obj.get("type") == "PL_NIP" and id_obj.get("value"):
+                    invoice_nip = id_obj["value"]
+                    break
+    if invoice_nip:
         print(f"[allegro-nip] order {form_id}: NIP={invoice_nip}")
-    # Also check invoice.address.naturalPerson or invoice.required flag
-    if not invoice_nip and invoice.get("required"):
-        print(f"[allegro-nip-debug] order {form_id}: invoice required=True but no taxId found. Full invoice: {str(invoice)[:300]}")
     nip_label = f"NIP: {invoice_nip}" if invoice_nip else ""
     customer_comment = msg_to_seller
     if nip_label:
