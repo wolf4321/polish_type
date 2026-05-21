@@ -57,11 +57,15 @@
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
         th { text-align: left; padding: 10px 12px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
              font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase;
-             letter-spacing: .3px; position: sticky; top: 0; position: relative; }
-        th .col-resizer { position: absolute; right: -2px; top: 4px; bottom: 4px; width: 4px;
-             cursor: col-resize; z-index: 10; background: #d1d5db; border-radius: 2px; opacity: 0.5; }
-        th:hover .col-resizer { opacity: 1; background: #9ca3af; }
-        th .col-resizer:hover, th .col-resizer.active { background: #6366f1 !important; opacity: 1 !important; }
+             letter-spacing: .3px; position: sticky; top: 0; position: relative;
+             border-right: 1px solid #e5e7eb; }
+        th:last-child { border-right: none; }
+        th .col-resizer { position: absolute; right: -3px; top: 0; bottom: 0; width: 6px;
+             cursor: col-resize; z-index: 10; }
+        th .col-resizer::after { content: ''; position: absolute; left: 2px; top: 6px; bottom: 6px;
+             width: 2px; background: #d1d5db; border-radius: 1px; transition: background .15s; }
+        th:hover .col-resizer::after { background: #9ca3af; }
+        th .col-resizer:hover::after, th .col-resizer.active::after { background: #6366f1; }
         td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
         tr:hover td { background: #f9fafb; }
 
@@ -826,21 +830,16 @@
         });
     }
 
-    // --- Column resizer (visible handle between columns) ---
+    // --- Column resizer (drag handle on th border) ---
     function initColumnResizers() {
         var table = document.querySelector('table');
         if (!table) return;
         var thCells = table.querySelectorAll('thead th');
-        // First: set explicit widths from current computed widths
-        thCells.forEach(function(th) {
-            th.style.width = th.offsetWidth + 'px';
-        });
-        table.style.tableLayout = 'fixed';
-        // Remove old resizers if any
+        // Remove old resizers
         table.querySelectorAll('.col-resizer').forEach(function(r) { r.remove(); });
-        // Add resizer handles
+        // Add handles to all but last th
         thCells.forEach(function(th, idx) {
-            if (idx === thCells.length - 1) return; // skip last column
+            if (idx >= thCells.length - 1) return;
             var handle = document.createElement('div');
             handle.className = 'col-resizer';
             th.appendChild(handle);
@@ -849,19 +848,13 @@
                 e.stopPropagation();
                 var startX = e.pageX;
                 var startW = th.offsetWidth;
-                var nextTh = thCells[idx + 1];
-                var nextW = nextTh ? nextTh.offsetWidth : 0;
                 handle.classList.add('active');
                 document.body.style.cursor = 'col-resize';
                 document.body.style.userSelect = 'none';
                 function onMove(ev) {
-                    var diff = ev.pageX - startX;
-                    var newW = Math.max(30, startW + diff);
-                    th.style.width = newW + 'px';
-                    if (nextTh) {
-                        var newNextW = Math.max(30, nextW - diff);
-                        nextTh.style.width = newNextW + 'px';
-                    }
+                    var newW = Math.max(40, startW + (ev.pageX - startX));
+                    th.style.minWidth = newW + 'px';
+                    th.style.maxWidth = newW + 'px';
                 }
                 function onUp() {
                     handle.classList.remove('active');
@@ -875,9 +868,7 @@
             });
         });
     }
-    // Init after first render
     setTimeout(initColumnResizers, 500);
-    // Re-init after each loadOrders
     var _origLoadOrders = loadOrders;
     loadOrders = function(page) {
         _origLoadOrders(page);
