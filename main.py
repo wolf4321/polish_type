@@ -1217,8 +1217,16 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
     msg_to_seller = form.get("messageToSeller", "") or ""
     invoice = form.get("invoice") or {}
     invoice_nip = ""
+    # Debug: log invoice structure for first few orders
+    form_id = form.get("id", "?")
+    if invoice:
+        print(f"[allegro-nip-debug] order {form_id}: invoice keys={list(invoice.keys())}, invoice={str(invoice)[:200]}")
     if invoice.get("company") and invoice["company"].get("taxId"):
         invoice_nip = invoice["company"]["taxId"]
+        print(f"[allegro-nip] order {form_id}: NIP={invoice_nip}")
+    # Also check invoice.address.naturalPerson or invoice.required flag
+    if not invoice_nip and invoice.get("required"):
+        print(f"[allegro-nip-debug] order {form_id}: invoice required=True but no taxId found. Full invoice: {str(invoice)[:300]}")
     nip_label = f"NIP: {invoice_nip}" if invoice_nip else ""
     customer_comment = msg_to_seller
     if nip_label:
@@ -1312,6 +1320,12 @@ async def _sync_allegro_account(account: dict, full=False):
                     )
                     if offset == 0:
                         print(f"[sync-allegro:{name}] offset=0, total={total}, fetched={len(forms)}, range={dr_start}..{dr_end}")
+                        # Debug: dump first order structure to see if 'invoice' key exists
+                        if forms:
+                            f0 = forms[0]
+                            print(f"[allegro-debug] first order keys: {list(f0.keys())}")
+                            inv = f0.get("invoice")
+                            print(f"[allegro-debug] first order invoice: {str(inv)[:300]}")
                     if not forms:
                         break
 
@@ -1344,7 +1358,12 @@ async def _sync_allegro_account(account: dict, full=False):
                 "UPDATE sync_log SET status='ok', orders_new=$1, orders_upd=$2, finished_at=NOW() WHERE id=$3",
                 new_count, upd_count, log_id
             )
-        print(f"[sync-allegro:{name}] done: +{new_count} new, ~{upd_count} updated, skipped={skip_count}")
+        # Count allegro orders with NIP
+        async with pool.acquire() as conn:
+            nip_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM orders WHERE source='allegro' AND invoice_nip IS NOT NULL AND invoice_nip != ''"
+            )
+        print(f"[sync-allegro:{name}] done: +{new_count} new, ~{upd_count} updated, skipped={skip_count}, allegro NIP in DB={nip_count}")
 
     except Exception as e:
         print(f"[sync-allegro:{name}] ERROR: {e}")
