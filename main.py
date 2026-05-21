@@ -441,6 +441,19 @@ async def _upsert_customer(conn, source: str, name: str, email: str, phone: str,
         """, name, email, phone, city, source, total, order_date)
 
 
+import re as _re_nip
+def _is_valid_nip(val: str) -> bool:
+    """Check if a value looks like a real NIP/tax ID (must contain at least 5 digits)."""
+    if not val:
+        return False
+    v = val.strip()
+    if v.lower() in ("", "0", "-", "--", ".", "n/a", "brak", "none", "null"):
+        return False
+    # Must contain at least 5 digit characters
+    digits = _re_nip.findall(r'\d', v)
+    return len(digits) >= 5
+
+
 def _parse_woo_order(woo: dict) -> dict:
     """Маппинг WooCommerce order → наш формат."""
     billing = woo.get("billing", {})
@@ -491,7 +504,7 @@ def _parse_woo_order(woo: dict) -> dict:
     # 1) Direct billing field
     for bkey in ("nip", "company_nip", "nip_number"):
         bval = billing.get(bkey)
-        if bval and str(bval).strip():
+        if _is_valid_nip(str(bval or "")):
             invoice_nip = str(bval).strip()
             break
     # 2) Search meta_data: specifically _billing_nip / billing_nip (the actual NIP value)
@@ -499,8 +512,7 @@ def _parse_woo_order(woo: dict) -> dict:
         for m in woo.get("meta_data", []):
             key = (m.get("key") or "").lower().strip()
             val = str(m.get("value") or "").strip()
-            # Only exact NIP keys — NOT _billing_vat_field (that's a flag, not NIP)
-            if key in ("_billing_nip", "billing_nip", "_nip", "nip") and val and len(val) >= 5:
+            if key in ("_billing_nip", "billing_nip", "_nip", "nip") and _is_valid_nip(val):
                 invoice_nip = val
                 break
     # 3) If still nothing, try vat_number keys
@@ -508,7 +520,7 @@ def _parse_woo_order(woo: dict) -> dict:
         for m in woo.get("meta_data", []):
             key = (m.get("key") or "").lower().strip()
             val = str(m.get("value") or "").strip()
-            if key in ("_vat_number", "vat_number", "_tax_id", "tax_id") and val and len(val) >= 5:
+            if key in ("_vat_number", "vat_number", "_tax_id", "tax_id") and _is_valid_nip(val):
                 invoice_nip = val
                 break
 
@@ -812,18 +824,17 @@ def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
 
     # NIP extraction from PrestaShop address/customer
     invoice_nip = ""
-    _bad_nip = {"", "0", "-", "--", ".", "n/a", "brak", "none", "null"}
     # Check address fields
     for nip_field in ("vat_number", "dni", "nip", "company_nip"):
         val = address.get(nip_field)
-        if val and str(val).strip().lower() not in _bad_nip and len(str(val).strip()) >= 5:
+        if _is_valid_nip(str(val or "")):
             invoice_nip = str(val).strip()
             break
     # Check customer fields
     if not invoice_nip:
         for nip_field in ("vat_number", "dni", "nip", "siret"):
             val = customer.get(nip_field)
-            if val and str(val).strip().lower() not in _bad_nip and len(str(val).strip()) >= 5:
+            if _is_valid_nip(str(val or "")):
                 invoice_nip = str(val).strip()
                 break
     # Try company field with NIP regex
