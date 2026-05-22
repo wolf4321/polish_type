@@ -344,7 +344,9 @@ async def _save_order(conn, source: str, order_data: dict):
                 total=$8, currency=$9, items_count=$10, items_json=$11,
                 payment_method=$12, shipping_method=$13, note=$14,
                 external_created=$15, shipping_cost=$18,
-                seller_account=$19, customer_comment=$20, invoice_nip=$21,
+                seller_account=$19,
+                customer_comment=CASE WHEN customer_comment IS NOT NULL AND customer_comment != '' THEN customer_comment ELSE $20 END,
+                invoice_nip=$21,
                 product_type=$22,
                 updated_at=NOW()
             WHERE source=$16 AND external_id=$17
@@ -446,6 +448,24 @@ async def _upsert_customer(conn, source: str, name: str, email: str, phone: str,
 
 
 import re as _re_nip
+
+
+def _clean_product_display(name: str) -> str:
+    """Strip leading product type keywords from display name.
+    E.g. 'Poliwęglan komorowy 4,5x2,1 10mm' -> 'komorowy 4,5x2,1 10mm'
+         'Szklarnia Mocna 3x6' -> 'Mocna 3x6'
+    """
+    if not name:
+        return name
+    import re
+    # Remove leading type keyword (case-insensitive)
+    cleaned = re.sub(
+        r'^(?:poliwęglan|poliw[eę]glan|szklarnia|szklarni[ae]|cieplarnia|теплица|поликарбонат)\s+',
+        '', name, flags=re.IGNORECASE
+    )
+    return cleaned.strip() or name
+
+
 def _is_valid_nip(val: str) -> bool:
     """Check if a value looks like a real NIP/tax ID (must contain at least 5 digits)."""
     if not val:
@@ -460,28 +480,45 @@ def _is_valid_nip(val: str) -> bool:
 
 def _detect_product_type(items: list) -> str:
     """Auto-detect product type from item names/SKUs.
+    Each item is classified independently:
+      - If item contains szklarnia keywords -> greenhouse (even if it also mentions poliweglan)
+      - If item contains poliweglan keywords but NOT szklarnia -> standalone polycarbonate
+    Then combine across all items in the order.
     Returns: 'Теплица', 'Поликарбонат', 'Теплица + Поликарбонат', or ''
     """
     has_szklarnia = False
-    has_poliweglan = False
+    has_standalone_poliweglan = False
+    szklarnia_kw = ("szklarnia", "szklarni", "теплиц", "cieplarni", "greenhouse", "tunel")
+    poliweglan_kw = ("poliwęglan", "poliwegl", "поликарбонат", "polycarbonate", "komorow", "lity")
+    szklarnia_sku_kw = ("szk", "lux", "eco", "eko")
+    poliweglan_sku_kw = ("pc", "poly", "poliw")
+
     for item in items:
         name_lower = (item.get("full_name") or item.get("name") or "").lower()
         sku_lower = (item.get("sku") or "").lower()
         combined = name_lower + " " + sku_lower
-        if any(kw in combined for kw in ("szklarnia", "szklarni", "теплиц", "cieplarni", "greenhouse", "tunel")):
+
+        item_is_szklarnia = (
+            any(kw in combined for kw in szklarnia_kw)
+            or any(kw in sku_lower for kw in szklarnia_sku_kw)
+        )
+        item_is_poliweglan = (
+            any(kw in combined for kw in poliweglan_kw)
+            or any(kw in sku_lower for kw in poliweglan_sku_kw)
+        )
+
+        if item_is_szklarnia:
+            # "Szklarnia z poliwęglanu" = greenhouse, not polycarbonate
             has_szklarnia = True
-        if any(kw in combined for kw in ("poliwęglan", "poliwegl", "поликарбонат", "polycarbonate", "komorow", "lity")):
-            has_poliweglan = True
-        # SKU-based detection: common patterns
-        if any(kw in sku_lower for kw in ("szk", "lux", "eco", "eko")):
-            has_szklarnia = True
-        if any(kw in sku_lower for kw in ("pc", "poly", "poliw")):
-            has_poliweglan = True
-    if has_szklarnia and has_poliweglan:
+        elif item_is_poliweglan:
+            # Standalone polycarbonate (no szklarnia keywords in this item)
+            has_standalone_poliweglan = True
+
+    if has_szklarnia and has_standalone_poliweglan:
         return "Теплица + Поликарбонат"
     if has_szklarnia:
         return "Теплица"
-    if has_poliweglan:
+    if has_standalone_poliweglan:
         return "Поликарбонат"
     return ""
 
@@ -1168,15 +1205,16 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
     if not recipient_name:
         recipient_name = f"{buyer.get('firstName', '')} {buyer.get('lastName', '')}".strip()
 
-    # Items — use external.id (sygnatura) as the display name if available
+    # Items — use cleaned full_name as display name, keep sygnatura as SKU
     items = []
     for li in form.get("lineItems", []):
         offer = li.get("offer") or {}
         ext = offer.get("external") or {}
         sygnatura = ext.get("id", "")
         full_name = offer.get("name", "")
+        display_name = _clean_product_display(full_name) if full_name else sygnatura
         items.append({
-            "name": sygnatura if sygnatura else full_name,
+            "name": display_name,
             "full_name": full_name,
             "qty": int(li.get("quantity", 1)),
             "price": str(li.get("price", {}).get("amount", "0")),
@@ -1864,6 +1902,7 @@ async def api_orders(
     date_to:   str = Query(None),
     exported: str = Query(None),
     priority: str = Query(None),
+    product_type: str = Query(None),
 ):
     user = await get_current_user(request)
     if not user:
@@ -1896,11 +1935,21 @@ async def api_orders(
                 conditions.append(f"({' OR '.join(src_conds)})")
 
     if source:
-        params.append(source)
-        conditions.append(f"source = ${len(params)}")
+        source_list = [s.strip() for s in source.split(",") if s.strip()]
+        if len(source_list) == 1:
+            params.append(source_list[0])
+            conditions.append(f"source = ${len(params)}")
+        elif len(source_list) > 1:
+            params.append(source_list)
+            conditions.append(f"source = ANY(${len(params)})")
     if seller:
-        params.append(seller)
-        conditions.append(f"seller_account = ${len(params)}")
+        seller_list = [s.strip() for s in seller.split(",") if s.strip()]
+        if len(seller_list) == 1:
+            params.append(seller_list[0])
+            conditions.append(f"seller_account = ${len(params)}")
+        elif len(seller_list) > 1:
+            params.append(seller_list)
+            conditions.append(f"seller_account = ANY(${len(params)})")
     if status:
         params.append(status)
         conditions.append(f"status = ${len(params)}")
@@ -1919,6 +1968,9 @@ async def api_orders(
         conditions.append("(exported IS NULL OR exported = FALSE)")
     if priority == "yes":
         conditions.append("is_priority = TRUE")
+    if product_type:
+        params.append(product_type)
+        conditions.append(f"product_type = ${len(params)}")
 
     where = " AND ".join(conditions)
 
