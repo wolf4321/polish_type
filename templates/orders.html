@@ -58,7 +58,8 @@
         th { text-align: left; padding: 10px 8px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
              font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase;
              letter-spacing: .3px; position: sticky; top: 0; white-space: nowrap; }
-        td { padding: 10px 8px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+        td { padding: 10px 8px; border-bottom: 1px solid #f3f4f6; vertical-align: top;
+             overflow: hidden; text-overflow: ellipsis; }
         tr:hover td { background: #f9fafb; }
 
         .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px;
@@ -150,11 +151,16 @@
         /* Column resizer */
         th { position: relative; }
         th .col-resize {
-            position: absolute; right: 0; top: 0; bottom: 0; width: 4px;
-            cursor: col-resize; background: #d1d5db;
-            opacity: 0; transition: opacity .15s;
+            position: absolute; right: -3px; top: 0; bottom: 0; width: 7px;
+            cursor: col-resize; background: transparent; z-index: 10;
+            transition: background .15s;
         }
-        th:hover .col-resize, th .col-resize.active { opacity: 1; }
+        th .col-resize::after {
+            content: ''; position: absolute; right: 3px; top: 4px; bottom: 4px;
+            width: 2px; background: #d1d5db; border-radius: 1px; opacity: 0; transition: opacity .15s;
+        }
+        th:hover .col-resize::after, th .col-resize.active::after { opacity: 1; }
+        th .col-resize.active::after { background: #6366f1; }
 
         /* Language switcher */
         .lang-switch { display: inline-flex; gap: 4px; margin-left: 12px; }
@@ -187,7 +193,8 @@
     </div>
 
     <div class="container">
-        <!-- Статистика -->
+        <!-- Статистика (только для пользователей с правом view_stats) -->
+        {% if user and 'view_stats' in (user.permissions or '').split(',') %}
         <div class="stats" id="stats-row">
             <div class="stat-card">
                 <div class="label" data-i18n="stat_all_orders">All orders</div>
@@ -214,6 +221,7 @@
                 <div class="value" id="s-allegro">—</div>
             </div>
         </div>
+        {% endif %}
 
         <!-- Фильтры -->
         <div class="toolbar">
@@ -711,6 +719,8 @@
     }
 
     function loadStats() {
+        // Skip if stats row is not rendered (no view_stats permission)
+        if (!document.getElementById('stats-row')) return;
         var f = getFilters();
         var url = '/api/stats?date_from=' + f.date_from + '&date_to=' + f.date_to;
         if (f.source) url += '&source=' + encodeURIComponent(f.source);
@@ -1153,57 +1163,89 @@
     }
 
     // --- Column resizer with localStorage persistence ---
-    (function() {
-        var STORAGE_KEY = 'ekomat_col_widths';
-        function saveColWidths() {
+    var _colResizer = {
+        STORAGE_KEY: 'ekomat_col_widths',
+        initialized: false,
+        saveColWidths: function() {
             var ths = document.querySelectorAll('thead th');
             var widths = {};
             ths.forEach(function(th, idx) {
                 if (th.style.width) widths[idx] = th.style.width;
             });
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(widths)); } catch(e) {}
-        }
-        function restoreColWidths() {
+            try { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(widths)); } catch(e) {}
+        },
+        restoreColWidths: function() {
             try {
-                var saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+                var saved = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '{}');
+                if (Object.keys(saved).length === 0) return false;
                 var ths = document.querySelectorAll('thead th');
                 Object.keys(saved).forEach(function(idx) {
                     if (ths[parseInt(idx)]) ths[parseInt(idx)].style.width = saved[idx];
                 });
-            } catch(e) {}
-        }
-        restoreColWidths();
-
-        var grips = document.querySelectorAll('.col-resize');
-        var startX, startW, th;
-        grips.forEach(function(grip) {
-            grip.addEventListener('mousedown', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                th = grip.parentElement;
-                startX = e.pageX;
-                startW = th.offsetWidth;
-                grip.classList.add('active');
-                document.addEventListener('mousemove', onMove);
-                document.addEventListener('mouseup', onUp);
-            });
-        });
-        function onMove(e) {
-            if (!th) return;
-            var w = startW + (e.pageX - startX);
-            if (w > 30) th.style.width = w + 'px';
-        }
-        function onUp() {
-            if (th) {
-                var grip = th.querySelector('.col-resize');
-                if (grip) grip.classList.remove('active');
-                saveColWidths();
+                return true;
+            } catch(e) { return false; }
+        },
+        lockTableLayout: function() {
+            // Capture natural widths from browser auto layout, then switch to fixed
+            var table = document.querySelector('table');
+            if (!table || this.initialized) return;
+            var ths = document.querySelectorAll('thead th');
+            if (ths.length === 0) return;
+            // If saved widths exist, restore them; otherwise capture auto widths
+            var hadSaved = this.restoreColWidths();
+            if (!hadSaved) {
+                ths.forEach(function(th) {
+                    th.style.width = th.offsetWidth + 'px';
+                });
             }
-            th = null;
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
+            table.style.tableLayout = 'fixed';
+            this.initialized = true;
+        },
+        init: function() {
+            var self = this;
+            var grips = document.querySelectorAll('.col-resize');
+            var startX, startW, activeTh;
+            grips.forEach(function(grip) {
+                grip.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // Ensure table is in fixed layout mode before resizing
+                    self.lockTableLayout();
+                    activeTh = grip.parentElement;
+                    startX = e.pageX;
+                    startW = activeTh.offsetWidth;
+                    grip.classList.add('active');
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
+                });
+            });
+            function onMove(e) {
+                if (!activeTh) return;
+                var w = startW + (e.pageX - startX);
+                if (w > 30) activeTh.style.width = w + 'px';
+            }
+            function onUp() {
+                if (activeTh) {
+                    var grip = activeTh.querySelector('.col-resize');
+                    if (grip) grip.classList.remove('active');
+                    self.saveColWidths();
+                }
+                activeTh = null;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            }
         }
-    })();
+    };
+    // Initialize after a short delay to let the table render with auto layout first
+    setTimeout(function() {
+        _colResizer.init();
+        // Lock layout after first data load completes
+        setTimeout(function() { _colResizer.lockTableLayout(); }, 1500);
+    }, 100);
 
     </script>
 
