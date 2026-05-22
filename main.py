@@ -453,14 +453,16 @@ import re as _re_nip
 def _clean_product_display(name: str) -> str:
     """Strip leading product type keywords from display name.
     E.g. 'Poliwęglan komorowy 4,5x2,1 10mm' -> 'komorowy 4,5x2,1 10mm'
-         'Szklarnia Mocna 3x6' -> 'Mocna 3x6'
+         'Szklarnia z poliwęglanu Mocna 3x6' -> 'Mocna 3x6'
+         'EKO Szklarnia z poliwęglanu 3x8 4mm' -> '3x8 4mm'
     """
     if not name:
         return name
     import re
-    # Remove leading type keyword (case-insensitive)
+    # Remove leading type phrases (case-insensitive), including multi-word combos
+    # "Szklarnia z poliwęglanu", "EKO Szklarnia z poliwęglanu", "Poliwęglan komorowy", etc.
     cleaned = re.sub(
-        r'^(?:poliwęglan|poliw[eę]glan|szklarnia|szklarni[ae]|cieplarnia|теплица|поликарбонат)\s+',
+        r'^(?:eko\s+)?(?:szklarni[ae]?\s+(?:z\s+poliw[eę]glanu?\s*)?|poliw[eę]glan\s+|cieplarni[ae]?\s+|теплица\s+|поликарбонат\s+)',
         '', name, flags=re.IGNORECASE
     )
     return cleaned.strip() or name
@@ -1545,6 +1547,8 @@ async def api_stats(
     request: Request,
     date_from: str = Query(None),
     date_to:   str = Query(None),
+    source:    str = Query(None),
+    seller:    str = Query(None),
 ):
     user = await get_current_user(request)
     if not user or not (has_perm(user, "dashboard") or has_perm(user, "orders")):
@@ -1552,6 +1556,24 @@ async def api_stats(
     pool = await get_db_pool()
     d_from = date.fromisoformat(date_from) if date_from else date.today() - timedelta(days=30)
     d_to   = date.fromisoformat(date_to)   if date_to   else date.today()
+
+    # Build source filter for orders
+    source_filter = ""
+    params = [d_from, d_to]
+    if source or seller:
+        sources = []
+        sellers = []
+        if source:
+            sources = [s.strip() for s in source.split(",") if s.strip()]
+        if seller:
+            sellers = [s.strip() for s in seller.split(",") if s.strip()]
+        all_sources = list(set(sources + (["allegro"] if sellers else [])))
+        if all_sources:
+            params.append(all_sources)
+            source_filter += f" AND source = ANY(${len(params)})"
+        if sellers:
+            params.append(sellers)
+            source_filter += f" AND (source != 'allegro' OR seller_account = ANY(${len(params)}))"
 
     async with pool.acquire() as conn:
         leads = await conn.fetchrow("""
@@ -1565,7 +1587,7 @@ async def api_stats(
             WHERE created_at::date >= $1 AND created_at::date <= $2
         """, d_from, d_to)
 
-        orders = await conn.fetchrow("""
+        orders = await conn.fetchrow(f"""
             SELECT
                 COUNT(*) AS total,
                 COALESCE(SUM(total), 0) AS revenue,
@@ -1577,7 +1599,8 @@ async def api_stats(
             FROM orders
             WHERE COALESCE(external_created, created_at)::date >= $1
               AND COALESCE(external_created, created_at)::date <= $2
-        """, d_from, d_to)
+              {source_filter}
+        """, *params)
 
     return JSONResponse({
         "leads": _safe_dict(leads),
