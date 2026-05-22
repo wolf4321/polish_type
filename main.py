@@ -1551,8 +1551,11 @@ async def api_stats(
     seller:    str = Query(None),
 ):
     user = await get_current_user(request)
-    if not user or not (has_perm(user, "dashboard") or has_perm(user, "orders")):
+    if not user or not (has_perm(user, "dashboard") or has_perm(user, "orders") or has_perm(user, "view_stats")):
         return JSONResponse({"error": "Access denied"}, status_code=403)
+    # Extra check: only users with view_stats can see stats data
+    if not has_perm(user, "view_stats"):
+        return JSONResponse({"error": "No stats permission"}, status_code=403)
     pool = await get_db_pool()
     d_from = date.fromisoformat(date_from) if date_from else date.today() - timedelta(days=30)
     d_to   = date.fromisoformat(date_to)   if date_to   else date.today()
