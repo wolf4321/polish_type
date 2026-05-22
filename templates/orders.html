@@ -86,8 +86,8 @@
         .empty { text-align: center; padding: 60px 20px; color: #9ca3af; }
         .empty h4 { font-size: 16px; margin-bottom: 8px; color: #6b7280; }
 
-        .items-list { font-size: 11px; color: #6b7280; }
-        .items-list span { display: block; word-break: break-word; white-space: normal; }
+        .items-list { font-size: 11px; color: #6b7280; overflow: hidden; }
+        .items-list span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
         .price-breakdown { font-size: 12px; }
         .price-breakdown .ship { font-size: 10px; color: #6b7280; }
@@ -95,7 +95,7 @@
                          white-space: pre-wrap; word-break: break-word; }
         .editable-comment { cursor: pointer; border-bottom: 1px dashed #d1d5db; padding-bottom: 1px; }
         .editable-comment:hover { background: #fef9c3; }
-        .address-cell { font-size: 11px; color: #4b5563; word-break: break-word; }
+        .address-cell { font-size: 11px; color: #4b5563; overflow: hidden; text-overflow: ellipsis; }
         .phone-cell { font-size: 12px; white-space: nowrap; }
         .config-cell { font-size: 11px; color: #9ca3af; font-style: italic; }
         .seller-cell { font-size: 11px; color: #6b7280; }
@@ -156,6 +156,13 @@
         }
         th:hover .col-resize, th .col-resize.active { opacity: 1; }
 
+        /* Language switcher */
+        .lang-switch { display: inline-flex; gap: 4px; margin-left: 12px; }
+        .lang-switch button { background: none; border: none; cursor: pointer; font-size: 18px;
+            padding: 2px 4px; border-radius: 4px; opacity: .5; transition: opacity .15s, box-shadow .15s; line-height: 1; }
+        .lang-switch button:hover { opacity: .8; }
+        .lang-switch button.active-lang { opacity: 1; box-shadow: 0 2px 0 0 #a5b4fc; }
+
         @media (max-width: 768px) {
             .toolbar { flex-direction: column; }
             .toolbar input[type="text"] { width: 100%; }
@@ -171,7 +178,11 @@
             <a href="/">Dashboard</a>
             <a href="/orders" class="active">Orders</a>
             {% if user and 'manage_users' in (user.permissions or '').split(',') %}<a href="/admin/users">Users</a>{% endif %}
-            {% if user %}<span style="color:#6b7280;font-size:12px;">{{ user.name }}</span><a href="/logout">Wyloguj</a>{% else %}<a href="/login">Login</a>{% endif %}
+            {% if user %}<span style="color:#6b7280;font-size:12px;">{{ user.name }}</span><a href="/logout" data-i18n="logout">Wyloguj</a>{% else %}<a href="/login">Login</a>{% endif %}
+            <span class="lang-switch">
+                <button onclick="setLang('pl')" id="lang-pl" title="Polski">&#127477;&#127473;</button>
+                <button onclick="setLang('ru')" id="lang-ru" title="&#1056;&#1091;&#1089;&#1089;&#1082;&#1080;&#1081;">&#127479;&#127482;</button>
+            </span>
         </div>
     </div>
 
@@ -179,11 +190,11 @@
         <!-- Статистика -->
         <div class="stats" id="stats-row">
             <div class="stat-card">
-                <div class="label">All orders</div>
+                <div class="label" data-i18n="stat_all_orders">All orders</div>
                 <div class="value" id="s-total">—</div>
             </div>
             <div class="stat-card">
-                <div class="label">Revenue (PLN)</div>
+                <div class="label" data-i18n="stat_revenue">Revenue (PLN)</div>
                 <div class="value" id="s-revenue">—</div>
             </div>
             <div class="stat-card">
@@ -206,9 +217,9 @@
 
         <!-- Фильтры -->
         <div class="toolbar">
-            <input type="text" id="f-search" placeholder="Search customer...">
+            <input type="text" id="f-search" data-i18n-placeholder="search_customer" placeholder="Search customer...">
             <div style="position:relative;display:inline-block;" id="f-source-wrap">
-                <button type="button" id="f-source-btn" onclick="toggleSourceDropdown()" style="padding:7px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;background:#fff;cursor:pointer;min-width:150px;text-align:left;">All stores ▾</button>
+                <button type="button" id="f-source-btn" data-i18n="all_stores" onclick="toggleSourceDropdown()" style="padding:7px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;background:#fff;cursor:pointer;min-width:150px;text-align:left;">All stores &#9662;</button>
                 <div id="f-source-dropdown" style="display:none;position:absolute;top:100%;left:0;z-index:100;background:#fff;border:1px solid #e5e7eb;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.1);padding:6px 0;min-width:220px;max-height:300px;overflow-y:auto;">
                     <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="dobraszklarnia"> dobraszklarnia.pl</label>
                     <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="oteko"> oteko.pl</label>
@@ -224,53 +235,53 @@
                 </div>
             </div>
             <select id="f-status">
-                <option value="">All statuses</option>
-                <option value="processing">Processing</option>
-                <option value="completed">Completed</option>
-                <option value="pending">Pending</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="payment_accepted">Payment accepted</option>
-                <option value="shipped">Shipped</option>
-                <option value="delivered">Delivered</option>
-                <option value="on-hold">On hold</option>
-                <option value="awaiting_cod">Płatność przy odbiorze</option>
-                <option value="awaiting_proforma">Oczekiwanie na proformę</option>
+                <option value="" data-i18n="all_statuses">All statuses</option>
+                <option value="processing" data-i18n="status_processing">Processing</option>
+                <option value="completed" data-i18n="status_completed">Completed</option>
+                <option value="pending" data-i18n="status_pending">Pending</option>
+                <option value="cancelled" data-i18n="status_cancelled">Cancelled</option>
+                <option value="payment_accepted" data-i18n="status_payment_accepted">Payment accepted</option>
+                <option value="shipped" data-i18n="status_shipped">Shipped</option>
+                <option value="delivered" data-i18n="status_delivered">Delivered</option>
+                <option value="on-hold" data-i18n="status_on-hold">On hold</option>
+                <option value="awaiting_cod" data-i18n="status_awaiting_cod">Awaiting COD</option>
+                <option value="awaiting_proforma" data-i18n="status_awaiting_proforma">Awaiting proforma</option>
             </select>
             <select id="f-exported">
-                <option value="">Eksport: wszystkie</option>
-                <option value="yes">Wyeksportowane</option>
-                <option value="no">Niewyeksportowane</option>
+                <option value="" data-i18n="export_all">Eksport: wszystkie</option>
+                <option value="yes" data-i18n="exported_yes">Wyeksportowane</option>
+                <option value="no" data-i18n="exported_no">Niewyeksportowane</option>
             </select>
             <select id="f-priority">
-                <option value="">Priorytet: wszystkie</option>
-                <option value="yes">Ważne ★</option>
+                <option value="" data-i18n="priority_all">Priorytet: wszystkie</option>
+                <option value="yes" data-i18n="priority_important">Ważne ★</option>
             </select>
             <select id="f-product-type">
-                <option value="">Typ: wszystkie</option>
-                <option value="Теплица">Теплица</option>
-                <option value="Поликарбонат">Поликарбонат</option>
-                <option value="Теплица + Поликарбонат">Теплица + Поликарбонат</option>
+                <option value="" data-i18n="type_all">Typ: wszystkie</option>
+                <option value="Теплица" data-i18n="type_greenhouse">Теплица</option>
+                <option value="Поликарбонат" data-i18n="type_polycarbonate">Поликарбонат</option>
+                <option value="Теплица + Поликарбонат" data-i18n="type_greenhouse_poly">Теплица + Поликарбонат</option>
             </select>
             <input type="date" id="f-from">
             <span style="color:#9ca3af;">—</span>
             <input type="date" id="f-to">
-            <button class="btn-primary" onclick="loadOrders(1)">Filter</button>
+            <button class="btn-primary" onclick="loadOrders(1)" data-i18n="btn_filter">Filter</button>
             {% if user and 'export' in (user.permissions or '').split(',') %}
-            <button class="btn-export-sel" onclick="exportSelected()" id="btn-export-sel" style="display:none;">Eksport zaznaczonych (<span id="sel-count">0</span>)</button>
+            <button class="btn-export-sel" onclick="exportSelected()" id="btn-export-sel" style="display:none;"><span data-i18n="btn_export_selected">Eksport zaznaczonych</span> (<span id="sel-count">0</span>)</button>
             {% endif %}
             {% if user and 'sync' in (user.permissions or '').split(',') %}
-            <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Sync now">Sync</button>
-            <button class="btn-sync" onclick="fullResync()" id="btn-full-sync" title="Pełna resynchronizacja (odświeża NIP, dane)" style="background:#dc2626;">Full Sync</button>
+            <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Sync now" data-i18n="btn_sync">Sync</button>
+            <button class="btn-sync" onclick="fullResync()" id="btn-full-sync" data-i18n="btn_full_sync" title="Pełna resynchronizacja (odświeża NIP, dane)" style="background:#dc2626;">Full Sync</button>
             {% endif %}
             {% if user and 'add_orders' in (user.permissions or '').split(',') %}
-            <button class="btn-add" onclick="openAddModal()" title="Dodaj zamówienie">+ Dodaj</button>
+            <button class="btn-add" onclick="openAddModal()" title="Dodaj zamówienie" data-i18n="btn_add">+ Dodaj</button>
             {% endif %}
         </div>
 
         <!-- Таблица заказов -->
         <div class="card">
             <div class="card-header">
-                <h3>Orders list</h3>
+                <h3 data-i18n="orders_list">Orders list</h3>
                 <span class="sync-status" id="sync-info"></span>
             </div>
             <div style="overflow-x: auto;">
@@ -280,24 +291,24 @@
                             <th style="width:30px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
                             <th style="width:30px;" title="Priorytet">★</th>
                             <th style="width:30px;" title="Wyeksportowano">&#10003;</th>
-                            <th>Дата<span class="col-resize"></span></th>
-                            <th>Тип товара<span class="col-resize"></span></th>
-                            <th>Комплектация<span class="col-resize"></span></th>
-                            <th>Faktura<span class="col-resize"></span></th>
-                            <th>Цена + доставка<span class="col-resize"></span></th>
-                            <th>Продукт<span class="col-resize"></span></th>
-                            <th>Статус<span class="col-resize"></span></th>
-                            <th>Оплата<span class="col-resize"></span></th>
-                            <th>Телефон<span class="col-resize"></span></th>
-                            <th>Адрес<span class="col-resize"></span></th>
-                            <th>Комментарий<span class="col-resize"></span></th>
-                            <th>Источник<span class="col-resize"></span></th>
-                            <th>Аккаунт</th>
+                            <th><span data-i18n="col_date">Data</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_product_type">Typ towaru</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_config">Konfiguracja</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_invoice">Faktura</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_price">Cena + dostawa</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_product">Produkt</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_status">Status</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_payment">Płatność</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_phone">Telefon</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_address">Adres</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_comment">Komentarz</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_source">Źródło</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_account">Konto</span></th>
                         </tr>
                     </thead>
                     <tbody id="orders-body">
                         <tr><td colspan="16" class="empty">
-                            <h4>Loading...</h4>
+                            <h4 data-i18n="loading">Loading...</h4>
                         </td></tr>
                     </tbody>
                 </table>
@@ -307,6 +318,313 @@
     </div>
 
     <script>
+    // ===== MULTILINGUAL SUPPORT =====
+    var LANG = {
+        pl: {
+            // Stat cards
+            stat_all_orders: 'Wszystkie zamówienia',
+            stat_revenue: 'Przychód (PLN)',
+            // Toolbar buttons
+            btn_filter: 'Filtruj',
+            btn_sync: 'Sync',
+            btn_full_sync: 'Pełna sync.',
+            btn_add: '+ Dodaj',
+            btn_export_selected: 'Eksport zaznaczonych',
+            // Filters
+            all_stores: 'Wszystkie sklepy \u25BE',
+            all_statuses: 'Wszystkie statusy',
+            search_customer: 'Szukaj klienta...',
+            export_all: 'Eksport: wszystkie',
+            exported_yes: 'Wyeksportowane',
+            exported_no: 'Niewyeksportowane',
+            priority_all: 'Priorytet: wszystkie',
+            priority_important: 'Ważne \u2605',
+            type_all: 'Typ: wszystkie',
+            type_greenhouse: 'Szklarnia',
+            type_polycarbonate: 'Poliwęglan',
+            type_greenhouse_poly: 'Szklarnia + Poliwęglan',
+            // Column headers
+            col_date: 'Data',
+            col_product_type: 'Typ towaru',
+            col_config: 'Konfiguracja',
+            col_invoice: 'Faktura',
+            col_price: 'Cena + dostawa',
+            col_product: 'Produkt',
+            col_status: 'Status',
+            col_payment: 'Płatność',
+            col_phone: 'Telefon',
+            col_address: 'Adres',
+            col_comment: 'Komentarz',
+            col_source: 'Źródło',
+            col_account: 'Konto',
+            // Orders list
+            orders_list: 'Lista zamówień',
+            // Statuses
+            status_processing: 'W realizacji',
+            status_payment_accepted: 'Płatność zaakceptowana',
+            status_completed: 'Zrealizowane',
+            status_cancelled: 'Anulowane',
+            status_pending: 'Oczekujące',
+            status_shipped: 'Wysłane',
+            'status_on-hold': 'Wstrzymane',
+            status_on_hold: 'Wstrzymane',
+            status_refunded: 'Zwrócone',
+            status_pending_payment: 'Oczekiwanie na płatność',
+            status_delivered: 'Dostarczone',
+            status_failed: 'Nieudane',
+            status_trash: 'Usunięte',
+            status_payment_error: 'Błąd płatności',
+            status_payment_received: 'Płatność przyjęta',
+            status_awaiting_bankwire: 'Oczekiwanie na przelew',
+            status_awaiting_check: 'Oczekiwanie na płatność czekiem',
+            status_awaiting_cod: 'Płatność przy odbiorze',
+            status_awaiting_payment: 'Oczekiwanie na płatność',
+            status_order_pending_paid: 'Zamówienie oczekujące (opłacone)',
+            status_order_pending_unpaid: 'Zamówienie oczekujące (nieopłacone)',
+            status_partial_refund: 'Częściowy zwrot',
+            status_partial_payment: 'Częściowa płatność',
+            status_authorized_transfer: 'Autoryzacja — transfer przez sklep',
+            status_awaiting_przelewy24: 'Oczekiwanie na Przelewy24',
+            status_przelewy24_accepted: 'Płatność Przelewy24 przyjęta',
+            status_payu_started: 'Płatność PayU rozpoczęta',
+            status_payu_awaiting: 'PayU oczekuje na odbiór',
+            status_payu_cancelled: 'PayU anulowana',
+            status_awaiting_proforma: 'Oczekujemy na opłacenie Proformy',
+            // Modal
+            modal_add_order: 'Dodaj zamówienie ręcznie',
+            modal_edit_order: 'Edytuj zamówienie',
+            modal_date: 'Data',
+            modal_product_name: 'Nazwa produktu',
+            modal_product_type: 'Typ towaru',
+            modal_config: 'Konfiguracja',
+            modal_price: 'Cena towaru (PLN)',
+            modal_shipping: 'Dostawa (PLN)',
+            modal_status: 'Status',
+            modal_payment: 'Płatność',
+            modal_customer_name: 'Imię i nazwisko klienta',
+            modal_phone: 'Telefon',
+            modal_city: 'Miasto',
+            modal_address: 'Adres',
+            modal_seller_account: 'Konto sprzedawcy',
+            modal_comment: 'Komentarz',
+            modal_cancel: 'Anuluj',
+            modal_save: 'Zapisz zamówienie',
+            // Detail panel
+            detail_client: 'Klient',
+            detail_email: 'Email',
+            detail_phone: 'Telefon',
+            detail_address: 'Adres',
+            detail_shipping_method: 'Metoda wysyłki',
+            detail_payment: 'Płatność',
+            detail_status: 'Status',
+            detail_order_id: 'ID zamówienia',
+            detail_nip: 'NIP (Faktura)',
+            detail_comment: 'Komentarz',
+            detail_items: 'Pozycje zamówienia',
+            detail_product: 'Produkt',
+            detail_sku: 'SKU',
+            detail_qty: 'Ilość',
+            detail_price_gross: 'Cena brutto',
+            // Pagination
+            pag_total: 'Razem',
+            pag_page: 'Strona',
+            pag_of: 'z',
+            pag_prev: '\u2190 Poprz.',
+            pag_next: 'Nast. \u2192',
+            // Empty state
+            empty_title: 'Brak zamówień',
+            empty_sub: 'Sprawdź filtry lub uruchom synchronizację',
+            // Dynamic text
+            more_items: 'jeszcze...',
+            no_sync: 'Brak synchronizacji',
+            syncing: 'Synchronizacja...',
+            stores_label: 'sklepy',
+            // Other
+            loading: 'Ładowanie...',
+            logout: 'Wyloguj',
+            click_to_edit: 'Kliknij, aby edytować',
+            comment_prompt: 'Komentarz:',
+            confirm_full_sync: 'Pełna resynchronizacja wszystkich zamówień?\nTo może potrwać kilka minut.\nNIP i inne dane zostaną zaktualizowane.',
+            confirm_delete: 'Na pewno usunąć zamówienie',
+            btn_edit: 'Edytuj',
+            btn_delete: 'Usuń',
+            error_prefix: 'Błąd',
+            order_not_found: 'Nie znaleziono zamówienia',
+            delivery_short: 'dost.',
+        },
+        ru: {
+            // Stat cards
+            stat_all_orders: 'Все заказы',
+            stat_revenue: 'Выручка (PLN)',
+            // Toolbar buttons
+            btn_filter: 'Фильтр',
+            btn_sync: 'Синхр.',
+            btn_full_sync: 'Полная синхр.',
+            btn_add: '+ Добавить',
+            btn_export_selected: 'Экспорт выбранных',
+            // Filters
+            all_stores: 'Все магазины \u25BE',
+            all_statuses: 'Все статусы',
+            search_customer: 'Поиск клиента...',
+            export_all: 'Экспорт: все',
+            exported_yes: 'Экспортированные',
+            exported_no: 'Неэкспортированные',
+            priority_all: 'Приоритет: все',
+            priority_important: 'Важные \u2605',
+            type_all: 'Тип: все',
+            type_greenhouse: 'Теплица',
+            type_polycarbonate: 'Поликарбонат',
+            type_greenhouse_poly: 'Теплица + Поликарбонат',
+            // Column headers
+            col_date: 'Дата',
+            col_product_type: 'Тип товара',
+            col_config: 'Комплектация',
+            col_invoice: 'Фактура',
+            col_price: 'Цена + доставка',
+            col_product: 'Продукт',
+            col_status: 'Статус',
+            col_payment: 'Оплата',
+            col_phone: 'Телефон',
+            col_address: 'Адрес',
+            col_comment: 'Комментарий',
+            col_source: 'Источник',
+            col_account: 'Аккаунт',
+            // Orders list
+            orders_list: 'Список заказов',
+            // Statuses
+            status_processing: 'В обработке',
+            status_payment_accepted: 'Оплата принята',
+            status_completed: 'Выполнен',
+            status_cancelled: 'Отменён',
+            status_pending: 'Ожидание',
+            status_shipped: 'Отправлен',
+            'status_on-hold': 'На удержании',
+            status_on_hold: 'На удержании',
+            status_refunded: 'Возврат',
+            status_pending_payment: 'Ожидание оплаты',
+            status_delivered: 'Доставлен',
+            status_failed: 'Ошибка',
+            status_trash: 'Удалён',
+            status_payment_error: 'Ошибка оплаты',
+            status_payment_received: 'Оплата получена',
+            status_awaiting_bankwire: 'Ожидание перевода',
+            status_awaiting_check: 'Ожидание оплаты чеком',
+            status_awaiting_cod: 'Оплата при получении',
+            status_awaiting_payment: 'Ожидание оплаты',
+            status_order_pending_paid: 'Заказ ожидает (оплачен)',
+            status_order_pending_unpaid: 'Заказ ожидает (не оплачен)',
+            status_partial_refund: 'Частичный возврат',
+            status_partial_payment: 'Частичная оплата',
+            status_authorized_transfer: 'Авторизация — перевод через магазин',
+            status_awaiting_przelewy24: 'Ожидание Przelewy24',
+            status_przelewy24_accepted: 'Оплата Przelewy24 принята',
+            status_payu_started: 'Оплата PayU начата',
+            status_payu_awaiting: 'PayU ожидает получения',
+            status_payu_cancelled: 'PayU отменена',
+            status_awaiting_proforma: 'Ожидание оплаты проформы',
+            // Modal
+            modal_add_order: 'Добавить заказ вручную',
+            modal_edit_order: 'Редактировать заказ',
+            modal_date: 'Дата',
+            modal_product_name: 'Название продукта',
+            modal_product_type: 'Тип товара',
+            modal_config: 'Комплектация',
+            modal_price: 'Цена товара (PLN)',
+            modal_shipping: 'Доставка (PLN)',
+            modal_status: 'Статус',
+            modal_payment: 'Оплата',
+            modal_customer_name: 'Имя и фамилия клиента',
+            modal_phone: 'Телефон',
+            modal_city: 'Город',
+            modal_address: 'Адрес',
+            modal_seller_account: 'Аккаунт продавца',
+            modal_comment: 'Комментарий',
+            modal_cancel: 'Отмена',
+            modal_save: 'Сохранить заказ',
+            // Detail panel
+            detail_client: 'Клиент',
+            detail_email: 'Email',
+            detail_phone: 'Телефон',
+            detail_address: 'Адрес',
+            detail_shipping_method: 'Способ доставки',
+            detail_payment: 'Оплата',
+            detail_status: 'Статус',
+            detail_order_id: 'ID заказа',
+            detail_nip: 'NIP (Фактура)',
+            detail_comment: 'Комментарий',
+            detail_items: 'Позиции заказа',
+            detail_product: 'Продукт',
+            detail_sku: 'SKU',
+            detail_qty: 'Кол-во',
+            detail_price_gross: 'Цена брутто',
+            // Pagination
+            pag_total: 'Всего',
+            pag_page: 'Страница',
+            pag_of: 'из',
+            pag_prev: '\u2190 Назад',
+            pag_next: 'Далее \u2192',
+            // Empty state
+            empty_title: 'Нет заказов',
+            empty_sub: 'Проверьте фильтры или запустите синхронизацию',
+            // Dynamic text
+            more_items: 'ещё...',
+            no_sync: 'Нет синхронизации',
+            syncing: 'Синхронизация...',
+            stores_label: 'магазины',
+            // Other
+            loading: 'Загрузка...',
+            logout: 'Выход',
+            click_to_edit: 'Нажмите для редактирования',
+            comment_prompt: 'Комментарий:',
+            confirm_full_sync: 'Полная синхронизация всех заказов?\nЭто может занять несколько минут.\nNIP и другие данные будут обновлены.',
+            confirm_delete: 'Удалить заказ',
+            btn_edit: 'Редактировать',
+            btn_delete: 'Удалить',
+            error_prefix: 'Ошибка',
+            order_not_found: 'Заказ не найден',
+            delivery_short: 'дост.',
+        }
+    };
+
+    var currentLang = localStorage.getItem('ekomat_lang') || 'pl';
+
+    function t(key) {
+        return (LANG[currentLang] || LANG.pl)[key] || (LANG.pl)[key] || key;
+    }
+
+    function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('ekomat_lang', lang);
+        applyLang();
+    }
+
+    function applyLang() {
+        currentLang = localStorage.getItem('ekomat_lang') || 'pl';
+        // Update all elements with data-i18n
+        document.querySelectorAll('[data-i18n]').forEach(function(el) {
+            var key = el.getAttribute('data-i18n');
+            var val = t(key);
+            if (val !== key) el.textContent = val;
+        });
+        // Update placeholder attributes
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el) {
+            var key = el.getAttribute('data-i18n-placeholder');
+            var val = t(key);
+            if (val !== key) el.placeholder = val;
+        });
+        // Highlight active language button
+        var plBtn = document.getElementById('lang-pl');
+        var ruBtn = document.getElementById('lang-ru');
+        if (plBtn) plBtn.classList.toggle('active-lang', currentLang === 'pl');
+        if (ruBtn) ruBtn.classList.toggle('active-lang', currentLang === 'ru');
+    }
+
+    function getStatus(status) {
+        return t('status_' + status) || status || '\u2014';
+    }
+
+    // ===== END MULTILINGUAL SUPPORT =====
+
     var userPerms = '{{ user.permissions if user else "" }}'.split(',');
     var userEmail = '{{ user.email if user else "" }}';
     function hasPerm(p) { return userPerms.indexOf(p) !== -1; }
@@ -317,6 +635,7 @@
 
     // Инициализация
     (function() {
+        applyLang();
         var to = new Date();
         var from = new Date();
         from.setDate(from.getDate() - 90);
@@ -352,11 +671,11 @@
             var checks = document.querySelectorAll('.source-check:checked');
             var btn = document.getElementById('f-source-btn');
             if (checks.length === 0) {
-                btn.textContent = 'All stores \u25BE';
+                btn.textContent = t('all_stores');
             } else if (checks.length === 1) {
                 btn.textContent = checks[0].parentElement.textContent.trim() + ' \u25BE';
             } else {
-                btn.textContent = checks.length + ' stores \u25BE';
+                btn.textContent = checks.length + ' ' + t('stores_label') + ' \u25BE';
             }
         }
     });
@@ -394,6 +713,8 @@
     function loadStats() {
         var f = getFilters();
         var url = '/api/stats?date_from=' + f.date_from + '&date_to=' + f.date_to;
+        if (f.source) url += '&source=' + encodeURIComponent(f.source);
+        if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
         fetch(url).then(function(r) { return r.json(); }).then(function(d) {
             var o = d.orders;
             document.getElementById('s-total').textContent = fmt(o.total);
@@ -432,49 +753,13 @@
     function renderOrders(orders) {
         var tbody = document.getElementById('orders-body');
         if (!orders || orders.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="16" class="empty"><h4>No orders</h4><p>Check filters or run sync</p></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="16" class="empty"><h4>' + t('empty_title') + '</h4><p>' + t('empty_sub') + '</p></td></tr>';
             return;
         }
 
-        // Polish status map
-        var statusPL = {
-            'pending': 'Oczekujące',
-            'pending_payment': 'Oczekiwanie na płatność',
-            'processing': 'W realizacji',
-            'shipped': 'Wysłane',
-            'delivered': 'Dostarczone',
-            'completed': 'Zrealizowane',
-            'cancelled': 'Anulowane',
-            'refunded': 'Zwrot',
-            'failed': 'Nieudane',
-            'on-hold': 'Wstrzymane',
-            'on_hold': 'Wstrzymane',
-            'trash': 'Usunięte',
-            'payment_accepted': 'Płatność zaakceptowana',
-            'payment_error': 'Błąd płatności',
-            'payment_received': 'Płatność przyjęta',
-            'awaiting_bankwire': 'Oczekiwanie na przelew',
-            'awaiting_check': 'Oczekiwanie na płatność czekiem',
-            'awaiting_cod': 'Oczekiwanie na płatność przy odbiorze',
-            'awaiting_payment': 'Oczekiwanie na płatność',
-            'order_pending_paid': 'Zamówienie oczekujące (opłacone)',
-            'order_pending_unpaid': 'Zamówienie oczekujące (nieopłacone)',
-            'partial_refund': 'Częściowy zwrot',
-            'partial_payment': 'Częściowa płatność',
-            'authorized_transfer': 'Autoryzacja — transfer przez sklep',
-            'awaiting_przelewy24': 'Oczekiwanie na Przelewy24',
-            'przelewy24_accepted': 'Płatność Przelewy24 przyjęta',
-            'payu_started': 'Płatność PayU rozpoczęta',
-            'payu_awaiting': 'PayU oczekuje na odbiór',
-            'payu_cancelled': 'PayU anulowana',
-            'awaiting_proforma': 'Oczekujemy na opłacenie Proformy',
-        };
-        function getStatusPL(s) { return statusPL[s] || s || '—'; }
-
         function shortenProduct(name) {
             if (!name) return '';
-            // Show full cleaned name, truncate only if very long
-            return name.length > 60 ? name.substring(0, 57) + '...' : name;
+            return name;
         }
 
         var html = '';
@@ -488,7 +773,7 @@
                 var shortName = shortenProduct(it.full_name || it.name || '');
                 productHtml += '<span>' + it.qty + 'x ' + shortName + '</span>';
             });
-            if (items.length > 2) productHtml += '<span>+ ' + (items.length - 2) + ' jeszcze...</span>';
+            if (items.length > 2) productHtml += '<span>+ ' + (items.length - 2) + ' ' + t('more_items') + '</span>';
             productHtml += '</div>';
 
             // Date
@@ -505,7 +790,7 @@
             if (productPrice < 0) productPrice = totalVal;
             var priceHtml = '<div class="price-breakdown"><b>' + fmtMoney(productPrice) + '</b>';
             if (shipCost > 0) {
-                priceHtml += ' <span class="ship">+ ' + fmtMoney(shipCost) + ' dost.</span>';
+                priceHtml += ' <span class="ship">+ ' + fmtMoney(shipCost) + ' ' + t('delivery_short') + '</span>';
             }
             priceHtml += '<br><span style="font-size:10px;color:#374151;">= ' + fmtMoney(totalVal) + ' PLN</span></div>';
 
@@ -520,7 +805,7 @@
             var commentHtml = (o.customer_comment || o.note || '—');
 
             // Status in Polish
-            var statusLabel = getStatusPL(o.status);
+            var statusLabel = getStatus(o.status);
 
             var rowId = 'detail-' + (o.id || o.external_id);
             var orderId = o.id || '';
@@ -543,7 +828,7 @@
                 + '<td style="font-size:11px;" onclick="toggleDetail(\'' + rowId + '\')">' + (o.payment_method || '—') + '</td>'
                 + '<td class="phone-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.customer_phone || '—') + '</td>'
                 + '<td class="address-cell" onclick="toggleDetail(\'' + rowId + '\')">' + addrHtml + '</td>'
-                + '<td class="comment-cell" onclick="event.stopPropagation()"><span class="editable-comment" data-id="' + orderId + '" onclick="editComment(this)" title="Kliknij, aby edytować">' + commentHtml + '</span></td>'
+                + '<td class="comment-cell" onclick="event.stopPropagation()"><span class="editable-comment" data-id="' + orderId + '" onclick="editComment(this)" title="' + t('click_to_edit') + '">' + commentHtml + '</span></td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="badge badge-' + o.source + '">' + (o.source || '').toUpperCase() + '</span>'
                 + '<div class="order-extid">' + ((o.external_id || '').replace(/[^0-9]/g, '') || '') + '</div>'
                 + (o.created_by_email ? '<div class="order-extid">' + o.created_by_email + '</div>' : '')
@@ -552,7 +837,7 @@
                 + '</tr>';
 
             // --- Detail row (expandable) ---
-            var itemsTable = '<table><thead><tr><th>Produkt</th><th>SKU</th><th>Ilość</th><th>Cena brutto</th></tr></thead><tbody>';
+            var itemsTable = '<table><thead><tr><th>' + t('detail_product') + '</th><th>' + t('detail_sku') + '</th><th>' + t('detail_qty') + '</th><th>' + t('detail_price_gross') + '</th></tr></thead><tbody>';
             items.forEach(function(it) {
                 var fullName = it.full_name || it.name || '';
                 var bruttoPrice = (parseFloat(it.price) || 0) * 1.23;
@@ -568,24 +853,24 @@
                 var canDelete = isSuperAdmin;
                 if (canEdit || canDelete) {
                     manualActions = '<div class="d-group" style="grid-column:1/-1;margin-top:8px;">';
-                    if (canEdit) manualActions += '<button class="btn-primary" style="margin-right:8px;font-size:12px;padding:4px 12px;" onclick="editManualOrder(' + orderId + ')">Edytuj</button>';
-                    if (canDelete) manualActions += '<button style="background:#ef4444;color:#fff;border:none;border-radius:4px;font-size:12px;padding:4px 12px;cursor:pointer;" onclick="deleteManualOrder(' + orderId + ')">Usuń</button>';
+                    if (canEdit) manualActions += '<button class="btn-primary" style="margin-right:8px;font-size:12px;padding:4px 12px;" onclick="editManualOrder(' + orderId + ')">' + t('btn_edit') + '</button>';
+                    if (canDelete) manualActions += '<button style="background:#ef4444;color:#fff;border:none;border-radius:4px;font-size:12px;padding:4px 12px;cursor:pointer;" onclick="deleteManualOrder(' + orderId + ')">' + t('btn_delete') + '</button>';
                     manualActions += '</div>';
                 }
             }
 
             html += '<tr class="detail-row" id="' + rowId + '"><td colspan="16"><div class="detail-panel">'
-                + '<div class="d-group"><div class="d-label">Klient</div><div class="d-value">' + (o.customer_name || '—') + '</div></div>'
-                + '<div class="d-group"><div class="d-label">Email</div><div class="d-value">' + (o.customer_email || '—') + '</div></div>'
-                + '<div class="d-group"><div class="d-label">Telefon</div><div class="d-value">' + (o.customer_phone || '—') + '</div></div>'
-                + '<div class="d-group"><div class="d-label">Adres</div><div class="d-value">' + addrHtml + '</div></div>'
-                + '<div class="d-group"><div class="d-label">Metoda wysyłki</div><div class="d-value">' + (o.shipping_method || '—') + '</div></div>'
-                + '<div class="d-group"><div class="d-label">Płatność</div><div class="d-value">' + (o.payment_method || '—') + '</div></div>'
-                + '<div class="d-group"><div class="d-label">Status</div><div class="d-value"><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span> (' + (o.status || '') + ')</div></div>'
-                + '<div class="d-group"><div class="d-label">ID zamówienia</div><div class="d-value">#' + (o.external_id || o.id) + '</div></div>'
-                + (o.invoice_nip ? '<div class="d-group"><div class="d-label">NIP (Faktura)</div><div class="d-value">' + o.invoice_nip + '</div></div>' : '')
-                + '<div class="d-group"><div class="d-label">Komentarz</div><div class="d-value">' + (o.customer_comment || o.note || '—') + '</div></div>'
-                + '<div class="d-items"><div class="d-label">Pozycje zamówienia</div>' + itemsTable + '</div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_client') + '</div><div class="d-value">' + (o.customer_name || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_email') + '</div><div class="d-value">' + (o.customer_email || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_phone') + '</div><div class="d-value">' + (o.customer_phone || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_address') + '</div><div class="d-value">' + addrHtml + '</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_shipping_method') + '</div><div class="d-value">' + (o.shipping_method || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_payment') + '</div><div class="d-value">' + (o.payment_method || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_status') + '</div><div class="d-value"><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span> (' + (o.status || '') + ')</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_order_id') + '</div><div class="d-value">#' + (o.external_id || o.id) + '</div></div>'
+                + (o.invoice_nip ? '<div class="d-group"><div class="d-label">' + t('detail_nip') + '</div><div class="d-value">' + o.invoice_nip + '</div></div>' : '')
+                + '<div class="d-group"><div class="d-label">' + t('detail_comment') + '</div><div class="d-value">' + (o.customer_comment || o.note || '—') + '</div></div>'
+                + '<div class="d-items"><div class="d-label">' + t('detail_items') + '</div>' + itemsTable + '</div>'
                 + manualActions
                 + '</div></td></tr>';
         });
@@ -600,11 +885,11 @@
     function renderPagination() {
         var totalPages = Math.ceil(totalOrders / perPage);
         var el = document.getElementById('pagination');
-        if (totalPages <= 1) { el.innerHTML = '<span class="info">Total: ' + totalOrders + '</span>'; return; }
+        if (totalPages <= 1) { el.innerHTML = '<span class="info">' + t('pag_total') + ': ' + totalOrders + '</span>'; return; }
 
-        var html = '<span class="info">Total: ' + fmt(totalOrders) + ' | Page ' + currentPage + ' of ' + totalPages + '</span>';
-        if (currentPage > 1) html += '<button onclick="loadOrders(' + (currentPage-1) + ')">← Prev</button>';
-        if (currentPage < totalPages) html += '<button onclick="loadOrders(' + (currentPage+1) + ')">Next →</button>';
+        var html = '<span class="info">' + t('pag_total') + ': ' + fmt(totalOrders) + ' | ' + t('pag_page') + ' ' + currentPage + ' ' + t('pag_of') + ' ' + totalPages + '</span>';
+        if (currentPage > 1) html += '<button onclick="loadOrders(' + (currentPage-1) + ')">' + t('pag_prev') + '</button>';
+        if (currentPage < totalPages) html += '<button onclick="loadOrders(' + (currentPage+1) + ')">' + t('pag_next') + '</button>';
         el.innerHTML = html;
     }
 
@@ -623,10 +908,10 @@
 
     function syncAll() {
         var btn = document.getElementById('btn-sync');
-        btn.textContent = 'Syncing...';
+        btn.textContent = t('syncing');
         btn.disabled = true;
         fetch('/admin/sync').then(function(r) { return r.json(); }).then(function(d) {
-            btn.textContent = 'Sync';
+            btn.textContent = t('btn_sync');
             btn.disabled = false;
             // Перезагружаем через 5 сек (время на синк)
             setTimeout(function() { loadOrders(currentPage); loadSyncInfo(); }, 5000);
@@ -634,18 +919,18 @@
     }
 
     function fullResync() {
-        if (!confirm('Pełna resynchronizacja wszystkich zamówień?\nTo może potrwać kilka minut.\nNIP i inne dane zostaną zaktualizowane.')) return;
+        if (!confirm(t('confirm_full_sync'))) return;
         var btn = document.getElementById('btn-full-sync');
-        btn.textContent = 'Syncing...';
+        btn.textContent = t('syncing');
         btn.disabled = true;
         var sources = ['dobraszklarnia', 'oteko', 'cieplarnia', 'allegro'];
         var done = 0;
         sources.forEach(function(src) {
             fetch('/admin/sync?source=' + src + '&full=true').then(function(r) { return r.json(); }).then(function() {
                 done++;
-                btn.textContent = 'Full Sync (' + done + '/' + sources.length + ')';
+                btn.textContent = t('btn_full_sync') + ' (' + done + '/' + sources.length + ')';
                 if (done === sources.length) {
-                    btn.textContent = 'Full Sync';
+                    btn.textContent = t('btn_full_sync');
                     btn.disabled = false;
                     setTimeout(function() { loadOrders(currentPage); loadSyncInfo(); }, 10000);
                 }
@@ -657,7 +942,7 @@
         fetch('/api/sync-log?limit=5').then(function(r) { return r.json(); }).then(function(d) {
             var el = document.getElementById('sync-info');
             if (!d.log || d.log.length === 0) {
-                el.innerHTML = 'Brak synchronizacji';
+                el.innerHTML = t('no_sync');
                 return;
             }
             var html = '';
@@ -732,7 +1017,7 @@
         if (!hasPerm('edit_comments')) return;
         var id = span.getAttribute('data-id');
         var currentText = span.textContent === '—' ? '' : span.textContent;
-        var newText = prompt('Komentarz:', currentText);
+        var newText = prompt(t('comment_prompt'), currentText);
         if (newText === null) return; // cancelled
         fetch('/api/orders/update-comment', {
             method: 'POST',
@@ -753,7 +1038,7 @@
 
     function openAddModal() {
         editingOrderId = null;
-        document.getElementById('modal-order-title').textContent = 'Dodaj zamówienie ręcznie';
+        document.getElementById('modal-order-title').textContent = t('modal_add_order');
         document.getElementById('add-modal').classList.add('open');
         var now = new Date();
         var dtStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-'
@@ -789,9 +1074,9 @@
         fetch('/api/orders?limit=1000&offset=0').then(function(r){return r.json();}).then(function(d) {
             var order = null;
             d.orders.forEach(function(o) { if (o.id == orderId) order = o; });
-            if (!order) { alert('Nie znaleziono zamówienia'); return; }
+            if (!order) { alert(t('order_not_found')); return; }
             editingOrderId = orderId;
-            document.getElementById('modal-order-title').textContent = 'Edytuj zamówienie #' + orderId;
+            document.getElementById('modal-order-title').textContent = t('modal_edit_order') + ' #' + orderId;
             document.getElementById('add-modal').classList.add('open');
             // Fill form
             var dt = order.external_created || order.created_at || '';
@@ -824,12 +1109,12 @@
         });
     }
     function deleteManualOrder(orderId) {
-        if (!confirm('Na pewno usunąć zamówienie #' + orderId + '?')) return;
+        if (!confirm(t('confirm_delete') + ' #' + orderId + '?')) return;
         fetch('/api/orders/manual/' + orderId, { method: 'DELETE' })
             .then(function(r) { return r.json(); })
             .then(function(d) {
                 if (d.ok) loadOrders(currentPage);
-                else alert('Błąd: ' + (d.error || 'unknown'));
+                else alert(t('error_prefix') + ': ' + (d.error || 'unknown'));
             });
     }
     function saveManualOrder() {
@@ -862,7 +1147,7 @@
                 closeAddModal();
                 loadOrders(currentPage);
             } else {
-                alert('Błąd: ' + (d.error || 'unknown'));
+                alert(t('error_prefix') + ': ' + (d.error || 'unknown'));
             }
         });
     }
@@ -925,52 +1210,52 @@
     <!-- Modal: add manual order -->
     <div class="modal-overlay" id="add-modal" onclick="if(event.target===this)closeAddModal()">
         <div class="modal">
-            <h3 id="modal-order-title">Dodaj zamówienie ręcznie</h3>
+            <h3 id="modal-order-title" data-i18n="modal_add_order">Dodaj zamówienie ręcznie</h3>
             <div class="form-grid">
                 <div class="form-group">
-                    <label>Data</label>
+                    <label data-i18n="modal_date">Data</label>
                     <input type="datetime-local" id="m-date">
                 </div>
                 <div class="form-group" style="display:none;">
                     <input type="hidden" id="m-source" value="manual">
                 </div>
                 <div class="form-group full">
-                    <label>Nazwa produktu</label>
+                    <label data-i18n="modal_product_name">Nazwa produktu</label>
                     <input type="text" id="m-product" placeholder="np. Szklarnia Mocna 3x6m 6mm">
                 </div>
                 <div class="form-group">
-                    <label>Typ towaru</label>
+                    <label data-i18n="modal_product_type">Typ towaru</label>
                     <input type="text" id="m-type" placeholder="Szklarnia / Poliwęglan">
                 </div>
                 <div class="form-group">
-                    <label>Konfiguracja</label>
+                    <label data-i18n="modal_config">Konfiguracja</label>
                     <input type="text" id="m-config" placeholder="">
                 </div>
                 <div class="form-group">
-                    <label>Cena towaru (PLN)</label>
+                    <label data-i18n="modal_price">Cena towaru (PLN)</label>
                     <input type="number" step="0.01" id="m-price" placeholder="0.00">
                 </div>
                 <div class="form-group">
-                    <label>Dostawa (PLN)</label>
+                    <label data-i18n="modal_shipping">Dostawa (PLN)</label>
                     <input type="number" step="0.01" id="m-shipping" value="0" placeholder="0.00">
                 </div>
                 <div class="form-group">
-                    <label>Status</label>
+                    <label data-i18n="modal_status">Status</label>
                     <select id="m-status">
-                        <option value="awaiting_cod">Płatność przy odbiorze</option>
-                        <option value="awaiting_proforma">Oczekujemy na opłacenie Proformy</option>
+                        <option value="awaiting_cod" data-i18n="status_awaiting_cod">Płatność przy odbiorze</option>
+                        <option value="awaiting_proforma" data-i18n="status_awaiting_proforma">Oczekujemy na opłacenie Proformy</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Płatność</label>
+                    <label data-i18n="modal_payment">Płatność</label>
                     <input type="text" id="m-payment" placeholder="Gotówka / Przelew / Blik">
                 </div>
                 <div class="form-group">
-                    <label>Imię i nazwisko klienta</label>
+                    <label data-i18n="modal_customer_name">Imię i nazwisko klienta</label>
                     <input type="text" id="m-name" placeholder="">
                 </div>
                 <div class="form-group">
-                    <label>Telefon</label>
+                    <label data-i18n="modal_phone">Telefon</label>
                     <input type="text" id="m-phone" placeholder="">
                 </div>
                 <div class="form-group">
@@ -978,25 +1263,25 @@
                     <input type="email" id="m-email" placeholder="">
                 </div>
                 <div class="form-group">
-                    <label>Miasto</label>
+                    <label data-i18n="modal_city">Miasto</label>
                     <input type="text" id="m-city" placeholder="">
                 </div>
                 <div class="form-group">
-                    <label>Adres</label>
+                    <label data-i18n="modal_address">Adres</label>
                     <input type="text" id="m-address" placeholder="">
                 </div>
                 <div class="form-group">
-                    <label>Konto sprzedawcy</label>
+                    <label data-i18n="modal_seller_account">Konto sprzedawcy</label>
                     <input type="text" id="m-seller" placeholder="np. mantrade">
                 </div>
                 <div class="form-group full">
-                    <label>Komentarz</label>
+                    <label data-i18n="modal_comment">Komentarz</label>
                     <textarea id="m-comment" placeholder=""></textarea>
                 </div>
             </div>
             <div class="form-actions">
-                <button class="btn-cancel" onclick="closeAddModal()">Anuluj</button>
-                <button class="btn-save" onclick="saveManualOrder()">Zapisz zamówienie</button>
+                <button class="btn-cancel" onclick="closeAddModal()" data-i18n="modal_cancel">Anuluj</button>
+                <button class="btn-save" onclick="saveManualOrder()" data-i18n="modal_save">Zapisz zamówienie</button>
             </div>
         </div>
     </div>
