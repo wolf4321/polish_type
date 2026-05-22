@@ -20,6 +20,7 @@ auth_router = APIRouter()
 ALL_PERMISSIONS = [
     ("dashboard",     "Dashboard",              "Widzi dashboard ze statystykami"),
     ("orders",        "Zamówienia",             "Widzi tabelę zamówień"),
+    ("view_stats",    "Statystyki (karty)",     "Widzi karty statystyk na stronie zamówień"),
     ("prices",        "Ceny i przychody",       "Widzi ceny, koszty dostawy, przychody"),
     ("phones",        "Telefony klientów",      "Widzi numery telefonów"),
     ("export",        "Eksport XLSX",           "Może eksportować zamówienia"),
