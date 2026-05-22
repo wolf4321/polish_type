@@ -86,16 +86,16 @@
         .empty { text-align: center; padding: 60px 20px; color: #9ca3af; }
         .empty h4 { font-size: 16px; margin-bottom: 8px; color: #6b7280; }
 
-        .items-list { font-size: 11px; color: #6b7280; max-width: 220px; }
-        .items-list span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .items-list { font-size: 11px; color: #6b7280; }
+        .items-list span { display: block; word-break: break-word; white-space: normal; }
 
         .price-breakdown { font-size: 12px; }
         .price-breakdown .ship { font-size: 10px; color: #6b7280; }
-        .comment-cell { font-size: 13px; color: #dc2626; font-weight: 600; max-width: 200px;
+        .comment-cell { font-size: 13px; color: #dc2626; font-weight: 600;
                          white-space: pre-wrap; word-break: break-word; }
         .editable-comment { cursor: pointer; border-bottom: 1px dashed #d1d5db; padding-bottom: 1px; }
         .editable-comment:hover { background: #fef9c3; }
-        .address-cell { font-size: 11px; color: #4b5563; max-width: 180px; }
+        .address-cell { font-size: 11px; color: #4b5563; word-break: break-word; }
         .phone-cell { font-size: 12px; white-space: nowrap; }
         .config-cell { font-size: 11px; color: #9ca3af; font-style: italic; }
         .seller-cell { font-size: 11px; color: #6b7280; }
@@ -207,20 +207,22 @@
         <!-- Фильтры -->
         <div class="toolbar">
             <input type="text" id="f-search" placeholder="Search customer...">
-            <select id="f-source">
-                <option value="">All stores</option>
-                <option value="dobraszklarnia">dobraszklarnia.pl</option>
-                <option value="oteko">oteko.pl</option>
-                <option value="cieplarnia">cieplarnia.pl</option>
-                <option value="allegro">Allegro (все)</option>
-                <option value="allegro:mantrade">Allegro: mantrade</option>
-                <option value="allegro:drogatrade">Allegro: drogatrade</option>
-                <option value="allegro:mega-agronom">Allegro: mega-agronom</option>
-                <option value="allegro:oteko_pl">Allegro: oteko_pl</option>
-                <option value="allegro:dobraszklarniapl">Allegro: dobraszklarniapl</option>
-                <option value="allegro:cieplarnia_pl">Allegro: cieplarnia_pl</option>
-                <option value="manual">Ręczne</option>
-            </select>
+            <div style="position:relative;display:inline-block;" id="f-source-wrap">
+                <button type="button" id="f-source-btn" onclick="toggleSourceDropdown()" style="padding:7px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;background:#fff;cursor:pointer;min-width:150px;text-align:left;">All stores ▾</button>
+                <div id="f-source-dropdown" style="display:none;position:absolute;top:100%;left:0;z-index:100;background:#fff;border:1px solid #e5e7eb;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.1);padding:6px 0;min-width:220px;max-height:300px;overflow-y:auto;">
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="dobraszklarnia"> dobraszklarnia.pl</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="oteko"> oteko.pl</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="cieplarnia"> cieplarnia.pl</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="allegro"> Allegro (все)</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:mantrade"> mantrade</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:drogatrade"> drogatrade</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:mega-agronom"> mega-agronom</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:oteko_pl"> oteko_pl</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:dobraszklarniapl"> dobraszklarniapl</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:cieplarnia_pl"> cieplarnia_pl</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="manual"> Ręczne</label>
+                </div>
+            </div>
             <select id="f-status">
                 <option value="">All statuses</option>
                 <option value="processing">Processing</option>
@@ -243,12 +245,17 @@
                 <option value="">Priorytet: wszystkie</option>
                 <option value="yes">Ważne ★</option>
             </select>
+            <select id="f-product-type">
+                <option value="">Typ: wszystkie</option>
+                <option value="Теплица">Теплица</option>
+                <option value="Поликарбонат">Поликарбонат</option>
+                <option value="Теплица + Поликарбонат">Теплица + Поликарбонат</option>
+            </select>
             <input type="date" id="f-from">
             <span style="color:#9ca3af;">—</span>
             <input type="date" id="f-to">
             <button class="btn-primary" onclick="loadOrders(1)">Filter</button>
             {% if user and 'export' in (user.permissions or '').split(',') %}
-            <button class="btn-export" onclick="exportCSV()">Export XLSX</button>
             <button class="btn-export-sel" onclick="exportSelected()" id="btn-export-sel" style="display:none;">Eksport zaznaczonych (<span id="sel-count">0</span>)</button>
             {% endif %}
             {% if user and 'sync' in (user.permissions or '').split(',') %}
@@ -328,24 +335,59 @@
         return parseFloat(n || 0).toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
 
-    function getFilters() {
-        var srcVal = document.getElementById('f-source').value;
-        var source = srcVal;
-        var seller = '';
-        if (srcVal.indexOf(':') !== -1) {
-            var parts = srcVal.split(':');
-            source = parts[0];
-            seller = parts[1];
+    function toggleSourceDropdown() {
+        var dd = document.getElementById('f-source-dropdown');
+        dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+    }
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+        var wrap = document.getElementById('f-source-wrap');
+        if (wrap && !wrap.contains(e.target)) {
+            document.getElementById('f-source-dropdown').style.display = 'none';
         }
+    });
+    // Update button label when checkboxes change
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('source-check')) {
+            var checks = document.querySelectorAll('.source-check:checked');
+            var btn = document.getElementById('f-source-btn');
+            if (checks.length === 0) {
+                btn.textContent = 'All stores \u25BE';
+            } else if (checks.length === 1) {
+                btn.textContent = checks[0].parentElement.textContent.trim() + ' \u25BE';
+            } else {
+                btn.textContent = checks.length + ' stores \u25BE';
+            }
+        }
+    });
+
+    function getFilters() {
+        // Multi-select sources: collect checked values
+        var checks = document.querySelectorAll('.source-check:checked');
+        var sources = [];
+        var sellers = [];
+        checks.forEach(function(cb) {
+            var val = cb.value;
+            if (val.indexOf(':') !== -1) {
+                var parts = val.split(':');
+                sources.push(parts[0]);
+                sellers.push(parts[1]);
+            } else {
+                sources.push(val);
+            }
+        });
+        // Deduplicate sources
+        var uniqueSources = sources.filter(function(v, i, a) { return a.indexOf(v) === i; });
         return {
-            source: source,
-            seller: seller,
+            source: uniqueSources.join(','),
+            seller: sellers.join(','),
             status: document.getElementById('f-status').value,
             search: document.getElementById('f-search').value,
             date_from: document.getElementById('f-from').value,
             date_to: document.getElementById('f-to').value,
             exported: document.getElementById('f-exported').value,
             priority: document.getElementById('f-priority').value,
+            product_type: document.getElementById('f-product-type').value,
         };
     }
 
@@ -376,6 +418,7 @@
         if (f.date_to) url += '&date_to=' + f.date_to;
         if (f.exported) url += '&exported=' + f.exported;
         if (f.priority) url += '&priority=' + f.priority;
+        if (f.product_type) url += '&product_type=' + encodeURIComponent(f.product_type);
 
         fetch(url).then(function(r) { return r.json(); }).then(function(d) {
             totalOrders = d.total;
@@ -429,16 +472,9 @@
         function getStatusPL(s) { return statusPL[s] || s || '—'; }
 
         function shortenProduct(name) {
-            // Extract dimensions like 3x4, 3x6, 3x8 and thickness like 4mm, 6mm
             if (!name) return '';
-            var dims = name.match(/(\d+)\s*[x×\*]\s*(\d+)/i);
-            var thick = name.match(/(\d+)\s*mm/i);
-            if (dims) {
-                var short = dims[1] + 'x' + dims[2];
-                if (thick) short += ' ' + thick[1] + 'mm';
-                return short;
-            }
-            return name.length > 40 ? name.substring(0, 37) + '...' : name;
+            // Show full cleaned name, truncate only if very long
+            return name.length > 60 ? name.substring(0, 57) + '...' : name;
         }
 
         var html = '';
@@ -512,7 +548,7 @@
                 + '<div class="order-extid">' + ((o.external_id || '').replace(/[^0-9]/g, '') || '') + '</div>'
                 + (o.created_by_email ? '<div class="order-extid">' + o.created_by_email + '</div>' : '')
                 + '</td>'
-                + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.source === 'allegro' ? (o.customer_name || '') : (o.seller_account || '')) + '</td>'
+                + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.seller_account || '') + '</td>'
                 + '</tr>';
 
             // --- Detail row (expandable) ---
@@ -831,8 +867,28 @@
         });
     }
 
-    // --- Column resizer ---
+    // --- Column resizer with localStorage persistence ---
     (function() {
+        var STORAGE_KEY = 'ekomat_col_widths';
+        function saveColWidths() {
+            var ths = document.querySelectorAll('thead th');
+            var widths = {};
+            ths.forEach(function(th, idx) {
+                if (th.style.width) widths[idx] = th.style.width;
+            });
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(widths)); } catch(e) {}
+        }
+        function restoreColWidths() {
+            try {
+                var saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+                var ths = document.querySelectorAll('thead th');
+                Object.keys(saved).forEach(function(idx) {
+                    if (ths[parseInt(idx)]) ths[parseInt(idx)].style.width = saved[idx];
+                });
+            } catch(e) {}
+        }
+        restoreColWidths();
+
         var grips = document.querySelectorAll('.col-resize');
         var startX, startW, th;
         grips.forEach(function(grip) {
@@ -856,6 +912,7 @@
             if (th) {
                 var grip = th.querySelector('.col-resize');
                 if (grip) grip.classList.remove('active');
+                saveColWidths();
             }
             th = null;
             document.removeEventListener('mousemove', onMove);
