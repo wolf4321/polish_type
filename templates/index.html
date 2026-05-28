@@ -188,6 +188,18 @@
             </div>
         </div>
 
+        <!-- Campaigns breakdown -->
+        <div class="grid-2">
+            <div class="card" id="campaigns-card">
+                <h3>Kampanie reklamowe</h3>
+                <div id="campaigns-container"><div class="empty">Ładowanie...</div></div>
+            </div>
+            <div class="card" id="devices-card">
+                <h3>Urządzenia (dobraszklarnia.pl)</h3>
+                <div id="devices-container"><div class="empty">Ładowanie...</div></div>
+            </div>
+        </div>
+
         <!-- Chart: orders + revenue by day -->
         <div class="card">
             <h3>Zamówienia i przychód dziennie</h3>
@@ -301,6 +313,12 @@
 
             // Render traffic channels
             renderChannels(d.by_channel || [], d.by_source || []);
+
+            // Render campaigns
+            renderCampaigns(d.by_campaign || []);
+
+            // Render devices
+            renderDevices(d.by_device || []);
         });
     }
 
@@ -504,6 +522,60 @@
             html = '<div class="empty">Brak danych o kanałach ruchu dla sklepów (tylko serwisy WWW).<br>Uruchom Full Sync, aby pobrać UTM z zamówień WooCommerce.</div>';
         }
 
+        container.innerHTML = html;
+    }
+
+    function renderCampaigns(byCampaign) {
+        var container = document.getElementById('campaigns-container');
+        if (!byCampaign || byCampaign.length === 0) {
+            container.innerHTML = '<div class="empty">Brak danych o kampaniach.<br>Uruchom Full Sync dla dobraszklarnia.</div>';
+            return;
+        }
+        var maxCnt = byCampaign[0] ? byCampaign[0].cnt : 1;
+        var html = '<table class="channel-table"><thead><tr>'
+            + '<th>Kampania</th><th>Źródło</th><th style="text-align:right;">Zam.</th>';
+        if (showPrices) html += '<th style="text-align:right;">Przychód</th><th style="text-align:right;">Śr.</th>';
+        html += '</tr></thead><tbody>';
+
+        byCampaign.forEach(function(c) {
+            var name = c.campaign.replace(/[{}]/g, '');
+            var avg = c.cnt > 0 && c.revenue ? (c.revenue / c.cnt) : 0;
+            html += '<tr>'
+                + '<td style="font-size:12px;font-weight:500;">' + name + '</td>'
+                + '<td><span class="channel-badge ' + getChannelClass(c.utm_source) + '">' + c.utm_source + '</span></td>'
+                + '<td style="text-align:right;font-weight:600;">' + fmt(c.cnt) + '</td>';
+            if (showPrices) {
+                html += '<td style="text-align:right;">' + (c.revenue !== null ? fmtMoney(c.revenue) + ' PLN' : '—') + '</td>'
+                    + '<td style="text-align:right;font-size:12px;color:#6b7280;">' + (avg > 0 ? fmtMoney(avg) : '—') + '</td>';
+            }
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    function renderDevices(byDevice) {
+        var container = document.getElementById('devices-container');
+        if (!byDevice || byDevice.length === 0) {
+            container.innerHTML = '<div class="empty">Brak danych o urządzeniach.<br>Uruchom Full Sync.</div>';
+            return;
+        }
+        var totalCnt = 0;
+        byDevice.forEach(function(d) { totalCnt += d.cnt; });
+        var html = '';
+        byDevice.forEach(function(d) {
+            var pct = totalCnt > 0 ? ((d.cnt / totalCnt) * 100).toFixed(1) : '0';
+            var icon = d.device === 'Desktop' ? '🖥' : d.device === 'Mobile' ? '📱' : '📟';
+            var barPct = totalCnt > 0 ? Math.max(5, (d.cnt / totalCnt) * 100) : 5;
+            html += '<div class="source-bar">'
+                + '<div class="name">' + icon + ' ' + d.device + ' <span style="font-size:11px;color:#9ca3af;">(' + getSourceLabel(d.source) + ')</span></div>'
+                + '<div class="bar"><div class="bar-fill" style="width:' + barPct.toFixed(0) + '%;background:' + (d.device === 'Desktop' ? '#3b82f6' : d.device === 'Mobile' ? '#f59e0b' : '#10b981') + '">' + pct + '%</div></div>'
+                + '<div class="count">' + fmt(d.cnt) + '</div>';
+            if (showPrices && d.revenue !== null) {
+                html += '<div class="amount">' + fmtMoney(d.revenue) + ' PLN</div>';
+            }
+            html += '</div>';
+        });
         container.innerHTML = html;
     }
 
