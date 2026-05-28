@@ -16,7 +16,7 @@
         .navbar a { color: #a5b4fc; font-size: 13px; text-decoration: none; }
         .navbar a:hover { color: #fff; }
         .navbar a.active { color: #fff; font-weight: 600; border-bottom: 2px solid #a5b4fc; padding-bottom: 2px; }
-        .container { max-width: 1280px; margin: 0 auto; padding: 24px; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
 
         .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
                  gap: 14px; margin-bottom: 20px; }
@@ -34,9 +34,15 @@
                 box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 16px; }
         .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
 
-        .source-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-        .source-bar .name { font-size: 13px; font-weight: 500; min-width: 130px; }
-        .source-bar .bar { flex: 1; height: 28px; background: #f3f4f6; border-radius: 6px; overflow: hidden; }
+        /* Source bars */
+        .source-section { margin-bottom: 16px; }
+        .source-section-title { font-size: 12px; color: #9ca3af; text-transform: uppercase;
+                                letter-spacing: .5px; margin-bottom: 8px; padding-bottom: 4px;
+                                border-bottom: 1px solid #f3f4f6; }
+
+        .source-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .source-bar .name { font-size: 13px; font-weight: 500; min-width: 150px; }
+        .source-bar .bar { flex: 1; height: 32px; background: #f3f4f6; border-radius: 6px; overflow: hidden; }
         .source-bar .bar-fill { height: 100%; border-radius: 6px; display: flex; align-items: center;
                                 padding-left: 10px; font-size: 12px; color: #fff; font-weight: 600;
                                 min-width: 40px; transition: width .5s ease; }
@@ -44,7 +50,10 @@
         .bar-oteko { background: #f59e0b; }
         .bar-cieplarnia { background: #10b981; }
         .bar-allegro { background: #ff5a00; }
-        .source-bar .amount { font-size: 12px; color: #6b7280; min-width: 100px; text-align: right; }
+        .bar-manual { background: #7c3aed; }
+        .bar-seller { background: #ff8533; }
+        .source-bar .amount { font-size: 12px; color: #6b7280; min-width: 110px; text-align: right; }
+        .source-bar .count { font-size: 12px; color: #374151; font-weight: 600; min-width: 50px; text-align: right; }
 
         .sync-list { list-style: none; }
         .sync-list li { padding: 10px 0; border-bottom: 1px solid #f3f4f6; font-size: 13px;
@@ -65,9 +74,24 @@
 
         .chart-container { position: relative; height: 320px; }
 
-        .info-block { background: #f0f4ff; border-radius: 10px; padding: 20px; }
-        .info-block h3 { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
-        .info-block code { background: #e0e7ff; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+        /* Source table */
+        .source-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .source-table th { text-align: left; padding: 8px 12px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
+                           font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: #6b7280; font-weight: 600; }
+        .source-table td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; }
+        .source-table tr:hover td { background: #f9fafb; }
+        .source-table .src-badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
+                                   font-size: 11px; font-weight: 600; text-transform: uppercase; }
+        .src-dobraszklarnia { background: #dbeafe; color: #1d4ed8; }
+        .src-oteko { background: #fef3c7; color: #92400e; }
+        .src-cieplarnia { background: #d1fae5; color: #065f46; }
+        .src-allegro { background: #fff0e6; color: #cc4800; }
+        .src-manual { background: #f3e8ff; color: #7c3aed; }
+        .source-table .revenue { font-weight: 700; color: #1a1a2e; }
+        .source-table .avg { color: #6b7280; font-size: 12px; }
+
+        .seller-sub { padding-left: 32px !important; background: #fafbfc; }
+        .seller-name { font-size: 12px; color: #6b7280; }
     </style>
 </head>
 <body>
@@ -82,78 +106,77 @@
     </div>
 
     <div class="container">
-        <!-- Stats cards -->
-        <div class="stats">
+        <!-- Stats cards (dynamic) -->
+        <div class="stats" id="stats-cards">
             <div class="stat-card">
-                <div class="label">Orders</div>
-                <div class="value">{{ total_orders }}</div>
-                <div class="sub">+{{ today_orders }} today</div>
+                <div class="label">Zamówienia</div>
+                <div class="value" id="d-total">—</div>
+                <div class="sub" id="d-today"></div>
             </div>
             {% if user and 'prices' in (user.permissions or '').split(',') %}
             <div class="stat-card">
-                <div class="label">Revenue (PLN)</div>
-                <div class="value">{{ "{:,.0f}".format(total_revenue).replace(",", " ") }}</div>
+                <div class="label">Przychód (PLN)</div>
+                <div class="value" id="d-revenue">—</div>
             </div>
             {% endif %}
-            <div class="stat-card">
-                <div class="label">Customers</div>
-                <div class="value">{{ total_customers }}</div>
-            </div>
-            <div class="stat-card">
-                <div class="label">Leads</div>
-                <div class="value">{{ total_leads }}</div>
-                <div class="sub">+{{ today_leads }} today</div>
-            </div>
         </div>
 
-        <!-- Filters for chart -->
+        <!-- Filters -->
         <div class="filters">
             <input type="date" id="f-from">
             <span style="color:#9ca3af;">—</span>
             <input type="date" id="f-to">
             <select id="f-source">
-                <option value="">All stores</option>
+                <option value="">Wszystkie źródła</option>
                 <option value="dobraszklarnia">dobraszklarnia.pl</option>
                 <option value="oteko">oteko.pl</option>
                 <option value="cieplarnia">cieplarnia.pl</option>
                 <option value="allegro">Allegro</option>
+                <option value="manual">Ręczne</option>
             </select>
-            <button onclick="loadChart()">Apply</button>
+            <button onclick="applyFilters()">Zastosuj</button>
+        </div>
+
+        <!-- Source breakdown table -->
+        <div class="card" id="source-card">
+            <h3>Zamówienia wg źródła</h3>
+            <table class="source-table" id="source-table">
+                <thead>
+                    <tr>
+                        <th>Źródło</th>
+                        <th style="text-align:right;">Zamówienia</th>
+                        {% if user and 'prices' in (user.permissions or '').split(',') %}
+                        <th style="text-align:right;">Przychód (PLN)</th>
+                        <th style="text-align:right;">Śr. zamówienie</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody id="source-body">
+                    <tr><td colspan="4" class="empty">Ładowanie...</td></tr>
+                </tbody>
+            </table>
         </div>
 
         <!-- Chart: orders + revenue by day -->
         <div class="card">
-            <h3>Orders & Revenue by day</h3>
+            <h3>Zamówienia i przychód dziennie</h3>
             <div class="chart-container">
                 <canvas id="dailyChart"></canvas>
             </div>
         </div>
 
         <div class="grid-2">
-            <!-- Orders by source -->
+            <!-- Visual bars by source -->
             <div class="card">
-                <h3>Orders by store</h3>
-                {% if by_source %}
-                    {% set max_cnt = by_source[0].cnt if by_source else 1 %}
-                    {% for s in by_source %}
-                    <div class="source-bar">
-                        <div class="name">{% if s.source == 'allegro' %}Allegro{% else %}{{ s.source }}.pl{% endif %}</div>
-                        <div class="bar">
-                            <div class="bar-fill bar-{{ s.source }}" style="width: {{ (s.cnt / max_cnt * 100)|int }}%">
-                                {{ s.cnt }}
-                            </div>
-                        </div>
-                        <div class="amount">{{ "{:,.0f}".format(s.revenue).replace(",", " ") }} PLN</div>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                <div class="empty">No data yet. Run sync first.</div>
-                {% endif %}
+                <h3>Rozkład zamówień</h3>
+                <div id="source-bars">
+                    <div class="empty">Ładowanie...</div>
+                </div>
             </div>
 
             <!-- Sync status -->
             <div class="card">
-                <h3>Sync status</h3>
+                <h3>Status synchronizacji</h3>
                 {% if last_syncs %}
                 <ul class="sync-list">
                     {% for s in last_syncs %}
@@ -169,46 +192,193 @@
                             {% if s.finished_at %}
                                 {{ s.finished_at.strftime('%d.%m %H:%M') }}
                             {% else %}
-                                in progress...
+                                w trakcie...
                             {% endif %}
                         </span>
                     </li>
                     {% endfor %}
                 </ul>
-                <div style="margin-top: 12px;">
-                    <a href="/admin/sync" style="font-size:13px; color:#3b82f6;">Sync now →</a>
-                </div>
                 {% else %}
                 <div class="empty">
-                    No syncs yet.<br>
-                    <a href="/admin/sync" style="color:#3b82f6;">Run first sync →</a>
+                    Brak synchronizacji.<br>
+                    <a href="/admin/sync" style="color:#3b82f6;">Uruchom sync →</a>
                 </div>
                 {% endif %}
             </div>
-        </div>
-
-        <!-- Webhook info -->
-        <div class="info-block">
-            <h3>Webhook endpoints</h3>
-            <p style="font-size:13px;color:#4b5563;margin-top:8px;line-height:1.8;">
-                <b>Lead form:</b> <code>POST {{ request.url_for('webhook_lead') }}</code><br>
-                <b>Call tracking:</b> <code>POST {{ request.url_for('webhook_call') }}</code><br>
-                <b>WooCommerce order:</b> <code>POST {{ request.url_for('webhook_woo') }}</code>
-            </p>
         </div>
     </div>
 
     <script>
     var dailyChart = null;
+    var showPrices = {{ 'true' if user and 'prices' in (user.permissions or '').split(',') else 'false' }};
+
+    function fmt(n) {
+        return parseFloat(n || 0).toLocaleString('pl-PL');
+    }
+    function fmtMoney(n) {
+        return parseFloat(n || 0).toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    var sourceLabels = {
+        dobraszklarnia: 'dobraszklarnia.pl',
+        oteko: 'oteko.pl',
+        cieplarnia: 'cieplarnia.pl',
+        allegro: 'Allegro',
+        manual: 'Ręczne'
+    };
+
+    function getSourceLabel(src) {
+        return sourceLabels[src] || src;
+    }
 
     (function() {
         var to = new Date();
         var from = new Date();
-        from.setDate(from.getDate() - 30);
+        from.setDate(from.getDate() - 90);
         document.getElementById('f-from').value = from.toISOString().slice(0,10);
         document.getElementById('f-to').value = to.toISOString().slice(0,10);
-        loadChart();
+        applyFilters();
     })();
+
+    function applyFilters() {
+        loadDashboardStats();
+        loadChart();
+    }
+
+    function loadDashboardStats() {
+        var from = document.getElementById('f-from').value;
+        var to = document.getElementById('f-to').value;
+        if (!from || !to) return;
+
+        var url = '/api/dashboard/stats?date_from=' + from + '&date_to=' + to;
+
+        fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+            // Update stat cards
+            document.getElementById('d-total').textContent = fmt(d.total_orders);
+            var todayEl = document.getElementById('d-today');
+            if (todayEl) todayEl.textContent = d.today_orders > 0 ? '+' + d.today_orders + ' dziś' : '';
+
+            if (showPrices && document.getElementById('d-revenue')) {
+                document.getElementById('d-revenue').textContent = d.revenue !== null ? fmtMoney(d.revenue) : '—';
+            }
+
+            // Render source table
+            renderSourceTable(d.by_source, d.by_seller);
+
+            // Render visual bars
+            renderSourceBars(d.by_source, d.by_seller);
+        });
+    }
+
+    function renderSourceTable(bySrc, bySeller) {
+        var tbody = document.getElementById('source-body');
+        if (!bySrc || bySrc.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="empty">Brak danych w wybranym okresie</td></tr>';
+            return;
+        }
+
+        // Build seller lookup: seller -> {cnt, revenue}
+        var sellerMap = {};
+        (bySeller || []).forEach(function(s) {
+            sellerMap[s.seller] = s;
+        });
+
+        var totalOrders = 0;
+        var totalRevenue = 0;
+        bySrc.forEach(function(s) { totalOrders += s.cnt; totalRevenue += (s.revenue || 0); });
+
+        var html = '';
+        bySrc.forEach(function(s) {
+            var avg = s.cnt > 0 && s.revenue ? (s.revenue / s.cnt) : 0;
+            var pct = totalOrders > 0 ? ((s.cnt / totalOrders) * 100).toFixed(1) : '0';
+            html += '<tr>'
+                + '<td><span class="src-badge src-' + s.source + '">' + getSourceLabel(s.source) + '</span>'
+                + ' <span style="font-size:11px;color:#9ca3af;">(' + pct + '%)</span></td>'
+                + '<td style="text-align:right;font-weight:600;">' + fmt(s.cnt) + '</td>';
+            if (showPrices) {
+                html += '<td style="text-align:right;" class="revenue">' + (s.revenue !== null ? fmtMoney(s.revenue) + ' PLN' : '—') + '</td>'
+                    + '<td style="text-align:right;" class="avg">' + (avg > 0 ? fmtMoney(avg) + ' PLN' : '—') + '</td>';
+            }
+            html += '</tr>';
+
+            // If this is allegro, show seller sub-rows
+            if (s.source === 'allegro' && bySeller && bySeller.length > 0) {
+                bySeller.forEach(function(sl) {
+                    var slAvg = sl.cnt > 0 && sl.revenue ? (sl.revenue / sl.cnt) : 0;
+                    html += '<tr>'
+                        + '<td class="seller-sub"><span class="seller-name">↳ ' + sl.seller + '</span></td>'
+                        + '<td style="text-align:right;font-size:12px;color:#6b7280;">' + fmt(sl.cnt) + '</td>';
+                    if (showPrices) {
+                        html += '<td style="text-align:right;font-size:12px;color:#6b7280;">' + (sl.revenue !== null ? fmtMoney(sl.revenue) + ' PLN' : '—') + '</td>'
+                            + '<td style="text-align:right;font-size:12px;color:#9ca3af;">' + (slAvg > 0 ? fmtMoney(slAvg) + ' PLN' : '—') + '</td>';
+                    }
+                    html += '</tr>';
+                });
+            }
+        });
+
+        // Total row
+        html += '<tr style="border-top:2px solid #e5e7eb;font-weight:700;">'
+            + '<td>RAZEM</td>'
+            + '<td style="text-align:right;">' + fmt(totalOrders) + '</td>';
+        if (showPrices) {
+            var totalAvg = totalOrders > 0 ? (totalRevenue / totalOrders) : 0;
+            html += '<td style="text-align:right;">' + fmtMoney(totalRevenue) + ' PLN</td>'
+                + '<td style="text-align:right;color:#6b7280;">' + fmtMoney(totalAvg) + ' PLN</td>';
+        }
+        html += '</tr>';
+
+        tbody.innerHTML = html;
+    }
+
+    function renderSourceBars(bySrc, bySeller) {
+        var container = document.getElementById('source-bars');
+        if (!bySrc || bySrc.length === 0) {
+            container.innerHTML = '<div class="empty">Brak danych</div>';
+            return;
+        }
+
+        var maxCnt = 0;
+        bySrc.forEach(function(s) { if (s.cnt > maxCnt) maxCnt = s.cnt; });
+        if (maxCnt === 0) maxCnt = 1;
+
+        var html = '';
+
+        // Main sources
+        bySrc.forEach(function(s) {
+            var pct = Math.max(5, (s.cnt / maxCnt) * 100);
+            html += '<div class="source-bar">'
+                + '<div class="name">' + getSourceLabel(s.source) + '</div>'
+                + '<div class="bar"><div class="bar-fill bar-' + s.source + '" style="width:' + pct.toFixed(0) + '%">' + s.cnt + '</div></div>'
+                + '<div class="count">' + fmt(s.cnt) + '</div>';
+            if (showPrices && s.revenue !== null) {
+                html += '<div class="amount">' + fmtMoney(s.revenue) + ' PLN</div>';
+            }
+            html += '</div>';
+        });
+
+        // Allegro sub-sellers
+        if (bySeller && bySeller.length > 1) {
+            var maxSeller = 0;
+            bySeller.forEach(function(s) { if (s.cnt > maxSeller) maxSeller = s.cnt; });
+            if (maxSeller === 0) maxSeller = 1;
+
+            html += '<div class="source-section-title" style="margin-top:16px;">Konta Allegro</div>';
+            bySeller.forEach(function(s) {
+                var pct = Math.max(5, (s.cnt / maxSeller) * 100);
+                html += '<div class="source-bar">'
+                    + '<div class="name" style="font-size:12px;color:#6b7280;">' + s.seller + '</div>'
+                    + '<div class="bar"><div class="bar-fill bar-seller" style="width:' + pct.toFixed(0) + '%">' + s.cnt + '</div></div>'
+                    + '<div class="count">' + fmt(s.cnt) + '</div>';
+                if (showPrices && s.revenue !== null) {
+                    html += '<div class="amount">' + fmtMoney(s.revenue) + ' PLN</div>';
+                }
+                html += '</div>';
+            });
+        }
+
+        container.innerHTML = html;
+    }
 
     function loadChart() {
         var from = document.getElementById('f-from').value;
@@ -231,50 +401,77 @@
             dailyChart.destroy();
         }
 
-        // Format labels: "14.04" instead of "2026-04-14"
         var labels = data.days.map(function(d) {
             var parts = d.split('-');
             return parts[2] + '.' + parts[1];
         });
 
+        var datasets = [
+            {
+                label: 'Zamówienia',
+                data: data.orders_count,
+                type: 'line',
+                borderColor: '#f59e0b',
+                backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                borderWidth: 3,
+                pointRadius: 3,
+                pointBackgroundColor: '#f59e0b',
+                fill: true,
+                tension: 0.3,
+                yAxisID: 'y-orders',
+                order: 1,
+            }
+        ];
+
+        var scales = {
+            x: {
+                grid: { display: false },
+                ticks: { font: { size: 11 }, maxRotation: 0 }
+            },
+            'y-orders': {
+                type: 'linear',
+                position: showPrices ? 'right' : 'left',
+                beginAtZero: true,
+                grid: { drawOnChartArea: !showPrices },
+                ticks: { font: { size: 11 } },
+                title: { display: true, text: 'Zamówienia', font: { size: 11 }, color: '#f59e0b' }
+            }
+        };
+
+        if (showPrices) {
+            datasets.unshift({
+                label: 'Przychód (PLN)',
+                data: data.revenue,
+                backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                borderColor: 'rgba(59, 130, 246, 0.8)',
+                borderWidth: 2,
+                borderRadius: 4,
+                yAxisID: 'y-revenue',
+                order: 2,
+            });
+            scales['y-revenue'] = {
+                type: 'linear',
+                position: 'left',
+                beginAtZero: true,
+                grid: { color: 'rgba(0,0,0,0.04)' },
+                ticks: {
+                    font: { size: 11 },
+                    callback: function(v) {
+                        if (v >= 1000) return (v/1000).toFixed(0) + 'k';
+                        return v;
+                    }
+                },
+                title: { display: true, text: 'Przychód (PLN)', font: { size: 11 }, color: '#3b82f6' }
+            };
+        }
+
         dailyChart = new Chart(ctx, {
             type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [
-                    {
-                        label: 'Revenue (PLN)',
-                        data: data.revenue,
-                        backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                        borderColor: 'rgba(59, 130, 246, 0.8)',
-                        borderWidth: 2,
-                        borderRadius: 4,
-                        yAxisID: 'y-revenue',
-                        order: 2,
-                    },
-                    {
-                        label: 'Orders',
-                        data: data.orders_count,
-                        type: 'line',
-                        borderColor: '#f59e0b',
-                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                        borderWidth: 3,
-                        pointRadius: 3,
-                        pointBackgroundColor: '#f59e0b',
-                        fill: true,
-                        tension: 0.3,
-                        yAxisID: 'y-orders',
-                        order: 1,
-                    }
-                ]
-            },
+            data: { labels: labels, datasets: datasets },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false,
-                },
+                interaction: { mode: 'index', intersect: false },
                 plugins: {
                     legend: {
                         position: 'top',
@@ -285,41 +482,14 @@
                             label: function(ctx) {
                                 var v = ctx.parsed.y;
                                 if (ctx.dataset.yAxisID === 'y-revenue') {
-                                    return 'Revenue: ' + v.toLocaleString('pl-PL', {minimumFractionDigits: 0}) + ' PLN';
+                                    return 'Przychód: ' + v.toLocaleString('pl-PL', {minimumFractionDigits: 0}) + ' PLN';
                                 }
-                                return 'Orders: ' + v;
+                                return 'Zamówienia: ' + v;
                             }
                         }
                     }
                 },
-                scales: {
-                    x: {
-                        grid: { display: false },
-                        ticks: { font: { size: 11 }, maxRotation: 0 }
-                    },
-                    'y-revenue': {
-                        type: 'linear',
-                        position: 'left',
-                        beginAtZero: true,
-                        grid: { color: 'rgba(0,0,0,0.04)' },
-                        ticks: {
-                            font: { size: 11 },
-                            callback: function(v) {
-                                if (v >= 1000) return (v/1000).toFixed(0) + 'k';
-                                return v;
-                            }
-                        },
-                        title: { display: true, text: 'Revenue (PLN)', font: { size: 11 }, color: '#3b82f6' }
-                    },
-                    'y-orders': {
-                        type: 'linear',
-                        position: 'right',
-                        beginAtZero: true,
-                        grid: { drawOnChartArea: false },
-                        ticks: { font: { size: 11 } },
-                        title: { display: true, text: 'Orders', font: { size: 11 }, color: '#f59e0b' }
-                    }
-                }
+                scales: scales
             }
         });
     }
