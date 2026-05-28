@@ -2153,6 +2153,64 @@ async def api_orders(
 # === API: Диагностика NIP ===
 # ============================================================
 
+@app.get("/api/debug/utm")
+async def debug_utm(request: Request):
+    """Диагностика: показать raw meta_data из 5 последних WooCommerce заказов (ищем UTM/attribution)."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "superadmin only"}, status_code=403)
+
+    # Fetch 5 latest WooCommerce orders raw from API
+    if not WOO_KEY or not WOO_SECRET:
+        return JSONResponse({"error": "WooCommerce not configured"})
+
+    results = []
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{WOO_URL}/wp-json/wc/v3/orders",
+                params={"per_page": 5, "orderby": "date", "order": "desc"},
+                auth=aiohttp.BasicAuth(WOO_KEY, WOO_SECRET),
+                ssl=False, timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
+                if resp.status != 200:
+                    return JSONResponse({"error": f"WooCommerce API returned {resp.status}"})
+                orders = await resp.json()
+
+                for woo in orders:
+                    meta = woo.get("meta_data", [])
+                    # Filter to show only attribution-related meta keys
+                    attribution_meta = [
+                        {"key": m.get("key"), "value": m.get("value")}
+                        for m in meta
+                        if any(kw in (m.get("key") or "").lower() for kw in
+                               ("utm", "attribution", "source", "medium", "campaign", "referrer", "gclid", "fbclid", "session"))
+                    ]
+                    results.append({
+                        "order_id": woo.get("id"),
+                        "date": woo.get("date_created"),
+                        "attribution_meta": attribution_meta,
+                        "all_meta_keys": [m.get("key") for m in meta],
+                    })
+    except Exception as e:
+        return JSONResponse({"error": str(e)})
+
+    # Also show current DB UTM stats
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        utm_stats = await conn.fetch("""
+            SELECT source,
+                   COUNT(*) FILTER (WHERE utm_source IS NOT NULL AND utm_source != '') AS has_utm,
+                   COUNT(*) AS total
+            FROM orders GROUP BY source ORDER BY source
+        """)
+
+    return JSONResponse({
+        "woo_raw_samples": results,
+        "db_utm_stats": [{"source": r["source"], "has_utm": r["has_utm"], "total": r["total"]} for r in utm_stats],
+    })
+
+
 @app.get("/api/debug/nip")
 async def debug_nip(request: Request):
     """Диагностика: показать заказы с NIP в БД."""
