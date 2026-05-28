@@ -245,6 +245,10 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_source VARCHAR(200) DEFAULT ''",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_medium VARCHAR(200) DEFAULT ''",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_campaign VARCHAR(500) DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_content VARCHAR(500) DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_term VARCHAR(500) DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS traffic_source_type VARCHAR(50) DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS device_type VARCHAR(50) DEFAULT ''",
         ]
         for m in auto_migrations:
             try:
@@ -354,6 +358,10 @@ async def _save_order(conn, source: str, order_data: dict):
                 utm_source=CASE WHEN $23 != '' THEN $23 ELSE utm_source END,
                 utm_medium=CASE WHEN $24 != '' THEN $24 ELSE utm_medium END,
                 utm_campaign=CASE WHEN $25 != '' THEN $25 ELSE utm_campaign END,
+                utm_content=CASE WHEN $26 != '' THEN $26 ELSE utm_content END,
+                utm_term=CASE WHEN $27 != '' THEN $27 ELSE utm_term END,
+                traffic_source_type=CASE WHEN $28 != '' THEN $28 ELSE traffic_source_type END,
+                device_type=CASE WHEN $29 != '' THEN $29 ELSE device_type END,
                 updated_at=NOW()
             WHERE source=$16 AND external_id=$17
         """,
@@ -381,6 +389,10 @@ async def _save_order(conn, source: str, order_data: dict):
             order_data.get("utm_source", ""),
             order_data.get("utm_medium", ""),
             order_data.get("utm_campaign", ""),
+            order_data.get("utm_content", ""),
+            order_data.get("utm_term", ""),
+            order_data.get("traffic_source_type", ""),
+            order_data.get("device_type", ""),
         )
         return "updated"
     else:
@@ -391,8 +403,9 @@ async def _save_order(conn, source: str, order_data: dict):
                 total, currency, items_count, items_json,
                 payment_method, shipping_method, note, external_created,
                 shipping_cost, seller_account, customer_comment, invoice_nip,
-                product_type, utm_source, utm_medium, utm_campaign
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+                product_type, utm_source, utm_medium, utm_campaign,
+                utm_content, utm_term, traffic_source_type, device_type
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
         """,
             ext_id, source,
             order_data.get("status", ""),
@@ -418,6 +431,10 @@ async def _save_order(conn, source: str, order_data: dict):
             order_data.get("utm_source", ""),
             order_data.get("utm_medium", ""),
             order_data.get("utm_campaign", ""),
+            order_data.get("utm_content", ""),
+            order_data.get("utm_term", ""),
+            order_data.get("traffic_source_type", ""),
+            order_data.get("device_type", ""),
         )
         return "new"
 
@@ -614,6 +631,10 @@ def _parse_woo_order(woo: dict) -> dict:
     utm_source = ""
     utm_medium = ""
     utm_campaign = ""
+    utm_content = ""
+    utm_term = ""
+    traffic_source_type = ""
+    device_type = ""
     for m in woo.get("meta_data", []):
         key = (m.get("key") or "").lower().strip()
         val = str(m.get("value") or "").strip()
@@ -625,15 +646,32 @@ def _parse_woo_order(woo: dict) -> dict:
             utm_medium = val
         elif key in ("_wc_order_attribution_utm_campaign", "utm_campaign"):
             utm_campaign = val
-        # Also try source_type / referrer for older WC
-        elif key == "_wc_order_attribution_source_type" and not utm_medium:
-            utm_medium = val
+        elif key in ("_wc_order_attribution_utm_content", "utm_content"):
+            utm_content = val
+        elif key in ("_wc_order_attribution_utm_term", "utm_term"):
+            utm_term = val
+        elif key == "_wc_order_attribution_source_type":
+            traffic_source_type = val
+            # Fallback: if no utm_medium set, use source_type
+            if not utm_medium and val in ("organic", "direct", "referral"):
+                utm_medium = val
+        elif key == "_wc_order_attribution_device_type":
+            device_type = val
         elif key == "_wc_order_attribution_referrer" and not utm_source:
-            # Extract domain from referrer URL
+            # Extract source from referrer URL as last resort
             if "google" in val.lower():
-                utm_source = utm_source or "google"
+                utm_source = "google"
             elif "facebook" in val.lower() or "fb." in val.lower():
-                utm_source = utm_source or "facebook"
+                utm_source = "facebook"
+            elif "bing" in val.lower():
+                utm_source = "bing"
+    # If source_type says "organic" and we have a referrer-based source but no medium
+    if traffic_source_type == "organic" and utm_source and not utm_medium:
+        utm_medium = "organic"
+    # If source_type is "direct" and no source/medium at all
+    if traffic_source_type == "direct" and not utm_source:
+        utm_source = "(direct)"
+        utm_medium = "(none)"
 
     # Prefer shipping (recipient) data over billing (payer) for name & address
     shipping = woo.get("shipping", {})
@@ -673,6 +711,10 @@ def _parse_woo_order(woo: dict) -> dict:
         "utm_source": utm_source,
         "utm_medium": utm_medium,
         "utm_campaign": utm_campaign,
+        "utm_content": utm_content,
+        "utm_term": utm_term,
+        "traffic_source_type": traffic_source_type,
+        "device_type": device_type,
     }
 
 
@@ -1014,6 +1056,10 @@ def _parse_presta_order(order: dict, customer: dict, address: dict) -> dict:
         "utm_source": "",
         "utm_medium": "",
         "utm_campaign": "",
+        "utm_content": "",
+        "utm_term": "",
+        "traffic_source_type": "",
+        "device_type": "",
     }
 
 
@@ -1379,6 +1425,10 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
         "utm_source": "allegro",
         "utm_medium": "marketplace",
         "utm_campaign": "",
+        "utm_content": "",
+        "utm_term": "",
+        "traffic_source_type": "marketplace",
+        "device_type": "",
     }
 
 
@@ -1696,6 +1746,39 @@ async def api_dashboard_stats(
             ORDER BY source, cnt DESC
         """, d_from, d_to)
 
+        # Breakdown by campaign (for Google Ads detail)
+        by_campaign = await conn.fetch("""
+            SELECT
+                source,
+                COALESCE(NULLIF(utm_source, ''), '') AS utm_src,
+                COALESCE(NULLIF(utm_campaign, ''), '(not set)') AS campaign,
+                COUNT(*) AS cnt,
+                COALESCE(SUM(total), 0) AS revenue
+            FROM orders
+            WHERE COALESCE(external_created, created_at)::date >= $1
+              AND COALESCE(external_created, created_at)::date <= $2
+              AND utm_source IS NOT NULL AND utm_source != ''
+              AND utm_campaign IS NOT NULL AND utm_campaign != ''
+            GROUP BY source, utm_src, campaign
+            ORDER BY cnt DESC
+            LIMIT 30
+        """, d_from, d_to)
+
+        # Device breakdown
+        by_device = await conn.fetch("""
+            SELECT
+                source,
+                COALESCE(NULLIF(device_type, ''), 'Unknown') AS device,
+                COUNT(*) AS cnt,
+                COALESCE(SUM(total), 0) AS revenue
+            FROM orders
+            WHERE COALESCE(external_created, created_at)::date >= $1
+              AND COALESCE(external_created, created_at)::date <= $2
+              AND device_type IS NOT NULL AND device_type != ''
+            GROUP BY source, device
+            ORDER BY source, cnt DESC
+        """, d_from, d_to)
+
     result = {
         "total_orders": int(totals["total"]),
         "today_orders": int(totals["today_orders"]),
@@ -1725,6 +1808,25 @@ async def api_dashboard_stats(
                 "revenue": float(r["revenue"]) if show_prices else None,
             }
             for r in by_channel
+        ],
+        "by_campaign": [
+            {
+                "source": r["source"],
+                "utm_source": r["utm_src"],
+                "campaign": r["campaign"],
+                "cnt": int(r["cnt"]),
+                "revenue": float(r["revenue"]) if show_prices else None,
+            }
+            for r in by_campaign
+        ],
+        "by_device": [
+            {
+                "source": r["source"],
+                "device": r["device"],
+                "cnt": int(r["cnt"]),
+                "revenue": float(r["revenue"]) if show_prices else None,
+            }
+            for r in by_device
         ],
     }
     return JSONResponse(result)
@@ -2806,6 +2908,10 @@ async def run_migration(request: Request):
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_source VARCHAR(200) DEFAULT ''",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_medium VARCHAR(200) DEFAULT ''",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_campaign VARCHAR(500) DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_content VARCHAR(500) DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_term VARCHAR(500) DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS traffic_source_type VARCHAR(50) DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS device_type VARCHAR(50) DEFAULT ''",
             # v4 — user source access
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_sources TEXT DEFAULT 'all'",
             # v5 — permission-based access
