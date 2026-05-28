@@ -92,6 +92,29 @@
 
         .seller-sub { padding-left: 32px !important; background: #fafbfc; }
         .seller-name { font-size: 12px; color: #6b7280; }
+
+        /* Channel breakdown */
+        .channel-group { margin-bottom: 20px; }
+        .channel-group-title { font-size: 14px; font-weight: 600; color: #1a1a2e; margin-bottom: 8px;
+                               padding: 8px 12px; background: #f9fafb; border-radius: 6px;
+                               display: flex; justify-content: space-between; align-items: center; }
+        .channel-group-title .total { font-size: 12px; color: #6b7280; font-weight: 400; }
+        .channel-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 4px; }
+        .channel-table th { text-align: left; padding: 6px 12px; font-size: 10px; text-transform: uppercase;
+                            color: #9ca3af; letter-spacing: .3px; font-weight: 600; }
+        .channel-table td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; }
+        .channel-table tr:last-child td { border-bottom: none; }
+        .channel-badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
+                         font-size: 11px; font-weight: 600; }
+        .ch-google { background: #dbeafe; color: #1d4ed8; }
+        .ch-facebook { background: #ede9fe; color: #7c3aed; }
+        .ch-direct { background: #f3f4f6; color: #374151; }
+        .ch-organic { background: #d1fae5; color: #065f46; }
+        .ch-allegro { background: #fff0e6; color: #cc4800; }
+        .ch-other { background: #fef3c7; color: #92400e; }
+        .channel-bar-wrap { width: 100%; max-width: 200px; height: 8px; background: #f3f4f6;
+                            border-radius: 4px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px; }
+        .channel-bar-fill { height: 100%; border-radius: 4px; background: #3b82f6; transition: width .4s ease; }
     </style>
 </head>
 <body>
@@ -155,6 +178,14 @@
                     <tr><td colspan="4" class="empty">Ładowanie...</td></tr>
                 </tbody>
             </table>
+        </div>
+
+        <!-- Traffic channels breakdown per source -->
+        <div class="card" id="channels-card">
+            <h3>Kanały ruchu wg sklepu</h3>
+            <div id="channels-container">
+                <div class="empty">Ładowanie...</div>
+            </div>
         </div>
 
         <!-- Chart: orders + revenue by day -->
@@ -267,6 +298,9 @@
 
             // Render visual bars
             renderSourceBars(d.by_source, d.by_seller);
+
+            // Render traffic channels
+            renderChannels(d.by_channel || [], d.by_source || []);
         });
     }
 
@@ -375,6 +409,99 @@
                 }
                 html += '</div>';
             });
+        }
+
+        container.innerHTML = html;
+    }
+
+    function getChannelClass(channel) {
+        var ch = (channel || '').toLowerCase();
+        if (ch.indexOf('google') !== -1) return 'ch-google';
+        if (ch.indexOf('facebook') !== -1 || ch.indexOf('fb') !== -1 || ch.indexOf('meta') !== -1 || ch.indexOf('instagram') !== -1) return 'ch-facebook';
+        if (ch === 'direct / unknown' || ch === 'direct' || ch === '(direct)') return 'ch-direct';
+        if (ch.indexOf('organic') !== -1 || ch === 'bing' || ch === 'yahoo') return 'ch-organic';
+        if (ch.indexOf('allegro') !== -1) return 'ch-allegro';
+        return 'ch-other';
+    }
+
+    function getChannelLabel(channel, medium) {
+        var ch = (channel || '').toLowerCase();
+        var med = (medium || '').toLowerCase();
+        if (ch === 'direct / unknown') return 'Direct / Nieznany';
+        // Pretty labels
+        var label = channel;
+        if (med && med !== ch && med !== 'marketplace') {
+            label += ' / ' + medium;
+        }
+        return label;
+    }
+
+    function renderChannels(byChannel, bySrc) {
+        var container = document.getElementById('channels-container');
+        if (!byChannel || byChannel.length === 0) {
+            container.innerHTML = '<div class="empty">Brak danych o kanałach ruchu.<br>Uruchom Full Sync po aktualizacji, aby pobrać UTM z zamówień.</div>';
+            return;
+        }
+
+        // Group by source
+        var groups = {};
+        var sourceOrder = [];
+        bySrc.forEach(function(s) {
+            if (sourceOrder.indexOf(s.source) === -1) sourceOrder.push(s.source);
+        });
+        byChannel.forEach(function(ch) {
+            if (!groups[ch.source]) groups[ch.source] = [];
+            groups[ch.source].push(ch);
+            if (sourceOrder.indexOf(ch.source) === -1) sourceOrder.push(ch.source);
+        });
+
+        var html = '';
+        sourceOrder.forEach(function(src) {
+            var channels = groups[src];
+            if (!channels || channels.length === 0) return;
+
+            // Skip allegro — it's always marketplace
+            if (src === 'allegro') return;
+
+            var totalCnt = 0;
+            var totalRev = 0;
+            channels.forEach(function(c) { totalCnt += c.cnt; totalRev += (c.revenue || 0); });
+            var maxCnt = channels[0] ? channels[0].cnt : 1;
+
+            html += '<div class="channel-group">';
+            html += '<div class="channel-group-title"><span><span class="src-badge src-' + src + '">'
+                + getSourceLabel(src) + '</span></span>'
+                + '<span class="total">' + fmt(totalCnt) + ' zam.';
+            if (showPrices && totalRev > 0) html += ' · ' + fmtMoney(totalRev) + ' PLN';
+            html += '</span></div>';
+
+            html += '<table class="channel-table"><thead><tr>'
+                + '<th>Kanał</th><th>Typ</th><th style="width:200px;"></th><th style="text-align:right;">Zam.</th><th style="text-align:right;">%</th>';
+            if (showPrices) html += '<th style="text-align:right;">Przychód</th>';
+            html += '</tr></thead><tbody>';
+
+            channels.forEach(function(c) {
+                var pct = totalCnt > 0 ? ((c.cnt / totalCnt) * 100).toFixed(1) : '0';
+                var barPct = maxCnt > 0 ? Math.max(3, (c.cnt / maxCnt) * 100) : 3;
+                var chClass = getChannelClass(c.channel);
+                var label = getChannelLabel(c.channel, c.medium);
+
+                html += '<tr>'
+                    + '<td><span class="channel-badge ' + chClass + '">' + label + '</span></td>'
+                    + '<td style="font-size:11px;color:#9ca3af;">' + (c.medium || '—') + '</td>'
+                    + '<td><div class="channel-bar-wrap"><div class="channel-bar-fill" style="width:' + barPct.toFixed(0) + '%"></div></div></td>'
+                    + '<td style="text-align:right;font-weight:600;">' + fmt(c.cnt) + '</td>'
+                    + '<td style="text-align:right;color:#6b7280;">' + pct + '%</td>';
+                if (showPrices) {
+                    html += '<td style="text-align:right;">' + (c.revenue !== null ? fmtMoney(c.revenue) + ' PLN' : '—') + '</td>';
+                }
+                html += '</tr>';
+            });
+            html += '</tbody></table></div>';
+        });
+
+        if (!html) {
+            html = '<div class="empty">Brak danych o kanałach ruchu dla sklepów (tylko serwisy WWW).<br>Uruchom Full Sync, aby pobrać UTM z zamówień WooCommerce.</div>';
         }
 
         container.innerHTML = html;
