@@ -1477,30 +1477,7 @@ async def index(request: Request):
     pool = await get_db_pool()
 
     async with pool.acquire() as conn:
-        # Статистика лидов
-        total_leads = await conn.fetchval("SELECT COUNT(*) FROM leads")
-        today_leads = await conn.fetchval(
-            "SELECT COUNT(*) FROM leads WHERE created_at::date = $1", date.today()
-        )
-        recent = await conn.fetch(
-            "SELECT * FROM leads ORDER BY created_at DESC LIMIT 20"
-        )
-
-        # Статистика заказов
-        total_orders = await conn.fetchval("SELECT COUNT(*) FROM orders")
-        today_orders = await conn.fetchval(
-            "SELECT COUNT(*) FROM orders WHERE created_at::date = $1", date.today()
-        )
-        total_revenue = await conn.fetchval("SELECT COALESCE(SUM(total), 0) FROM orders") or 0
-        total_customers = await conn.fetchval("SELECT COUNT(*) FROM customers")
-
-        # Заказы по источникам
-        by_source = await conn.fetch("""
-            SELECT source, COUNT(*) as cnt, COALESCE(SUM(total), 0) as revenue
-            FROM orders GROUP BY source ORDER BY cnt DESC
-        """)
-
-        # Последний синк
+        # Только последний синк — всё остальное тянется динамически через /api/dashboard/stats
         last_syncs = await conn.fetch("""
             SELECT DISTINCT ON (source) source, status, orders_new, orders_upd, finished_at
             FROM sync_log ORDER BY source, finished_at DESC NULLS LAST
@@ -1511,14 +1488,6 @@ async def index(request: Request):
         name="index.html",
         context={
             "user": user,
-            "total_leads": total_leads,
-            "today_leads": today_leads,
-            "recent_leads": recent,
-            "total_orders": total_orders,
-            "today_orders": today_orders,
-            "total_revenue": total_revenue,
-            "total_customers": total_customers,
-            "by_source": by_source,
             "last_syncs": last_syncs,
         },
     )
@@ -1616,6 +1585,79 @@ async def api_stats(
 # ============================================================
 # === API: Статистика по дням (для графика) ===
 # ============================================================
+
+
+@app.get("/api/dashboard/stats")
+async def api_dashboard_stats(
+    request: Request,
+    date_from: str = Query(None),
+    date_to:   str = Query(None),
+):
+    """Dynamic dashboard stats: totals + breakdown by source + by seller for allegro."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "dashboard"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    pool = await get_db_pool()
+    d_from = date.fromisoformat(date_from) if date_from else date.today() - timedelta(days=90)
+    d_to   = date.fromisoformat(date_to)   if date_to   else date.today()
+
+    show_prices = has_perm(user, "prices")
+
+    async with pool.acquire() as conn:
+        # Total orders + revenue for the period
+        totals = await conn.fetchrow("""
+            SELECT
+                COUNT(*) AS total,
+                COALESCE(SUM(total), 0) AS revenue,
+                COUNT(*) FILTER (WHERE COALESCE(external_created, created_at)::date = CURRENT_DATE) AS today_orders
+            FROM orders
+            WHERE COALESCE(external_created, created_at)::date >= $1
+              AND COALESCE(external_created, created_at)::date <= $2
+        """, d_from, d_to)
+
+        # Breakdown by source
+        by_source = await conn.fetch("""
+            SELECT source, COUNT(*) AS cnt, COALESCE(SUM(total), 0) AS revenue
+            FROM orders
+            WHERE COALESCE(external_created, created_at)::date >= $1
+              AND COALESCE(external_created, created_at)::date <= $2
+            GROUP BY source ORDER BY cnt DESC
+        """, d_from, d_to)
+
+        # Breakdown by Allegro seller accounts
+        by_seller = await conn.fetch("""
+            SELECT seller_account, COUNT(*) AS cnt, COALESCE(SUM(total), 0) AS revenue
+            FROM orders
+            WHERE source = 'allegro'
+              AND COALESCE(external_created, created_at)::date >= $1
+              AND COALESCE(external_created, created_at)::date <= $2
+              AND seller_account IS NOT NULL AND seller_account != ''
+            GROUP BY seller_account ORDER BY cnt DESC
+        """, d_from, d_to)
+
+    result = {
+        "total_orders": int(totals["total"]),
+        "today_orders": int(totals["today_orders"]),
+        "revenue": float(totals["revenue"]) if show_prices else None,
+        "by_source": [
+            {
+                "source": r["source"],
+                "cnt": int(r["cnt"]),
+                "revenue": float(r["revenue"]) if show_prices else None,
+            }
+            for r in by_source
+        ],
+        "by_seller": [
+            {
+                "seller": r["seller_account"],
+                "cnt": int(r["cnt"]),
+                "revenue": float(r["revenue"]) if show_prices else None,
+            }
+            for r in by_seller
+        ],
+    }
+    return JSONResponse(result)
+
 
 @app.get("/api/orders/daily")
 async def api_orders_daily(
