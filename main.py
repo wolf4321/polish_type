@@ -1342,6 +1342,14 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
     }
     status = allegro_status_map.get(status_raw, status_raw.lower())
 
+    # Check fulfillment status for shipped/delivered
+    fulfillment = form.get("fulfillment") or {}
+    fulfill_status = (fulfillment.get("status") or "").upper()
+    if fulfill_status == "SENT":
+        status = "shipped"
+    elif fulfill_status == "PICKED_UP":
+        status = "delivered"
+
     # Payment type → Polish label
     allegro_payment_map = {
         "CASH_ON_DELIVERY": "Płatność przy odbiorze",
@@ -1451,7 +1459,8 @@ async def _sync_allegro_account(account: dict, full=False):
                 source, name
             )
         if last and order_count and order_count > 10:
-            updated_after = (last - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            # Use 7-day overlap to catch status changes (cancellations, etc.)
+            updated_after = (last - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
     if full:
         print(f"[sync-allegro:{name}] FULL resync — fetching all orders")
@@ -1629,19 +1638,24 @@ async def api_stats(
     source_filter = ""
     params = [d_from, d_to]
     if source or seller:
-        sources = []
-        sellers = []
-        if source:
-            sources = [s.strip() for s in source.split(",") if s.strip()]
-        if seller:
-            sellers = [s.strip() for s in seller.split(",") if s.strip()]
-        all_sources = list(set(sources + (["allegro"] if sellers else [])))
-        if all_sources:
-            params.append(all_sources)
-            source_filter += f" AND source = ANY(${len(params)})"
-        if sellers:
+        sources = [s.strip() for s in source.split(",") if s.strip()] if source else []
+        sellers = [s.strip() for s in seller.split(",") if s.strip()] if seller else []
+        if sources and sellers:
+            # Combined: (non-allegro sources) OR (allegro + specific sellers)
+            non_allegro = [s for s in sources if s != "allegro"]
+            or_parts = []
+            if non_allegro:
+                params.append(non_allegro)
+                or_parts.append(f"source = ANY(${len(params)})")
             params.append(sellers)
-            source_filter += f" AND (source != 'allegro' OR seller_account = ANY(${len(params)}))"
+            or_parts.append(f"(source = 'allegro' AND seller_account = ANY(${len(params)}))")
+            source_filter += f" AND ({' OR '.join(or_parts)})"
+        elif sources:
+            params.append(sources)
+            source_filter += f" AND source = ANY(${len(params)})"
+        elif sellers:
+            params.append(sellers)
+            source_filter += f" AND (source = 'allegro' AND seller_account = ANY(${len(params)}))"
 
     async with pool.acquire() as conn:
         leads = await conn.fetchrow("""
@@ -2175,22 +2189,29 @@ async def api_orders(
             if src_conds:
                 conditions.append(f"({' OR '.join(src_conds)})")
 
-    if source:
-        source_list = [s.strip() for s in source.split(",") if s.strip()]
-        if len(source_list) == 1:
-            params.append(source_list[0])
-            conditions.append(f"source = ${len(params)}")
-        elif len(source_list) > 1:
-            params.append(source_list)
-            conditions.append(f"source = ANY(${len(params)})")
-    if seller:
-        seller_list = [s.strip() for s in seller.split(",") if s.strip()]
-        if len(seller_list) == 1:
-            params.append(seller_list[0])
-            conditions.append(f"seller_account = ${len(params)}")
-        elif len(seller_list) > 1:
+    if source or seller:
+        source_list = [s.strip() for s in source.split(",") if s.strip()] if source else []
+        seller_list = [s.strip() for s in seller.split(",") if s.strip()] if seller else []
+        if source_list and seller_list:
+            # Combined filter: (non-allegro sources) OR (allegro + specific sellers)
+            non_allegro = [s for s in source_list if s != "allegro"]
+            or_parts = []
+            if non_allegro:
+                params.append(non_allegro)
+                or_parts.append(f"source = ANY(${len(params)})")
             params.append(seller_list)
-            conditions.append(f"seller_account = ANY(${len(params)})")
+            or_parts.append(f"(source = 'allegro' AND seller_account = ANY(${len(params)}))")
+            conditions.append(f"({' OR '.join(or_parts)})")
+        elif source_list:
+            if len(source_list) == 1:
+                params.append(source_list[0])
+                conditions.append(f"source = ${len(params)}")
+            else:
+                params.append(source_list)
+                conditions.append(f"source = ANY(${len(params)})")
+        elif seller_list:
+            params.append(seller_list)
+            conditions.append(f"(source = 'allegro' AND seller_account = ANY(${len(params)}))")
     if status:
         params.append(status)
         conditions.append(f"status = ${len(params)}")
@@ -2402,7 +2423,8 @@ async def export_orders(
                 datetime.now(), exported_ids,
             )
 
-    # --- XLSX export (openpyxl) ---
+    # --- XLSX export (openpyxl) — per-item breakdown ---
+    import re as _re_export
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
@@ -2410,12 +2432,14 @@ async def export_orders(
     ws = wb.active
     ws.title = "Zamówienia"
 
-    # Header row — same order as /orders table
+    # Header row — per-item breakdown format
     headers = [
-        "Data", "Typ towaru", "Konfiguracja",
-        "Cena towaru", "Dostawa", "Razem",
-        "Produkt", "Status", "Płatność", "Telefon",
-        "Adres", "Komentarz", "Źródło", "Konto"
+        "Data", "Nr zamówienia", "Źródło", "Konto",
+        "Klient", "Telefon", "Adres",
+        "Produkt", "SKU", "Ilość", "Cena netto szt.", "Cena brutto szt.", "Wartość brutto",
+        "Dostawa", "Razem zamówienie",
+        "Typ towaru", "Grubość (mm)", "Konfiguracja",
+        "Status", "Płatność", "NIP", "Komentarz"
     ]
     header_font = Font(name="Arial", bold=True, color="FFFFFF", size=11)
     header_fill = PatternFill("solid", fgColor="1a1a2e")
@@ -2426,6 +2450,8 @@ async def export_orders(
         bottom=Side(style="thin", color="E5E7EB"),
         top=Side(style="thin", color="E5E7EB"),
     )
+    subtotal_fill = PatternFill("solid", fgColor="F3F4F6")
+    subtotal_font = Font(name="Arial", bold=True, size=10)
 
     for col_idx, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx, value=h)
@@ -2434,27 +2460,31 @@ async def export_orders(
         cell.alignment = header_align
         cell.border = thin_border
 
-    # Data rows
+    # Helper: extract polycarbonate thickness from product name/sku
+    def _extract_thickness(name: str, sku: str) -> str:
+        combined = f"{name} {sku}".lower()
+        m = _re_export.search(r'(\d+)\s*mm', combined)
+        if m:
+            return m.group(1)
+        return ""
+
+    # Data rows — each item gets its own row
     data_font = Font(name="Arial", size=10)
     date_fmt = "DD.MM.YYYY HH:MM"
+    current_row = 2
 
-    for row_idx, r in enumerate(rows, 2):
-        # Parse items for product name
+    for r in rows:
         items = []
         try:
             items = json.loads(r["items_json"] or "[]")
         except Exception:
             pass
-        product_names = "; ".join(
-            f"{it.get('qty', 1)}x {it.get('name', '')}" for it in items
-        ) or ""
+        if not items:
+            items = [{"name": "", "full_name": "", "qty": 1, "price": "0", "sku": ""}]
 
-        # Price breakdown
         total_val = float(r["total"] or 0)
         ship_cost = float(r["shipping_cost"] or 0) if r.get("shipping_cost") else 0.0
-        product_price = total_val - ship_cost
-        if product_price < 0:
-            product_price = total_val
+        is_allegro = (r["source"] or "").lower() == "allegro"
 
         # Address
         addr_parts = []
@@ -2466,53 +2496,88 @@ async def export_orders(
             addr_parts.append(r["customer_zip"])
         addr_str = ", ".join(addr_parts)
 
-        # Comment
         comment = r.get("customer_comment") or r.get("note") or ""
-
-        # Status in Polish
         status_pl = _status_pl(r["status"])
+        order_date = r["external_created"] if r["external_created"] else r["created_at"]
+        order_id = r.get("external_id") or str(r.get("id", ""))
+        source_label = r["source"] or ""
+        if r.get("seller_account"):
+            source_label = f"{source_label} ({r['seller_account']})"
 
-        row_data = [
-            r["external_created"] if r["external_created"] else r["created_at"],
-            r.get("product_type") or "",
-            r.get("configuration") or "",
-            product_price,
-            ship_cost,
-            total_val,
-            product_names,
-            status_pl,
-            r.get("payment_method") or "",
-            r["customer_phone"] or "",
-            addr_str,
-            comment,
-            r["source"] or "",
-            r.get("seller_account") or "",
-        ]
+        for item_idx, it in enumerate(items):
+            item_name = it.get("full_name") or it.get("name") or ""
+            item_sku = it.get("sku") or ""
+            item_qty = int(it.get("qty", 1))
+            item_price_raw = float(it.get("price") or 0)
 
-        for col_idx, val in enumerate(row_data, 1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=val)
-            cell.font = data_font
-            cell.border = thin_border
+            # Calculate netto/brutto per item
+            if is_allegro:
+                # Allegro prices are already brutto
+                brutto_per_unit = item_price_raw
+                netto_per_unit = round(item_price_raw / 1.23, 2)
+            else:
+                # WooCommerce/PrestaShop prices are netto
+                netto_per_unit = item_price_raw
+                brutto_per_unit = round(item_price_raw * 1.23, 2)
 
-        # Format date cell
-        date_cell = ws.cell(row=row_idx, column=1)
-        if date_cell.value and hasattr(date_cell.value, 'strftime'):
-            date_cell.number_format = date_fmt
+            brutto_total = round(brutto_per_unit * item_qty, 2)
+            thickness = _extract_thickness(item_name, item_sku)
 
-        # Format money cells
-        for money_col in [4, 5, 6]:
-            ws.cell(row=row_idx, column=money_col).number_format = '#,##0.00'
+            row_data = [
+                order_date if item_idx == 0 else "",                       # Data (only first item)
+                order_id if item_idx == 0 else "",                         # Nr zamówienia
+                (r["source"] or "") if item_idx == 0 else "",              # Źródło
+                (r.get("seller_account") or "") if item_idx == 0 else "",  # Konto
+                (r.get("customer_name") or "") if item_idx == 0 else "",   # Klient
+                (r["customer_phone"] or "") if item_idx == 0 else "",      # Telefon
+                addr_str if item_idx == 0 else "",                         # Adres
+                item_name,                                                 # Produkt
+                item_sku,                                                  # SKU
+                item_qty,                                                  # Ilość
+                netto_per_unit,                                            # Cena netto szt.
+                brutto_per_unit,                                           # Cena brutto szt.
+                brutto_total,                                              # Wartość brutto
+                ship_cost if item_idx == 0 else "",                        # Dostawa (only first)
+                total_val if item_idx == 0 else "",                        # Razem zamówienie (only first)
+                (r.get("product_type") or "") if item_idx == 0 else "",    # Typ towaru
+                thickness,                                                 # Grubość (mm)
+                (r.get("configuration") or "") if item_idx == 0 else "",   # Konfiguracja
+                status_pl if item_idx == 0 else "",                        # Status
+                (r.get("payment_method") or "") if item_idx == 0 else "",  # Płatność
+                (r.get("invoice_nip") or "") if item_idx == 0 else "",     # NIP
+                comment if item_idx == 0 else "",                          # Komentarz
+            ]
+
+            for col_idx, val in enumerate(row_data, 1):
+                cell = ws.cell(row=current_row, column=col_idx, value=val)
+                cell.font = data_font
+                cell.border = thin_border
+
+            # Format date cell
+            date_cell = ws.cell(row=current_row, column=1)
+            if date_cell.value and hasattr(date_cell.value, 'strftime'):
+                date_cell.number_format = date_fmt
+
+            # Format money cells
+            for money_col in [11, 12, 13, 14, 15]:
+                c = ws.cell(row=current_row, column=money_col)
+                if c.value != "":
+                    c.number_format = '#,##0.00'
+
+            current_row += 1
 
     # Column widths
-    col_widths = [18, 14, 16, 14, 12, 14, 45, 22, 25, 16, 35, 30, 16, 14]
+    col_widths = [18, 14, 14, 14, 20, 16, 35, 45, 14, 8, 14, 14, 14, 12, 14, 14, 10, 16, 18, 20, 16, 30]
     for i, w in enumerate(col_widths, 1):
-        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+        if i <= len(headers):
+            ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
 
     # Freeze header
     ws.freeze_panes = "A2"
 
     # Auto-filter
-    ws.auto_filter.ref = f"A1:N{len(rows) + 1}"
+    last_col_letter = ws.cell(row=1, column=len(headers)).column_letter
+    ws.auto_filter.ref = f"A1:{last_col_letter}{current_row - 1}"
 
     # Save to bytes
     output = io.BytesIO()
