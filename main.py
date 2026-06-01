@@ -2254,6 +2254,45 @@ async def api_revert_bulk_export(request: Request):
     return JSONResponse({"ok": True, "reverted": count, "timestamp": ts})
 
 
+@app.post("/api/orders/restore-exported")
+async def api_restore_exported(request: Request):
+    """Restore exported flags for specific order IDs. Admin only."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Only admin can do this"}, status_code=403)
+    body = await request.json()
+    ids = body.get("ids", [])
+    if not ids:
+        return JSONResponse({"error": "ids required"}, status_code=400)
+    int_ids = [int(x) for x in ids if str(x).isdigit()]
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE orders SET exported=TRUE, exported_at=$1 WHERE id = ANY($2)",
+            datetime.now(), int_ids,
+        )
+    return JSONResponse({"ok": True, "restored": len(int_ids)})
+
+
+# One-time recovery: IDs from legitimate exports on 2026-06-01 (before mass export)
+_RECOVERY_IDS = [4223,4225,4226,4227,4228,4229,4231,4232,4234,4237,4239,4242,4243,4246,4250,4256,4257,4265,4271,4273,4274,4275,4279,4284,4285,4286,4287,4290,4293,4295,4296,4297,4298,4302,4303,4306,4307,4308,9686,9690,9693,9697,9700,9706,9710,9719,9721,9746,9747,9756,9762,9767,9769,9774,9775,9777,9782,9783,9792,9800,9815,9831,9832,9843,9848,9849,9850,9872,9873,9876,9878,9881,9885,9887,9892,9895,9905,9906,9908,9909,9910]
+
+
+@app.get("/api/orders/recover-june1")
+async def api_recover_june1(request: Request):
+    """One-time recovery: restore 81 orders from legitimate exports on June 1."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Only admin can do this"}, status_code=403)
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE orders SET exported=TRUE, exported_at=$1 WHERE id = ANY($2)",
+            datetime.now(), _RECOVERY_IDS,
+        )
+    return JSONResponse({"ok": True, "restored": len(_RECOVERY_IDS), "ids": _RECOVERY_IDS})
+
+
 @app.post("/api/orders/toggle-priority")
 async def toggle_priority(request: Request):
     """Toggle priority flag for an order."""
