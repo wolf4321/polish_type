@@ -275,7 +275,6 @@
             <input type="date" id="f-to">
             <button class="btn-primary" onclick="loadOrders(1)" data-i18n="btn_filter">Filter</button>
             {% if user and 'export' in (user.permissions or '').split(',') %}
-            <button class="btn-export" onclick="exportCSV()" data-i18n="btn_export_all">Eksport XLSX</button>
             <button class="btn-export-sel" onclick="exportSelected()" id="btn-export-sel" style="display:none;"><span data-i18n="btn_export_selected">Eksport zaznaczonych</span> (<span id="sel-count">0</span>)</button>
             {% endif %}
             {% if user and 'sync' in (user.permissions or '').split(',') %}
@@ -287,11 +286,49 @@
             {% endif %}
         </div>
 
+        <!-- Export history (admin only) -->
+        {% if user and 'manage_users' in (user.permissions or '').split(',') %}
+        <div id="export-history-panel" style="display:none;background:#fff;border-radius:10px;padding:12px 16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <h4 style="font-size:14px;font-weight:600;color:#1a1a2e;">Historia eksportów</h4>
+                <div>
+                    <button onclick="resetAllExported()" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;margin-right:8px;">Resetuj wszystkie ✓</button>
+                    <button onclick="toggleExportHistory()" style="background:#f3f4f6;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;">Zamknij</button>
+                </div>
+            </div>
+
+            <!-- Bulk export detection — finds mass-exports by timestamp -->
+            <div style="margin-bottom:12px;padding:10px;background:#fef3c7;border-radius:8px;">
+                <div style="font-size:12px;font-weight:600;color:#92400e;margin-bottom:6px;">Masowe eksporty (wg sygnatury czasowej)</div>
+                <div style="font-size:11px;color:#78716c;margin-bottom:6px;">Jeśli widzisz eksport z dużą liczbą zamówień — możesz cofnąć TYLKO ten moment, zachowując ręczne oznaczenia.</div>
+                <table style="width:100%;font-size:12px;"><thead><tr>
+                    <th style="text-align:left;padding:4px 8px;">Czas</th>
+                    <th style="text-align:right;padding:4px 8px;">Zamówień</th>
+                    <th style="text-align:center;padding:4px 8px;">Akcja</th>
+                </tr></thead><tbody id="bulk-export-body"><tr><td colspan="3" style="text-align:center;padding:8px;color:#9ca3af;">Ładowanie...</td></tr></tbody></table>
+            </div>
+
+            <h4 style="font-size:13px;font-weight:600;color:#1a1a2e;margin-bottom:6px;">Log eksportów (nowe)</h4>
+            <table style="width:100%;font-size:12px;"><thead><tr>
+                <th style="text-align:left;padding:6px 8px;">Data</th>
+                <th style="text-align:left;padding:6px 8px;">Użytkownik</th>
+                <th style="text-align:right;padding:6px 8px;">Zamówień</th>
+                <th style="text-align:center;padding:6px 8px;">Status</th>
+                <th style="text-align:center;padding:6px 8px;">Akcja</th>
+            </tr></thead><tbody id="export-log-body"></tbody></table>
+        </div>
+        {% endif %}
+
         <!-- Таблица заказов -->
         <div class="card">
             <div class="card-header">
                 <h3 data-i18n="orders_list">Orders list</h3>
-                <span class="sync-status" id="sync-info"></span>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    {% if user and 'manage_users' in (user.permissions or '').split(',') %}
+                    <button onclick="toggleExportHistory()" style="background:none;border:1px solid #e5e7eb;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:#6b7280;">📋 Historia eksportów</button>
+                    {% endif %}
+                    <span class="sync-status" id="sync-info"></span>
+                </div>
             </div>
             <div style="overflow-x: auto;">
                 <table>
@@ -1268,6 +1305,117 @@
         // Lock layout after first data load completes
         setTimeout(function() { _colResizer.lockTableLayout(); }, 1500);
     }, 100);
+
+    // --- Export history & undo ---
+    function toggleExportHistory() {
+        var panel = document.getElementById('export-history-panel');
+        if (!panel) return;
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+            loadExportHistory();
+        } else {
+            panel.style.display = 'none';
+        }
+    }
+
+    function loadExportHistory() {
+        // Load bulk export timestamps
+        fetch('/api/orders/exported-timestamps').then(function(r){return r.json();}).then(function(d) {
+            var tbody = document.getElementById('bulk-export-body');
+            if (!tbody) return;
+            if (!d.timestamps || d.timestamps.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:8px;color:#9ca3af;">Brak masowych eksportów</td></tr>';
+                return;
+            }
+            var html = '';
+            d.timestamps.forEach(function(entry) {
+                var dt = entry.timestamp ? new Date(entry.timestamp).toLocaleString('pl-PL') : '—';
+                var isBulk = entry.count > 10;
+                var rowStyle = isBulk ? 'background:#fef2f2;' : '';
+                html += '<tr style="' + rowStyle + '">'
+                    + '<td style="padding:4px 8px;">' + dt + '</td>'
+                    + '<td style="padding:4px 8px;text-align:right;font-weight:' + (isBulk ? '700' : '400') + ';">' + entry.count + '</td>'
+                    + '<td style="padding:4px 8px;text-align:center;">'
+                    + (isBulk ? '<button onclick="revertBulkExport(\'' + entry.timestamp + '\', ' + entry.count + ')" style="background:#f59e0b;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;">Cofnij ten eksport</button>' : '<span style="color:#9ca3af;font-size:11px;">mały</span>')
+                    + '</td></tr>';
+            });
+            tbody.innerHTML = html;
+        });
+
+        // Load export log
+        fetch('/api/export-log?limit=20').then(function(r){return r.json();}).then(function(d) {
+            var tbody = document.getElementById('export-log-body');
+            if (!tbody) return;
+            if (!d.log || d.log.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:12px;color:#9ca3af;">Brak eksportów</td></tr>';
+                return;
+            }
+            var html = '';
+            d.log.forEach(function(entry) {
+                var dt = entry.created_at ? new Date(entry.created_at).toLocaleString('pl-PL') : '—';
+                var statusHtml = entry.undone
+                    ? '<span style="color:#dc2626;">Cofnięty</span>'
+                    : '<span style="color:#059669;">Aktywny</span>';
+                var actionHtml = entry.undone
+                    ? '—'
+                    : '<button onclick="undoExport(' + entry.id + ')" style="background:#f59e0b;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;">Cofnij</button>';
+                html += '<tr>'
+                    + '<td style="padding:6px 8px;">' + dt + '</td>'
+                    + '<td style="padding:6px 8px;">' + (entry.user_email || '—') + '</td>'
+                    + '<td style="padding:6px 8px;text-align:right;">' + entry.orders_count + '</td>'
+                    + '<td style="padding:6px 8px;text-align:center;">' + statusHtml + '</td>'
+                    + '<td style="padding:6px 8px;text-align:center;">' + actionHtml + '</td>'
+                    + '</tr>';
+            });
+            tbody.innerHTML = html;
+        });
+    }
+
+    function undoExport(logId) {
+        if (!confirm('Cofnąć ten eksport? Wszystkie zamówienia z tego eksportu stracą oznaczenie ✓')) return;
+        fetch('/api/export-log/' + logId + '/undo', { method: 'POST' })
+            .then(function(r){return r.json();})
+            .then(function(d) {
+                if (d.ok) {
+                    loadExportHistory();
+                    loadOrders(currentPage);
+                } else {
+                    alert('Błąd: ' + (d.error || 'unknown'));
+                }
+            });
+    }
+
+    function revertBulkExport(timestamp, count) {
+        if (!confirm('Cofnąć masowy eksport z ' + new Date(timestamp).toLocaleString('pl-PL') + '?\nTo zresetuje ' + count + ' zamówień, ale zachowa ręczne oznaczenia z innych momentów.')) return;
+        fetch('/api/orders/revert-bulk-export', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({timestamp: timestamp})
+        }).then(function(r){return r.json();}).then(function(d) {
+            if (d.ok) {
+                alert('Cofnięto ' + d.reverted + ' zamówień');
+                loadExportHistory();
+                loadOrders(currentPage);
+            } else {
+                alert('Błąd: ' + (d.error || 'unknown'));
+            }
+        });
+    }
+
+    function resetAllExported() {
+        if (!confirm('UWAGA: To usunie WSZYSTKIE oznaczenia eksportu (✓) ze wszystkich zamówień!\nCzy na pewno?')) return;
+        fetch('/api/orders/reset-all-exported', { method: 'POST' })
+            .then(function(r){return r.json();})
+            .then(function(d) {
+                if (d.ok) {
+                    alert('Zresetowano ' + d.reset_count + ' zamówień');
+                    loadExportHistory();
+                    loadOrders(currentPage);
+                } else {
+                    alert('Błąd: ' + (d.error || 'unknown'));
+                }
+            });
+    }
 
     </script>
 
