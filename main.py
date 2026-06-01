@@ -2274,23 +2274,79 @@ async def api_restore_exported(request: Request):
     return JSONResponse({"ok": True, "restored": len(int_ids)})
 
 
-# One-time recovery: IDs from legitimate exports on 2026-06-01 (before mass export)
-_RECOVERY_IDS = [4223,4225,4226,4227,4228,4229,4231,4232,4234,4237,4239,4242,4243,4246,4250,4256,4257,4265,4271,4273,4274,4275,4279,4284,4285,4286,4287,4290,4293,4295,4296,4297,4298,4302,4303,4306,4307,4308,9686,9690,9693,9697,9700,9706,9710,9719,9721,9746,9747,9756,9762,9767,9769,9774,9775,9777,9782,9783,9792,9800,9815,9831,9832,9843,9848,9849,9850,9872,9873,9876,9878,9881,9885,9887,9892,9895,9905,9906,9908,9909,9910]
+# Recovery: 82 IDs from legitimate exports (June 1 before mass export + May 28 id=4317)
+_RECOVERY_IDS = [4223,4225,4226,4227,4228,4229,4231,4232,4234,4237,4239,4242,4243,4246,4250,4256,4257,4265,4271,4273,4274,4275,4279,4284,4285,4286,4287,4290,4293,4295,4296,4297,4298,4302,4303,4306,4307,4308,4317,9686,9690,9693,9697,9700,9706,9710,9719,9721,9746,9747,9756,9762,9767,9769,9774,9775,9777,9782,9783,9792,9800,9815,9831,9832,9843,9848,9849,9850,9872,9873,9876,9878,9881,9885,9887,9892,9895,9905,9906,9908,9909,9910]
 
 
-@app.get("/api/orders/recover-june1")
-async def api_recover_june1(request: Request):
-    """One-time recovery: restore 81 orders from legitimate exports on June 1."""
+@app.post("/api/orders/recover-all")
+async def api_recover_all(request: Request):
+    """Full recovery: restore exported flags from all log data.
+
+    Step 1: 82 specific IDs from individual exports (May 28 + June 1).
+    Step 2: All dobraszklarnia orders from Feb 20 - May 21 (mass export on May 21).
+    """
     user = await get_current_user(request)
     if not user or not has_perm(user, "manage_users"):
         return JSONResponse({"error": "Only admin can do this"}, status_code=403)
     pool = await get_db_pool()
+    now = datetime.now()
+    result = {"steps": []}
     async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE orders SET exported=TRUE, exported_at=$1 WHERE id = ANY($2)",
-            datetime.now(), _RECOVERY_IDS,
+        # Step 1: 82 specific IDs
+        rows1 = await conn.fetch(
+            "UPDATE orders SET exported=TRUE, exported_at=$1 WHERE id = ANY($2) RETURNING id",
+            now, _RECOVERY_IDS,
         )
-    return JSONResponse({"ok": True, "restored": len(_RECOVERY_IDS), "ids": _RECOVERY_IDS})
+        step1_ids = [r["id"] for r in rows1]
+        result["steps"].append({
+            "name": "specific_ids",
+            "description": "82 IDs from individual exports (May 28 + June 1)",
+            "requested": len(_RECOVERY_IDS),
+            "updated": len(step1_ids),
+            "ids": step1_ids,
+        })
+
+        # Step 2: dobraszklarnia mass export (May 21, range Feb 20 - May 21)
+        rows2 = await conn.fetch(
+            """UPDATE orders SET exported=TRUE, exported_at=$1
+               WHERE source = 'dobraszklarnia'
+                 AND created_at >= '2026-02-20'
+                 AND created_at < '2026-05-22'
+                 AND (exported IS NOT TRUE)
+               RETURNING id""",
+            now,
+        )
+        step2_ids = [r["id"] for r in rows2]
+        result["steps"].append({
+            "name": "dobraszklarnia_mass_export",
+            "description": "dobraszklarnia orders Feb 20 - May 21 (mass export on May 21)",
+            "updated": len(step2_ids),
+            "ids": step2_ids,
+        })
+
+    total = len(step1_ids) + len(step2_ids)
+    result["ok"] = True
+    result["total_restored"] = total
+    import logging
+    logging.info(f"[RECOVERY] Restored {total} orders: {len(step1_ids)} specific + {len(step2_ids)} dobraszklarnia")
+    return JSONResponse(result)
+
+
+@app.get("/api/orders/recover-june1")
+async def api_recover_june1(request: Request):
+    """Legacy GET endpoint — redirect to POST recover-all."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Only admin can do this"}, status_code=403)
+    pool = await get_db_pool()
+    now = datetime.now()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "UPDATE orders SET exported=TRUE, exported_at=$1 WHERE id = ANY($2) RETURNING id",
+            now, _RECOVERY_IDS,
+        )
+        updated_ids = [r["id"] for r in rows]
+    return JSONResponse({"ok": True, "requested": len(_RECOVERY_IDS), "actually_updated": len(updated_ids), "ids": updated_ids})
 
 
 @app.post("/api/orders/toggle-priority")
