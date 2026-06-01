@@ -292,6 +292,7 @@
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <h4 style="font-size:14px;font-weight:600;color:#1a1a2e;">Historia eksportów</h4>
                 <div>
+                    <button onclick="recoverExported()" style="background:#059669;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;margin-right:8px;">🔄 Восстановить пометки</button>
                     <button onclick="resetAllExported()" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;margin-right:8px;">Resetuj wszystkie ✓</button>
                     <button onclick="toggleExportHistory()" style="background:#f3f4f6;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;">Zamknij</button>
                 </div>
@@ -1400,6 +1401,26 @@
                 alert('Błąd: ' + (d.error || 'unknown'));
             }
         });
+    }
+
+    function recoverExported() {
+        if (!confirm('Восстановить пометки exported для:\n• 82 заказа из штучных экспортов (Май 28 + Июнь 1)\n• Все заказы dobraszklarnia (Фев 20 — Май 21)\n\nПродолжить?')) return;
+        fetch('/api/orders/recover-all', { method: 'POST' })
+            .then(function(r){return r.json();})
+            .then(function(d) {
+                if (d.ok) {
+                    var msg = 'Восстановлено ' + d.total_restored + ' заказов:\n';
+                    d.steps.forEach(function(s) {
+                        msg += '• ' + s.name + ': ' + s.updated + ' шт.\n';
+                    });
+                    alert(msg);
+                    loadExportHistory();
+                    loadOrders(currentPage);
+                } else {
+                    alert('Ошибка: ' + (d.error || 'unknown'));
+                }
+            })
+            .catch(function(e) { alert('Сетевая ошибка: ' + e); });
     }
 
     function resetAllExported() {
