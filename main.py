@@ -221,6 +221,19 @@ async def lifespan(app: FastAPI):
             )
         """)
 
+        # Лог экспортов — для отката
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS export_log (
+                id           SERIAL PRIMARY KEY,
+                user_email   VARCHAR(200),
+                order_ids    INTEGER[],
+                orders_count INTEGER DEFAULT 0,
+                created_at   TIMESTAMP DEFAULT NOW(),
+                undone       BOOLEAN DEFAULT FALSE,
+                undone_at    TIMESTAMP
+            )
+        """)
+
         # App settings — key-value store (для Allegro refresh token и др.)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -2120,6 +2133,127 @@ async def mark_exported(request: Request):
     return JSONResponse({"ok": True, "marked": len(int_ids)})
 
 
+# ── Export history & undo ──
+
+@app.get("/api/export-log")
+async def api_export_log(request: Request, limit: int = Query(20)):
+    """Get recent export log entries for undo capability."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "export"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, user_email, orders_count, created_at, undone, undone_at FROM export_log ORDER BY id DESC LIMIT $1",
+            limit
+        )
+    log = []
+    for r in rows:
+        log.append({
+            "id": r["id"],
+            "user_email": r["user_email"],
+            "orders_count": r["orders_count"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "undone": r["undone"],
+            "undone_at": r["undone_at"].isoformat() if r.get("undone_at") else None,
+        })
+    return JSONResponse({"log": log})
+
+
+@app.post("/api/export-log/{log_id}/undo")
+async def api_undo_export(log_id: int, request: Request):
+    """Undo an export — reset exported flag for all orders in that export batch."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Only admin can undo exports"}, status_code=403)
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM export_log WHERE id=$1", log_id)
+        if not row:
+            return JSONResponse({"error": "Export log not found"}, status_code=404)
+        if row["undone"]:
+            return JSONResponse({"error": "Already undone"}, status_code=400)
+        order_ids = row["order_ids"]
+        if order_ids:
+            await conn.execute(
+                "UPDATE orders SET exported=FALSE, exported_at=NULL WHERE id = ANY($1)",
+                order_ids,
+            )
+        await conn.execute(
+            "UPDATE export_log SET undone=TRUE, undone_at=$1 WHERE id=$2",
+            datetime.now(), log_id,
+        )
+    return JSONResponse({"ok": True, "reverted": len(order_ids) if order_ids else 0})
+
+
+@app.post("/api/orders/reset-all-exported")
+async def api_reset_all_exported(request: Request):
+    """Emergency reset: clear ALL exported flags. Admin only."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Only admin can do this"}, status_code=403)
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE orders SET exported=FALSE, exported_at=NULL WHERE exported=TRUE"
+        )
+        count = int(result.split()[-1]) if result else 0
+    return JSONResponse({"ok": True, "reset_count": count})
+
+
+@app.get("/api/orders/exported-timestamps")
+async def api_exported_timestamps(request: Request):
+    """Show mass-export timestamps to help identify the bulk export to undo."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        # Group by exported_at rounded to the second — mass exports will have hundreds at the same second
+        rows = await conn.fetch("""
+            SELECT date_trunc('second', exported_at) AS ts,
+                   COUNT(*) AS cnt
+            FROM orders
+            WHERE exported = TRUE AND exported_at IS NOT NULL
+            GROUP BY date_trunc('second', exported_at)
+            ORDER BY cnt DESC
+            LIMIT 20
+        """)
+    result = []
+    for r in rows:
+        result.append({
+            "timestamp": r["ts"].isoformat() if r["ts"] else None,
+            "count": r["cnt"],
+        })
+    return JSONResponse({"timestamps": result})
+
+
+@app.post("/api/orders/revert-bulk-export")
+async def api_revert_bulk_export(request: Request):
+    """Revert a mass export by timestamp — only reset orders exported at that exact second.
+    Orders exported manually at other times are preserved."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Only admin can do this"}, status_code=403)
+    body = await request.json()
+    ts = body.get("timestamp")
+    if not ts:
+        return JSONResponse({"error": "timestamp required"}, status_code=400)
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        target_ts = datetime.fromisoformat(ts)
+        # Reset only orders exported at that exact second (±1 second tolerance)
+        result = await conn.execute(
+            """UPDATE orders SET exported=FALSE, exported_at=NULL
+               WHERE exported=TRUE
+                 AND exported_at >= $1
+                 AND exported_at < $2""",
+            target_ts, target_ts + timedelta(seconds=2),
+        )
+        count = int(result.split()[-1]) if result else 0
+    return JSONResponse({"ok": True, "reverted": count, "timestamp": ts})
+
+
 @app.post("/api/orders/toggle-priority")
 async def toggle_priority(request: Request):
     """Toggle priority flag for an order."""
@@ -2415,12 +2549,17 @@ async def export_orders(
             f"SELECT * FROM orders WHERE {where} ORDER BY COALESCE(external_created, created_at) DESC",
             *params
         )
-        # Auto-mark exported orders
+        # Auto-mark exported orders + log for undo
         if rows:
             exported_ids = [r["id"] for r in rows]
             await conn.execute(
                 "UPDATE orders SET exported=TRUE, exported_at=$1 WHERE id = ANY($2)",
                 datetime.now(), exported_ids,
+            )
+            # Log this export for undo capability
+            await conn.execute(
+                "INSERT INTO export_log (user_email, order_ids, orders_count) VALUES ($1, $2, $3)",
+                user.get("email", ""), exported_ids, len(exported_ids),
             )
 
     # --- XLSX export (openpyxl) — per-item breakdown ---
