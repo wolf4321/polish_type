@@ -810,21 +810,15 @@
 
         function shortenProduct(name, sku) {
             if (!name) return sku || '';
-            // Try to extract short format: model + dimensions + thickness
+            // Only shorten greenhouse names (szklarnia/cieplarnia) — strip prefix
             // E.g. "Szklarnia z poliwęglanu Mocna 3x8 4mm" → "Mocna 3x8 4mm"
-            //      "EKO Szklarnia z poliwęglanu 3x6m 6mm" → "EKO 3x6m 6mm"
-            //      "Poliwęglan komorowy 4,5x2,1 10mm" → "Poliwęglan 4,5x2,1 10mm"
             var cleaned = name
                 .replace(/^(?:eko\s+)?szklarni[ae]?\s+(?:z\s+poliw[eę]glanu?\s*)?/i, '')
                 .replace(/^(?:eko\s+)?cieplarni[ae]?\s+(?:z\s+poliw[eę]glanu?\s*)?/i, '')
                 .trim();
-            // If cleaned is shorter than original and non-empty, use it
             if (cleaned && cleaned.length < name.length) return cleaned;
-            // If name is very long (>40 chars), try to extract dimensions pattern
-            if (name.length > 40) {
-                var dimMatch = name.match(/(\w+\s+)?\d+[,.]?\d*\s*x\s*\d+[,.]?\d*\s*m?\s*\d*\s*mm/i);
-                if (dimMatch) return dimMatch[0].trim();
-            }
+            // For all other products (Poliwęglan, Profile, etc.) — keep full name
+            // so they are findable via Ctrl+F page search
             return name;
         }
 
