@@ -2705,7 +2705,9 @@ async def export_orders(
 
         total_val = float(r["total"] or 0)
         ship_cost = float(r["shipping_cost"] or 0) if r.get("shipping_cost") else 0.0
-        is_allegro = (r["source"] or "").lower() == "allegro"
+        src_lower = (r["source"] or "").lower()
+        # Allegro and manual orders store prices as brutto; WooCommerce/PrestaShop as netto
+        is_brutto_source = src_lower in ("allegro", "manual")
 
         # Address
         addr_parts = []
@@ -2731,7 +2733,7 @@ async def export_orders(
             item_qty = int(it.get("qty", 1))
             item_price_raw = float(it.get("price") or 0)
 
-            if is_allegro:
+            if is_brutto_source:
                 brutto_per_unit = item_price_raw
             else:
                 brutto_per_unit = round(item_price_raw * 1.23, 2)
@@ -2739,8 +2741,12 @@ async def export_orders(
             brutto_total_item = round(brutto_per_unit * item_qty, 2)
             brutto_sum += brutto_total_item
 
-            # Product: "{qty}szt {name}"
-            product_parts.append(f"{item_qty}szt {item_name}")
+            # Product: "{qty}szt {name}" — but skip qty prefix if name already starts with digits+szt
+            import re as _re_qty
+            if _re_qty.match(r'^\d+\s*szt\b', item_name, _re_qty.IGNORECASE):
+                product_parts.append(item_name)
+            else:
+                product_parts.append(f"{item_qty}szt {item_name}")
 
             # Price formula: "qty*price" or just "price" if qty==1
             brutto_int = int(brutto_per_unit) if brutto_per_unit == int(brutto_per_unit) else brutto_per_unit
