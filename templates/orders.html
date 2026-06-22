@@ -1217,37 +1217,80 @@
         });
     }
 
-    // --- Column resizer — simple min-width approach (no table-layout:fixed) ---
+    // --- Column resizer — fixed layout on first drag, text wraps when narrowed ---
     (function() {
-        // Clear old broken storage key
+        // Clear old broken storage keys
         try { localStorage.removeItem('ekomat_col_widths'); } catch(e) {}
+        try { localStorage.removeItem('ekomat_col_minwidths_v2'); } catch(e) {}
 
-        var STORAGE_KEY = 'ekomat_col_minwidths_v2';
-        var startX, startW, activeTh;
+        var STORAGE_KEY = 'ekomat_col_w_v3';
+        var startX, startW, activeTh, tableStartW;
+        var locked = false;
+
+        function getTable() { return document.querySelector('.card table'); }
+
+        function lockLayout() {
+            if (locked) return;
+            var table = getTable();
+            if (!table) return;
+            var ths = table.querySelectorAll('thead th');
+            if (ths.length === 0) return;
+            // Capture current auto-layout widths
+            var widths = [];
+            ths.forEach(function(th) { widths.push(th.offsetWidth); });
+            var totalW = 0;
+            ths.forEach(function(th, i) {
+                th.style.width = widths[i] + 'px';
+                th.style.whiteSpace = 'normal';
+                totalW += widths[i];
+            });
+            table.style.width = totalW + 'px';
+            table.style.tableLayout = 'fixed';
+            locked = true;
+        }
 
         function saveWidths() {
-            var ths = document.querySelectorAll('.card thead th');
+            var table = getTable();
+            if (!table) return;
+            var ths = table.querySelectorAll('thead th');
             var widths = {};
             ths.forEach(function(th, idx) {
-                if (th.style.minWidth) widths[idx] = th.style.minWidth;
+                if (th.style.width) widths[idx] = th.style.width;
             });
+            widths._tw = table.style.width || '';
             try { localStorage.setItem(STORAGE_KEY, JSON.stringify(widths)); } catch(e) {}
         }
 
         function restoreWidths() {
             try {
                 var saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-                var ths = document.querySelectorAll('.card thead th');
-                Object.keys(saved).forEach(function(idx) {
-                    if (ths[parseInt(idx)]) ths[parseInt(idx)].style.minWidth = saved[idx];
+                if (!saved._tw) return false;
+                var table = getTable();
+                if (!table) return false;
+                var ths = table.querySelectorAll('thead th');
+                var any = false;
+                Object.keys(saved).forEach(function(key) {
+                    if (key === '_tw') return;
+                    var idx = parseInt(key);
+                    if (ths[idx]) { ths[idx].style.width = saved[key]; ths[idx].style.whiteSpace = 'normal'; any = true; }
                 });
-            } catch(e) {}
+                if (any) {
+                    table.style.width = saved._tw;
+                    table.style.tableLayout = 'fixed';
+                    locked = true;
+                }
+                return any;
+            } catch(e) { return false; }
         }
 
         function onMove(e) {
             if (!activeTh) return;
-            var w = startW + (e.pageX - startX);
-            if (w > 30) activeTh.style.minWidth = w + 'px';
+            var delta = e.pageX - startX;
+            var newW = startW + delta;
+            if (newW < 30) newW = 30;
+            activeTh.style.width = newW + 'px';
+            var table = getTable();
+            if (table) table.style.width = Math.max(tableStartW + delta, 400) + 'px';
         }
 
         function onUp() {
@@ -1270,9 +1313,12 @@
                 grip.addEventListener('mousedown', function(e) {
                     e.preventDefault();
                     e.stopPropagation();
+                    lockLayout();
                     activeTh = grip.parentElement;
                     startX = e.pageX;
                     startW = activeTh.offsetWidth;
+                    var table = getTable();
+                    tableStartW = table ? table.offsetWidth : 0;
                     grip.classList.add('active');
                     document.body.style.cursor = 'col-resize';
                     document.body.style.userSelect = 'none';
