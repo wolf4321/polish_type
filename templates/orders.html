@@ -59,7 +59,7 @@
              font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase;
              letter-spacing: .3px; position: sticky; top: 0; white-space: nowrap; }
         td { padding: 10px 8px; border-bottom: 1px solid #f3f4f6; vertical-align: top;
-             overflow: hidden; text-overflow: ellipsis; }
+             overflow: hidden; overflow-wrap: break-word; word-wrap: break-word; }
         tr:hover td { background: #f9fafb; }
 
         .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px;
@@ -87,8 +87,8 @@
         .empty { text-align: center; padding: 60px 20px; color: #9ca3af; }
         .empty h4 { font-size: 16px; margin-bottom: 8px; color: #6b7280; }
 
-        .items-list { font-size: 11px; color: #6b7280; overflow: hidden; }
-        .items-list span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .items-list { font-size: 11px; color: #6b7280; }
+        .items-list span { display: block; word-wrap: break-word; overflow-wrap: break-word; }
 
         .price-breakdown { font-size: 12px; }
         .price-breakdown .ship { font-size: 10px; color: #6b7280; }
@@ -96,7 +96,7 @@
                          white-space: pre-wrap; word-break: break-word; }
         .editable-comment { cursor: pointer; border-bottom: 1px dashed #d1d5db; padding-bottom: 1px; }
         .editable-comment:hover { background: #fef9c3; }
-        .address-cell { font-size: 11px; color: #4b5563; overflow: hidden; text-overflow: ellipsis; }
+        .address-cell { font-size: 11px; color: #4b5563; word-wrap: break-word; overflow-wrap: break-word; }
         .phone-cell { font-size: 12px; white-space: nowrap; }
         .config-cell { font-size: 11px; color: #9ca3af; font-style: italic; }
         .seller-cell { font-size: 11px; color: #6b7280; }
