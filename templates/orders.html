@@ -901,10 +901,10 @@
             items.forEach(function(it) {
                 var fullName = it.full_name || it.name || '';
                 var itemPrice = parseFloat(it.price) || 0;
-                // Allegro and manual orders store prices as brutto
-                // WooCommerce/PrestaShop prices are netto — multiply by 1.23
+                // Allegro, manual, and WooCommerce (dobraszklarnia) prices are already brutto
+                // PrestaShop (oteko, cieplarnia) prices are netto — multiply by 1.23
                 var srcLower = (o.source || '').toLowerCase();
-                var isBrutto = (srcLower === 'allegro' || srcLower === 'manual');
+                var isBrutto = (srcLower === 'allegro' || srcLower === 'manual' || srcLower === 'dobraszklarnia');
                 var bruttoPrice = isBrutto ? itemPrice : itemPrice * 1.23;
                 itemsTable += '<tr><td>' + fullName + '</td><td>' + (it.sku || '—') + '</td><td>' + it.qty + '</td><td>' + fmtMoney(bruttoPrice) + ' PLN</td></tr>';
             });
