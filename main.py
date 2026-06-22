@@ -2723,8 +2723,9 @@ async def export_orders(
         total_val = float(r["total"] or 0)
         ship_cost = float(r["shipping_cost"] or 0) if r.get("shipping_cost") else 0.0
         src_lower = (r["source"] or "").lower()
-        # Allegro and manual orders store prices as brutto; WooCommerce/PrestaShop as netto
-        is_brutto_source = src_lower in ("allegro", "manual")
+        # Allegro, manual, and WooCommerce (dobraszklarnia) prices are already brutto
+        # PrestaShop (oteko, cieplarnia) prices are netto
+        is_brutto_source = src_lower in ("allegro", "manual", "dobraszklarnia")
 
         # Address
         addr_parts = []
