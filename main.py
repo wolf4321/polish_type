@@ -847,7 +847,7 @@ async def _presta_fetch_customer(session: aiohttp.ClientSession, base_url: str, 
     if not customer_id:
         return {}
     url = f"{base_url}/api/customers/{customer_id}"
-    params = {"output_format": "JSON", "display": "full"}
+    params = {"output_format": "JSON"}
     auth = aiohttp.BasicAuth(api_key, "")
     try:
         async with session.get(url, params=params, auth=auth, ssl=True) as resp:
@@ -865,7 +865,7 @@ async def _presta_fetch_address(session: aiohttp.ClientSession, base_url: str, a
     if not address_id:
         return {}
     url = f"{base_url}/api/addresses/{address_id}"
-    params = {"output_format": "JSON", "display": "full"}
+    params = {"output_format": "JSON"}
     auth = aiohttp.BasicAuth(api_key, "")
     try:
         async with session.get(url, params=params, auth=auth, ssl=True) as resp:
