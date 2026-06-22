@@ -363,7 +363,7 @@ async def _save_order(conn, source: str, order_data: dict):
                 customer_city=$5, customer_zip=$6, customer_address=$7,
                 total=$8, currency=$9, items_count=$10, items_json=$11,
                 payment_method=$12, shipping_method=$13, note=$14,
-                external_created=$15, shipping_cost=$18,
+                external_created=COALESCE(external_created, $15), shipping_cost=$18,
                 seller_account=$19,
                 customer_comment=CASE WHEN customer_comment IS NOT NULL AND customer_comment != '' THEN customer_comment ELSE $20 END,
                 invoice_nip=$21,
@@ -847,7 +847,7 @@ async def _presta_fetch_customer(session: aiohttp.ClientSession, base_url: str, 
     if not customer_id:
         return {}
     url = f"{base_url}/api/customers/{customer_id}"
-    params = {"output_format": "JSON"}
+    params = {"output_format": "JSON", "display": "full"}
     auth = aiohttp.BasicAuth(api_key, "")
     try:
         async with session.get(url, params=params, auth=auth, ssl=True) as resp:
@@ -865,7 +865,7 @@ async def _presta_fetch_address(session: aiohttp.ClientSession, base_url: str, a
     if not address_id:
         return {}
     url = f"{base_url}/api/addresses/{address_id}"
-    params = {"output_format": "JSON"}
+    params = {"output_format": "JSON", "display": "full"}
     auth = aiohttp.BasicAuth(api_key, "")
     try:
         async with session.get(url, params=params, auth=auth, ssl=True) as resp:
@@ -1301,11 +1301,24 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
     payment = form.get("payment") or {}
     summary = form.get("summary") or {}
 
-    # Build recipient name (delivery address = who receives the package)
+    # Build customer name: prefer invoice buyer (who placed the order / pays)
+    # then delivery address recipient, then Allegro account buyer
+    invoice = form.get("invoice") or {}
+    inv_addr = invoice.get("address") or {}
+    inv_company = inv_addr.get("company") or {}
+    inv_person = inv_addr.get("naturalPerson") or {}
+
+    # 1) Invoice company name (e.g. "motorex") — the actual buyer
     recipient_name = ""
-    if address.get("firstName") or address.get("lastName"):
+    if inv_company.get("name"):
+        recipient_name = inv_company["name"].strip()
+    # 2) Invoice natural person
+    if not recipient_name and (inv_person.get("firstName") or inv_person.get("lastName")):
+        recipient_name = f"{inv_person.get('firstName', '')} {inv_person.get('lastName', '')}".strip()
+    # 3) Delivery address recipient
+    if not recipient_name and (address.get("firstName") or address.get("lastName")):
         recipient_name = f"{address.get('firstName', '')} {address.get('lastName', '')}".strip()
-    # Fallback to buyer name if delivery address has no name
+    # 4) Fallback to buyer (Allegro account holder)
     if not recipient_name:
         recipient_name = f"{buyer.get('firstName', '')} {buyer.get('lastName', '')}".strip()
 
@@ -1335,9 +1348,9 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
     if summary.get("totalToPay", {}).get("currency"):
         currency = summary["totalToPay"]["currency"]
 
-    # Created date — strip timezone to match our naive TIMESTAMP column
+    # Created date — use createdAt (stable order creation date, not updatedAt)
     ext_created = None
-    bought_at = form.get("updatedAt") or form.get("createdAt")
+    bought_at = form.get("createdAt") or form.get("updatedAt")
     if bought_at:
         try:
             dt = datetime.fromisoformat(bought_at.replace("Z", "+00:00"))
@@ -1352,16 +1365,22 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
         "FILLED_IN": "processing",
         "READY_FOR_PROCESSING": "processing",
         "CANCELLED": "cancelled",
+        "CLOSED": "cancelled",
     }
     status = allegro_status_map.get(status_raw, status_raw.lower())
 
-    # Check fulfillment status for shipped/delivered
+    # Check fulfillment status for shipped/delivered — but NEVER override "cancelled"
     fulfillment = form.get("fulfillment") or {}
     fulfill_status = (fulfillment.get("status") or "").upper()
-    if fulfill_status == "SENT":
-        status = "shipped"
-    elif fulfill_status == "PICKED_UP":
-        status = "delivered"
+    if status != "cancelled":
+        if fulfill_status == "SENT":
+            status = "shipped"
+        elif fulfill_status == "PICKED_UP":
+            status = "delivered"
+
+    # Log cancellations for debugging
+    if status == "cancelled":
+        print(f"[allegro-cancel] order {form.get('id')}: status_raw={status_raw}, fulfillment={fulfill_status}")
 
     # Payment type → Polish label
     allegro_payment_map = {
@@ -1393,7 +1412,7 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
 
     # Seller comment / message to seller + NIP
     msg_to_seller = form.get("messageToSeller", "") or ""
-    invoice = form.get("invoice") or {}
+    # invoice, inv_addr, inv_company already extracted above for customer name
     invoice_nip = ""
     form_id = form.get("id", "?")
     # Try invoice.company.taxId (old format)
@@ -1401,8 +1420,6 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
         invoice_nip = invoice["company"]["taxId"]
     # Try invoice.address.company.taxId (current Allegro API format)
     if not invoice_nip:
-        inv_addr = invoice.get("address") or {}
-        inv_company = inv_addr.get("company") or {}
         if inv_company.get("taxId"):
             invoice_nip = inv_company["taxId"]
         # Also check ids array: [{"type": "PL_NIP", "value": "..."}]
