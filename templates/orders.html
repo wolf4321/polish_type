@@ -1241,10 +1241,10 @@
             } catch(e) { return false; }
         },
         lockTableLayout: function() {
-            // Capture natural widths from browser auto layout, then switch to fixed
-            var table = document.querySelector('table');
+            // Capture natural widths, switch to fixed, allow table to grow beyond container
+            var table = document.querySelector('.card table');
             if (!table || this.initialized) return;
-            var ths = document.querySelectorAll('thead th');
+            var ths = table.querySelectorAll('thead th');
             if (ths.length === 0) return;
             // If saved widths exist, restore them; otherwise capture auto widths
             var hadSaved = this.restoreColWidths();
@@ -1253,13 +1253,25 @@
                     th.style.width = th.offsetWidth + 'px';
                 });
             }
+            // Set total table width explicitly so resizing one column doesn't squash others
+            var totalW = 0;
+            ths.forEach(function(th) { totalW += th.offsetWidth; });
+            table.style.width = totalW + 'px';
             table.style.tableLayout = 'fixed';
             this.initialized = true;
+        },
+        recalcTableWidth: function() {
+            var table = document.querySelector('.card table');
+            if (!table) return;
+            var ths = table.querySelectorAll('thead th');
+            var totalW = 0;
+            ths.forEach(function(th) { totalW += th.offsetWidth; });
+            table.style.width = totalW + 'px';
         },
         init: function() {
             var self = this;
             var grips = document.querySelectorAll('.col-resize');
-            var startX, startW, activeTh;
+            var startX, startW, activeTh, tableStartW;
             grips.forEach(function(grip) {
                 grip.addEventListener('mousedown', function(e) {
                     e.preventDefault();
@@ -1269,6 +1281,8 @@
                     activeTh = grip.parentElement;
                     startX = e.pageX;
                     startW = activeTh.offsetWidth;
+                    var table = document.querySelector('.card table');
+                    tableStartW = table ? table.offsetWidth : 0;
                     grip.classList.add('active');
                     document.body.style.cursor = 'col-resize';
                     document.body.style.userSelect = 'none';
@@ -1278,8 +1292,13 @@
             });
             function onMove(e) {
                 if (!activeTh) return;
-                var w = startW + (e.pageX - startX);
-                if (w > 30) activeTh.style.width = w + 'px';
+                var delta = e.pageX - startX;
+                var newW = startW + delta;
+                if (newW < 30) newW = 30;
+                activeTh.style.width = newW + 'px';
+                // Grow/shrink table total width by the same delta
+                var table = document.querySelector('.card table');
+                if (table) table.style.width = (tableStartW + delta) + 'px';
             }
             function onUp() {
                 if (activeTh) {
