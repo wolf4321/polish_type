@@ -1217,72 +1217,62 @@
         });
     }
 
-    // --- Column resizer with localStorage persistence ---
-    var _colResizer = {
-        STORAGE_KEY: 'ekomat_col_widths',
-        initialized: false,
-        saveColWidths: function() {
-            var ths = document.querySelectorAll('thead th');
+    // --- Column resizer — simple min-width approach (no table-layout:fixed) ---
+    (function() {
+        // Clear old broken storage key
+        try { localStorage.removeItem('ekomat_col_widths'); } catch(e) {}
+
+        var STORAGE_KEY = 'ekomat_col_minwidths_v2';
+        var startX, startW, activeTh;
+
+        function saveWidths() {
+            var ths = document.querySelectorAll('.card thead th');
             var widths = {};
             ths.forEach(function(th, idx) {
-                if (th.style.width) widths[idx] = th.style.width;
+                if (th.style.minWidth) widths[idx] = th.style.minWidth;
             });
-            try { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(widths)); } catch(e) {}
-        },
-        restoreColWidths: function() {
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(widths)); } catch(e) {}
+        }
+
+        function restoreWidths() {
             try {
-                var saved = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '{}');
-                if (Object.keys(saved).length === 0) return false;
-                var ths = document.querySelectorAll('thead th');
+                var saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+                var ths = document.querySelectorAll('.card thead th');
                 Object.keys(saved).forEach(function(idx) {
-                    if (ths[parseInt(idx)]) ths[parseInt(idx)].style.width = saved[idx];
+                    if (ths[parseInt(idx)]) ths[parseInt(idx)].style.minWidth = saved[idx];
                 });
-                return true;
-            } catch(e) { return false; }
-        },
-        lockTableLayout: function() {
-            // Capture natural widths, switch to fixed, allow table to grow beyond container
-            var table = document.querySelector('.card table');
-            if (!table || this.initialized) return;
-            var ths = table.querySelectorAll('thead th');
-            if (ths.length === 0) return;
-            // If saved widths exist, restore them; otherwise capture auto widths
-            var hadSaved = this.restoreColWidths();
-            if (!hadSaved) {
-                ths.forEach(function(th) {
-                    th.style.width = th.offsetWidth + 'px';
-                });
+            } catch(e) {}
+        }
+
+        function onMove(e) {
+            if (!activeTh) return;
+            var w = startW + (e.pageX - startX);
+            if (w > 30) activeTh.style.minWidth = w + 'px';
+        }
+
+        function onUp() {
+            if (activeTh) {
+                var grip = activeTh.querySelector('.col-resize');
+                if (grip) grip.classList.remove('active');
+                saveWidths();
             }
-            // Set total table width explicitly so resizing one column doesn't squash others
-            var totalW = 0;
-            ths.forEach(function(th) { totalW += th.offsetWidth; });
-            table.style.width = totalW + 'px';
-            table.style.tableLayout = 'fixed';
-            this.initialized = true;
-        },
-        recalcTableWidth: function() {
-            var table = document.querySelector('.card table');
-            if (!table) return;
-            var ths = table.querySelectorAll('thead th');
-            var totalW = 0;
-            ths.forEach(function(th) { totalW += th.offsetWidth; });
-            table.style.width = totalW + 'px';
-        },
-        init: function() {
-            var self = this;
+            activeTh = null;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        }
+
+        setTimeout(function() {
+            restoreWidths();
             var grips = document.querySelectorAll('.col-resize');
-            var startX, startW, activeTh, tableStartW;
             grips.forEach(function(grip) {
                 grip.addEventListener('mousedown', function(e) {
                     e.preventDefault();
                     e.stopPropagation();
-                    // Ensure table is in fixed layout mode before resizing
-                    self.lockTableLayout();
                     activeTh = grip.parentElement;
                     startX = e.pageX;
                     startW = activeTh.offsetWidth;
-                    var table = document.querySelector('.card table');
-                    tableStartW = table ? table.offsetWidth : 0;
                     grip.classList.add('active');
                     document.body.style.cursor = 'col-resize';
                     document.body.style.userSelect = 'none';
@@ -1290,36 +1280,8 @@
                     document.addEventListener('mouseup', onUp);
                 });
             });
-            function onMove(e) {
-                if (!activeTh) return;
-                var delta = e.pageX - startX;
-                var newW = startW + delta;
-                if (newW < 30) newW = 30;
-                activeTh.style.width = newW + 'px';
-                // Grow/shrink table total width by the same delta
-                var table = document.querySelector('.card table');
-                if (table) table.style.width = (tableStartW + delta) + 'px';
-            }
-            function onUp() {
-                if (activeTh) {
-                    var grip = activeTh.querySelector('.col-resize');
-                    if (grip) grip.classList.remove('active');
-                    self.saveColWidths();
-                }
-                activeTh = null;
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-            }
-        }
-    };
-    // Initialize after a short delay to let the table render with auto layout first
-    setTimeout(function() {
-        _colResizer.init();
-        // Lock layout after first data load completes
-        setTimeout(function() { _colResizer.lockTableLayout(); }, 1500);
-    }, 100);
+        }, 500);
+    })();
 
     // --- Export history & undo ---
     function toggleExportHistory() {
