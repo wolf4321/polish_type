@@ -262,6 +262,7 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_term VARCHAR(500) DEFAULT ''",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS traffic_source_type VARCHAR(50) DEFAULT ''",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS device_type VARCHAR(50) DEFAULT ''",
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_data TEXT DEFAULT ''",
         ]
         for m in auto_migrations:
             try:
@@ -277,9 +278,18 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(sync_presta_oteko, CronTrigger(minute="*/15"), id="sync_oteko", replace_existing=True)
     scheduler.add_job(sync_presta_ciep, CronTrigger(minute="*/15"), id="sync_ciep", replace_existing=True)
     scheduler.add_job(sync_allegro, CronTrigger(minute="*/15"), id="sync_allegro", replace_existing=True)
+    # Daily full sync at 3:00 AM to catch cancellations, status changes, etc.
+    async def daily_full_sync():
+        print("[daily-full-sync] Starting daily full resync of all sources...")
+        await sync_woocommerce(full=True)
+        await sync_presta_oteko(full=True)
+        await sync_presta_ciep(full=True)
+        await sync_allegro(full=True)
+        print("[daily-full-sync] Daily full resync complete.")
+    scheduler.add_job(daily_full_sync, CronTrigger(hour=3, minute=0), id="daily_full_sync", replace_existing=True)
     scheduler.start()
     allegro_names = [a["name"] for a in ALLEGRO_ACCOUNTS]
-    print(f"[startup] scheduler started — syncing every 15 min (woo + oteko + ciep + allegro x{len(ALLEGRO_ACCOUNTS)}: {allegro_names})")
+    print(f"[startup] scheduler started — syncing every 15 min + daily full sync at 03:00 (woo + oteko + ciep + allegro x{len(ALLEGRO_ACCOUNTS)}: {allegro_names})")
 
     yield
 
@@ -375,6 +385,7 @@ async def _save_order(conn, source: str, order_data: dict):
                 utm_term=CASE WHEN $27 != '' THEN $27 ELSE utm_term END,
                 traffic_source_type=CASE WHEN $28 != '' THEN $28 ELSE traffic_source_type END,
                 device_type=CASE WHEN $29 != '' THEN $29 ELSE device_type END,
+                invoice_data=CASE WHEN $30 != '' THEN $30 ELSE invoice_data END,
                 updated_at=NOW()
             WHERE source=$16 AND external_id=$17
         """,
@@ -406,6 +417,7 @@ async def _save_order(conn, source: str, order_data: dict):
             order_data.get("utm_term", ""),
             order_data.get("traffic_source_type", ""),
             order_data.get("device_type", ""),
+            order_data.get("invoice_data", ""),
         )
         return "updated"
     else:
@@ -417,8 +429,9 @@ async def _save_order(conn, source: str, order_data: dict):
                 payment_method, shipping_method, note, external_created,
                 shipping_cost, seller_account, customer_comment, invoice_nip,
                 product_type, utm_source, utm_medium, utm_campaign,
-                utm_content, utm_term, traffic_source_type, device_type
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
+                utm_content, utm_term, traffic_source_type, device_type,
+                invoice_data
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
         """,
             ext_id, source,
             order_data.get("status", ""),
@@ -448,6 +461,7 @@ async def _save_order(conn, source: str, order_data: dict):
             order_data.get("utm_term", ""),
             order_data.get("traffic_source_type", ""),
             order_data.get("device_type", ""),
+            order_data.get("invoice_data", ""),
         )
         return "new"
 
@@ -1438,6 +1452,26 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
     # Seller account name
     seller_account = seller_name
 
+    # Build invoice data string (Dane do faktury) from Allegro invoice section
+    invoice_data_parts = []
+    # Name: company or natural person
+    if inv_company.get("name"):
+        invoice_data_parts.append(inv_company["name"])
+    elif inv_person.get("firstName") or inv_person.get("lastName"):
+        invoice_data_parts.append(f"{inv_person.get('firstName', '')} {inv_person.get('lastName', '')}".strip())
+    # Street
+    if inv_addr.get("street"):
+        invoice_data_parts.append(inv_addr["street"])
+    # Zip + City
+    inv_zip = inv_addr.get("zipCode") or inv_addr.get("postCode") or ""
+    inv_city = inv_addr.get("city") or ""
+    if inv_zip or inv_city:
+        invoice_data_parts.append(f"{inv_zip} {inv_city}".strip())
+    # NIP
+    if invoice_nip:
+        invoice_data_parts.append(f"NIP: {invoice_nip}")
+    invoice_data = "\n".join(invoice_data_parts)
+
     return {
         "external_id": str(form.get("id", "")),
         "status": status,
@@ -1467,6 +1501,7 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
         "utm_term": "",
         "traffic_source_type": "marketplace",
         "device_type": "",
+        "invoice_data": invoice_data,
     }
 
 
