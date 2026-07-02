@@ -467,6 +467,7 @@
             detail_status: 'Status',
             detail_order_id: 'ID zamówienia',
             detail_nip: 'NIP (Faktura)',
+            detail_invoice_data: 'Dane do faktury',
             detail_comment: 'Komentarz',
             detail_items: 'Pozycje zamówienia',
             detail_product: 'Produkt',
@@ -600,6 +601,7 @@
             detail_status: 'Статус',
             detail_order_id: 'ID заказа',
             detail_nip: 'NIP (Фактура)',
+            detail_invoice_data: 'Данные для фактуры',
             detail_comment: 'Комментарий',
             detail_items: 'Позиции заказа',
             detail_product: 'Продукт',
@@ -934,6 +936,7 @@
                 + '<div class="d-group"><div class="d-label">' + t('detail_status') + '</div><div class="d-value"><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span> (' + (o.status || '') + ')</div></div>'
                 + '<div class="d-group"><div class="d-label">' + t('detail_order_id') + '</div><div class="d-value">#' + (o.external_id || o.id) + '</div></div>'
                 + (o.invoice_nip ? '<div class="d-group"><div class="d-label">' + t('detail_nip') + '</div><div class="d-value">' + o.invoice_nip + '</div></div>' : '')
+                + (o.invoice_data ? '<div class="d-group"><div class="d-label">' + t('detail_invoice_data') + '</div><div class="d-value" style="white-space:pre-line;">' + o.invoice_data + '</div></div>' : '')
                 + '<div class="d-group"><div class="d-label">' + t('detail_comment') + '</div><div class="d-value">' + (o.customer_comment || o.note || '—') + '</div></div>'
                 + '<div class="d-items"><div class="d-label">' + t('detail_items') + '</div>' + itemsTable + '</div>'
                 + manualActions
