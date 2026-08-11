@@ -927,6 +927,8 @@ STATUS_PL = {
     "delivered": "Dostarczone",
     "completed": "Zrealizowane",
     "cancelled": "Anulowane",
+    "return_requested": "Zgłoszony zwrot",
+    "dispute": "Spór / reklamacja",
     "refunded": "Zwrot",
     "failed": "Nieudane",
     "on-hold": "Wstrzymane",
@@ -1337,7 +1339,10 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
         recipient_name = f"{buyer.get('firstName', '')} {buyer.get('lastName', '')}".strip()
 
     # Items — use cleaned full_name as display name, keep sygnatura as SKU
+    # Also check for returns/disputes (reconciliation)
     items = []
+    has_return = False
+    has_dispute = False
     for li in form.get("lineItems", []):
         offer = li.get("offer") or {}
         ext = offer.get("external") or {}
@@ -1351,6 +1356,13 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
             "price": str(li.get("price", {}).get("amount", "0")),
             "sku": sygnatura or str(offer.get("id", "")),
         })
+        # Check reconciliation for returns/disputes
+        recon = li.get("reconciliation") or {}
+        recon_type = (recon.get("type") or "").upper()
+        if recon_type == "RETURN":
+            has_return = True
+        elif recon_type in ("DISPUTE", "CANCELLATION"):
+            has_dispute = True
 
     # Total
     total_amount = 0.0
@@ -1391,6 +1403,14 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
             status = "shipped"
         elif fulfill_status == "PICKED_UP":
             status = "delivered"
+
+    # Check for return/dispute — override status if buyer filed a return
+    if has_return and status != "cancelled":
+        status = "return_requested"
+        print(f"[allegro-return] order {form.get('id')}: buyer filed a return")
+    elif has_dispute and status != "cancelled":
+        status = "dispute"
+        print(f"[allegro-dispute] order {form.get('id')}: dispute opened")
 
     # Log cancellations for debugging
     if status == "cancelled":
@@ -2721,7 +2741,7 @@ async def export_orders(
     headers = [
         "Data", "Konfiguracja", "Cena brutto szt.", "Wartość brutto",
         "Dostawa", "Razem zamówienie", "Status", "Płatność",
-        "Produkt", "Telefon", "Adres", "NIP", "Komentarz",
+        "Produkt", "Telefon", "Adres", "NIP", "Dane do faktury", "Komentarz",
         "Nr zamówienia", "Źródło", "Konto", "Klient"
     ]
     header_font = Font(name="Arial", bold=True, color="FFFFFF", size=11)
@@ -2830,6 +2850,7 @@ async def export_orders(
             r["customer_phone"] or "",                      # Telefon
             addr_str,                                       # Adres
             r.get("invoice_nip") or "",                     # NIP
+            r.get("invoice_data") or "",                    # Dane do faktury
             comment,                                        # Komentarz
             order_id,                                       # Nr zamówienia
             r["source"] or "",                              # Źródło
@@ -2856,7 +2877,7 @@ async def export_orders(
         current_row += 1
 
     # Column widths
-    col_widths = [18, 16, 18, 14, 12, 14, 22, 20, 55, 16, 35, 16, 30, 14, 14, 14, 20]
+    col_widths = [18, 16, 18, 14, 12, 14, 22, 20, 55, 16, 35, 16, 30, 30, 14, 14, 14, 20]
     for i, w in enumerate(col_widths, 1):
         if i <= len(headers):
             ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
