@@ -906,7 +906,7 @@
                 // Allegro, manual, and WooCommerce (dobraszklarnia) prices are already brutto
                 // PrestaShop (oteko, cieplarnia) prices are netto — multiply by 1.23
                 var srcLower = (o.source || '').toLowerCase();
-                var isBrutto = (srcLower === 'allegro' || srcLower === 'manual' || srcLower === 'dobraszklarnia');
+                var isBrutto = (srcLower === 'allegro' || srcLower === 'manual' || srcLower === 'dobraszklarnia') || it.gross === true; // oteko из WooCommerce (с 12.11.2026) — уже брутто
                 var bruttoPrice = isBrutto ? itemPrice : itemPrice * 1.23;
                 itemsTable += '<tr><td>' + fullName + '</td><td>' + (it.sku || '—') + '</td><td>' + it.qty + '</td><td>' + fmtMoney(bruttoPrice) + ' PLN</td></tr>';
             });
