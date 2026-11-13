@@ -4,7 +4,7 @@ FastAPI + asyncpg + Jinja2 + WooCommerce + PrestaShop + Allegro.
 
 Сайты:
   - dobraszklarnia.pl  (WooCommerce)  — webhook + API sync
-  - oteko.pl           (PrestaShop)   — API pull каждые 15 мин
+  - oteko.pl           (WooCommerce с 12.11.2026, ранее PrestaShop) — webhook + API sync
   - cieplarnia.pl      (PrestaShop)   — API pull каждые 15 мин
   - Allegro (drogatrade) — OAuth2 + API pull каждые 15 мин
 
@@ -50,7 +50,15 @@ WOO_KEY     = os.getenv("WOO_KEY", "")       # Consumer Key
 WOO_SECRET  = os.getenv("WOO_SECRET", "")     # Consumer Secret
 WOO_WEBHOOK_SECRET = os.getenv("WOO_WEBHOOK_SECRET", "")  # Webhook secret для верификации
 
-# PrestaShop — oteko.pl
+# WooCommerce — oteko.pl (с 12.11.2026 сайт переехал с PrestaShop на WooCommerce)
+WOO_OTEKO_URL    = os.getenv("WOO_OTEKO_URL", "https://oteko.pl")
+WOO_OTEKO_KEY    = os.getenv("WOO_OTEKO_KEY", "")
+WOO_OTEKO_SECRET = os.getenv("WOO_OTEKO_SECRET", "")
+WOO_OTEKO_WEBHOOK_SECRET = os.getenv("WOO_OTEKO_WEBHOOK_SECRET", "")
+# Заказы старше этой даты не тянем: до переезда они пришли из PrestaShop (другие номера) — иначе будут дубли
+WOO_OTEKO_SINCE  = os.getenv("WOO_OTEKO_SINCE", "2026-11-12T00:00:00")
+
+# PrestaShop — oteko.pl (старый сайт, работает только если не заданы ключи Woo выше)
 PRESTA_OTEKO_URL = os.getenv("PRESTA_OTEKO_URL", "https://oteko.pl")
 PRESTA_OTEKO_KEY = os.getenv("PRESTA_OTEKO_KEY", "")
 
@@ -338,19 +346,20 @@ app.include_router(auth_router)
 # === ИНТЕГРАЦИИ: WooCommerce (dobraszklarnia.pl) ===
 # ============================================================
 
-def _woo_auth_header():
+def _woo_auth_header(key=None, secret=None):
     """Basic Auth для WooCommerce REST API."""
-    creds = b64encode(f"{WOO_KEY}:{WOO_SECRET}".encode()).decode()
+    creds = b64encode(f"{key or WOO_KEY}:{secret or WOO_SECRET}".encode()).decode()
     return {"Authorization": f"Basic {creds}"}
 
 
-async def _woo_fetch_orders(session: aiohttp.ClientSession, page=1, per_page=50, after=None):
+async def _woo_fetch_orders(session: aiohttp.ClientSession, page=1, per_page=50, after=None,
+                            base_url=None, key=None, secret=None):
     """Получить страницу заказов из WooCommerce API."""
     params = {"page": page, "per_page": per_page, "orderby": "date", "order": "desc"}
     if after:
         params["after"] = after  # ISO 8601 формат
-    url = f"{WOO_URL}/wp-json/wc/v3/orders"
-    async with session.get(url, headers=_woo_auth_header(), params=params, ssl=True) as resp:
+    url = f"{base_url or WOO_URL}/wp-json/wc/v3/orders"
+    async with session.get(url, headers=_woo_auth_header(key, secret), params=params, ssl=True) as resp:
         if resp.status != 200:
             text = await resp.text()
             raise Exception(f"WooCommerce API error {resp.status}: {text[:300]}")
@@ -581,7 +590,7 @@ def _detect_product_type(items: list) -> str:
     return ""
 
 
-def _parse_woo_order(woo: dict) -> dict:
+def _parse_woo_order(woo: dict, unit_price: bool = False) -> dict:
     """Маппинг WooCommerce order → наш формат."""
     billing = woo.get("billing", {})
     items = []
@@ -602,12 +611,23 @@ def _parse_woo_order(woo: dict) -> dict:
                 meta_parts.append(f"{val}")
         if meta_parts:
             product_name = f"{product_name} ({', '.join(meta_parts)})"
-        items.append({
+        qty = item.get("quantity", 1) or 1
+        price = item.get("total", "0")
+        if unit_price:
+            # line_items.total — сумма строки; выгрузка ждёт цену за штуку
+            try:
+                price = str(round((float(item.get("total") or 0) + float(item.get("total_tax") or 0)) / qty, 2))
+            except (TypeError, ValueError, ZeroDivisionError):
+                pass
+        row = {
             "name": product_name,
-            "qty": item.get("quantity", 1),
-            "price": item.get("total", "0"),
+            "qty": qty,
+            "price": price,
             "sku": item.get("sku", ""),
-        })
+        }
+        if unit_price:
+            row["gross"] = True  # цена уже брутто (с НДС)
+        items.append(row)
 
     ext_created = None
     if woo.get("date_created"):
@@ -747,10 +767,20 @@ def _parse_woo_order(woo: dict) -> dict:
 
 async def sync_woocommerce(full=False):
     """Фоновая задача: синк заказов из WooCommerce (dobraszklarnia.pl)."""
-    if not WOO_KEY or not WOO_SECRET:
+    await _sync_woo("dobraszklarnia", WOO_URL, WOO_KEY, WOO_SECRET, full=full)
+
+
+async def sync_woo_oteko(full=False):
+    """Синк заказов oteko.pl из WooCommerce (после переезда с PrestaShop)."""
+    await _sync_woo("oteko", WOO_OTEKO_URL, WOO_OTEKO_KEY, WOO_OTEKO_SECRET, full=full,
+                    since_floor=WOO_OTEKO_SINCE, unit_price=True)
+
+
+async def _sync_woo(source, base_url, key, secret, full=False, since_floor=None, unit_price=False):
+    """Универсальный синк WooCommerce-магазина."""
+    if not key or not secret:
         return
 
-    source = "dobraszklarnia"
     pool = await get_db_pool()
 
     # Определяем с какой даты синкать (последний заказ + запас)
@@ -762,6 +792,8 @@ async def sync_woocommerce(full=False):
             )
         if last:
             after = (last - timedelta(hours=2)).isoformat()
+    if since_floor and (not after or after < since_floor):
+        after = since_floor
 
     log_id = None
     async with pool.acquire() as conn:
@@ -776,13 +808,14 @@ async def sync_woocommerce(full=False):
         async with aiohttp.ClientSession() as session:
             page = 1
             while True:
-                orders = await _woo_fetch_orders(session, page=page, per_page=50, after=after)
+                orders = await _woo_fetch_orders(session, page=page, per_page=50, after=after,
+                                                 base_url=base_url, key=key, secret=secret)
                 if not orders:
                     break
 
                 async with pool.acquire() as conn:
                     for woo_order in orders:
-                        parsed = _parse_woo_order(woo_order)
+                        parsed = _parse_woo_order(woo_order, unit_price=unit_price)
                         result = await _save_order(conn, source, parsed)
                         if result == "new":
                             new_count += 1
@@ -811,10 +844,10 @@ async def sync_woocommerce(full=False):
                 "SELECT COUNT(*) FROM orders WHERE source=$1 AND invoice_nip IS NOT NULL AND invoice_nip != ''",
                 source
             )
-        print(f"[sync-woo] done: +{new_count} new, ~{upd_count} updated, {nip_count} orders have NIP in DB")
+        print(f"[sync-woo:{source}] done: +{new_count} new, ~{upd_count} updated, {nip_count} orders have NIP in DB")
 
     except Exception as e:
-        print(f"[sync-woo] ERROR: {e}")
+        print(f"[sync-woo:{source}] ERROR: {e}")
         traceback.print_exc()
         async with pool.acquire() as conn:
             await conn.execute(
@@ -1178,7 +1211,11 @@ async def _sync_prestashop(source: str, base_url: str, api_key: str, full=False)
 
 
 async def sync_presta_oteko(full=False):
-    await _sync_prestashop("oteko", PRESTA_OTEKO_URL, PRESTA_OTEKO_KEY, full=full)
+    # Имя оставлено для планировщика и /admin/sync: при ключах Woo тянем из WooCommerce
+    if WOO_OTEKO_KEY and WOO_OTEKO_SECRET:
+        await sync_woo_oteko(full=full)
+    else:
+        await _sync_prestashop("oteko", PRESTA_OTEKO_URL, PRESTA_OTEKO_KEY, full=full)
 
 async def sync_presta_ciep(full=False):
     await _sync_prestashop("cieplarnia", PRESTA_CIEP_URL, PRESTA_CIEP_KEY, full=full)
@@ -2780,7 +2817,8 @@ async def export_orders(
         src_lower = (r["source"] or "").lower()
         # Allegro, manual, and WooCommerce (dobraszklarnia) prices are already brutto
         # PrestaShop (oteko, cieplarnia) prices are netto
-        is_brutto_source = src_lower in ("allegro", "manual", "dobraszklarnia")
+        is_brutto_source = src_lower in ("allegro", "manual", "dobraszklarnia") \
+            or any(isinstance(it, dict) and it.get("gross") for it in items)  # oteko из WooCommerce
 
         # Address
         addr_parts = []
@@ -3053,19 +3091,29 @@ async def webhook_call(request: Request):
 
 @app.api_route("/api/webhook/woo", methods=["POST"])
 async def webhook_woo(request: Request):
-    """Webhook от WooCommerce — мгновенный приём нового заказа."""
+    """Webhook от WooCommerce dobraszklarnia.pl — мгновенный приём нового заказа."""
+    return await _handle_woo_webhook(request, "dobraszklarnia", WOO_WEBHOOK_SECRET)
+
+
+@app.api_route("/api/webhook/woo/oteko", methods=["POST"])
+async def webhook_woo_oteko(request: Request):
+    """Webhook от WooCommerce oteko.pl."""
+    return await _handle_woo_webhook(request, "oteko", WOO_OTEKO_WEBHOOK_SECRET, unit_price=True)
+
+
+async def _handle_woo_webhook(request: Request, source: str, secret: str, unit_price: bool = False):
     raw = await request.body()
     if not raw:
         return JSONResponse({"ok": False, "error": "empty body"}, status_code=400)
 
     # Верификация подписи (если задан WOO_WEBHOOK_SECRET)
-    if WOO_WEBHOOK_SECRET:
+    if secret:
         signature = request.headers.get("X-WC-Webhook-Signature", "")
         expected = b64encode(
-            hmac.new(WOO_WEBHOOK_SECRET.encode(), raw, hashlib.sha256).digest()
+            hmac.new(secret.encode(), raw, hashlib.sha256).digest()
         ).decode()
         if not hmac.compare_digest(signature, expected):
-            print("[webhook-woo] invalid signature!")
+            print(f"[webhook-woo:{source}] invalid signature!")
             return JSONResponse({"ok": False, "error": "invalid signature"}, status_code=401)
 
     data = json.loads(raw)
@@ -3074,8 +3122,7 @@ async def webhook_woo(request: Request):
     if not data.get("id"):
         return JSONResponse({"ok": True, "note": "ping acknowledged"})
 
-    source = "dobraszklarnia"
-    parsed = _parse_woo_order(data)
+    parsed = _parse_woo_order(data, unit_price=unit_price)
 
     pool = await get_db_pool()
     async with pool.acquire() as conn:
@@ -3088,7 +3135,7 @@ async def webhook_woo(request: Request):
                 parsed["total"], parsed["external_created"]
             )
 
-    print(f"[webhook-woo] order #{parsed['external_id']} — {result}")
+    print(f"[webhook-woo:{source}] order #{parsed['external_id']} — {result}")
     return JSONResponse({"ok": True, "order_id": parsed["external_id"], "result": result})
 
 
