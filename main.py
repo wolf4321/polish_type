@@ -603,6 +603,30 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[startup] чистка старых заказов Erli не удалась: {e}")
 
+        # Вторая разовая чистка: в первой уцелели заказы, где комментарий
+        # подставил сам синк из записки покупателя. Теперь критерий —
+        # никто из людей заказ не трогал (нет записей в action_log).
+        try:
+            done = await conn.fetchval(
+                "SELECT value FROM app_settings WHERE key='migration:erli_history_cleanup_v2'")
+            if not done and ERLI_SINCE:
+                res = await conn.execute("""
+                    DELETE FROM orders o
+                    WHERE o.source='erli' AND o.external_created < $1
+                      AND COALESCE(o.is_priority, FALSE) = FALSE
+                      AND COALESCE(o.exported, FALSE) = FALSE
+                      AND NOT EXISTS (SELECT 1 FROM action_log a WHERE o.id = ANY(a.order_ids))
+                """, ERLI_SINCE)
+                await conn.execute(
+                    "DELETE FROM customers WHERE source='erli' AND NOT EXISTS ("
+                    "SELECT 1 FROM orders o WHERE o.source='erli' AND o.customer_phone=customers.phone)")
+                await conn.execute(
+                    "INSERT INTO app_settings (key, value, updated_at) VALUES "
+                    "('migration:erli_history_cleanup_v2', $1, NOW()) ON CONFLICT (key) DO NOTHING", res)
+                print("[startup] старые заказы Erli, чистка 2: %s" % res)
+        except Exception as e:
+            print(f"[startup] чистка старых заказов Erli (2) не удалась: {e}")
+
         # Разовая выдача новых прав при переезде со старой версии:
         # всем, кто работает с заказами, — каталог и обучение помощника.
         # Флаг в app_settings, чтобы потом админ мог эти права снять.
