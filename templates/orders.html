@@ -1,201 +1,531 @@
 <!doctype html>
-<html lang="pl">
+<html lang="pl" data-theme="light">
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
     <title>Zamówienia — EKOMAT Dashboard</title>
+
+    <script>
+      (function(){try{var t=localStorage.getItem('ekomat_theme');
+        if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/theme.css">
+
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-               background: #f3f4f6; color: #1f2937; }
+        .container{max-width:1900px;margin:0 auto;padding:22px 26px 40px;}
 
-        .navbar { background: #1a1a2e; color: #fff; padding: 12px 24px;
-                  display: flex; align-items: center; justify-content: space-between; }
-        .navbar h1 { font-size: 16px; font-weight: 600; }
-        .navbar-links { display: flex; gap: 16px; align-items: center; }
-        .navbar a { color: #a5b4fc; font-size: 13px; text-decoration: none; }
-        .navbar a:hover { color: #fff; }
-        .navbar a.active { color: #fff; font-weight: 600; border-bottom: 2px solid #a5b4fc; padding-bottom: 2px; }
-
-        .container { max-width: 1900px; margin: 0 auto; padding: 24px; }
-
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-                 gap: 12px; margin-bottom: 20px; }
-        .stat-card { background: #fff; border-radius: 10px; padding: 16px;
-                     box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-        .stat-card .label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; }
-        .stat-card .value { font-size: 24px; font-weight: 700; color: #1a1a2e; margin-top: 4px; }
-        .stat-card .sub { font-size: 11px; color: #9ca3af; margin-top: 2px; }
-
-        .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;
-                   background: #fff; padding: 12px 16px; border-radius: 10px;
-                   box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-        .toolbar input, .toolbar select {
-            padding: 7px 10px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px; }
-        .toolbar input[type="text"] { width: 200px; }
-        .toolbar button { padding: 7px 16px; border: none; border-radius: 6px; font-size: 13px;
-                          cursor: pointer; font-weight: 500; }
-        .btn-primary { background: #1a1a2e; color: #fff; }
-        .btn-primary:hover { background: #2d2d5e; }
-        .btn-export { background: #059669; color: #fff; }
-        .btn-export:hover { background: #047857; }
-        .btn-sync { background: #f59e0b; color: #fff; }
-        .btn-sync:hover { background: #d97706; }
-        .btn-add { background: #7c3aed; color: #fff; }
-        .btn-add:hover { background: #6d28d9; }
-        .btn-export-sel { background: #2563eb; color: #fff; }
-        .btn-export-sel:hover { background: #1d4ed8; }
-        .btn-sync.spinning { animation: spin 1s linear infinite; }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-
-        .card { background: #fff; border-radius: 10px; padding: 0;
-                box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 16px; overflow: hidden; }
-        .card-header { padding: 16px 20px; border-bottom: 1px solid #f3f4f6;
-                       display: flex; justify-content: space-between; align-items: center; }
-        .card-header h3 { font-size: 15px; font-weight: 600; }
-
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { text-align: left; padding: 10px 8px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
-             font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase;
-             letter-spacing: .3px; position: sticky; top: 0; white-space: nowrap; }
-        td { padding: 10px 8px; border-bottom: 1px solid #f3f4f6; vertical-align: top;
-             overflow: hidden; overflow-wrap: break-word; word-wrap: break-word; }
-        tr:hover td { background: #f9fafb; }
-
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px;
-                 font-weight: 600; text-transform: uppercase; }
-        .badge-dobraszklarnia { background: #dbeafe; color: #1d4ed8; }
-        .badge-oteko { background: #fef3c7; color: #92400e; }
-        .badge-cieplarnia { background: #d1fae5; color: #065f46; }
-        .badge-allegro { background: #fff0e6; color: #cc4800; }
-        .badge-manual { background: #f3e8ff; color: #7c3aed; }
-
-        .status-processing, .status-payment_accepted { color: #2563eb; font-weight: 600; }
-        .status-completed, .status-delivered { color: #059669; font-weight: 600; }
-        .status-cancelled, .status-refunded { color: #dc2626; font-weight: 600; }
-        .status-pending, .status-pending_payment { color: #d97706; font-weight: 600; }
-        .status-shipped { color: #7c3aed; font-weight: 600; }
-        .status-on-hold { color: #6b7280; font-weight: 600; }
-
-        .pagination { display: flex; justify-content: center; gap: 8px; padding: 16px; }
-        .pagination button { padding: 6px 14px; border: 1px solid #e5e7eb; border-radius: 6px;
-                             background: #fff; cursor: pointer; font-size: 13px; }
-        .pagination button:hover { background: #f3f4f6; }
-        .pagination button.active { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
-        .pagination .info { padding: 6px 0; font-size: 13px; color: #6b7280; }
-
-        .empty { text-align: center; padding: 60px 20px; color: #9ca3af; }
-        .empty h4 { font-size: 16px; margin-bottom: 8px; color: #6b7280; }
-
-        .items-list { font-size: 11px; color: #6b7280; }
-        .items-list span { display: block; word-wrap: break-word; overflow-wrap: break-word; }
-
-        .price-breakdown { font-size: 12px; }
-        .price-breakdown .ship { font-size: 10px; color: #6b7280; }
-        .comment-cell { font-size: 13px; color: #dc2626; font-weight: 600;
-                         white-space: pre-wrap; word-break: break-word; }
-        .editable-comment { cursor: pointer; border-bottom: 1px dashed #d1d5db; padding-bottom: 1px; }
-        .editable-comment:hover { background: #fef9c3; }
-        .address-cell { font-size: 11px; color: #4b5563; word-wrap: break-word; overflow-wrap: break-word; }
-        .phone-cell { font-size: 12px; white-space: nowrap; }
-        .config-cell { font-size: 11px; color: #9ca3af; font-style: italic; }
-        .seller-cell { font-size: 11px; color: #6b7280; }
-
-        tr.order-row { cursor: pointer; }
-        tr.order-row:hover td { background: #f0f4ff; }
-        tr.order-row.exported td { background: #ecfdf5; }
-        tr.order-row.exported:hover td { background: #d1fae5; }
-        tr.detail-row { display: none; }
-        tr.detail-row.open { display: table-row; }
-        tr.detail-row td { background: #f9fafb; padding: 0; border-bottom: 2px solid #e5e7eb; }
-        .detail-panel { padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px 24px; }
-        .detail-panel .d-group { }
-        .detail-panel .d-label { font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; }
-        .detail-panel .d-value { font-size: 13px; color: #1f2937; word-break: break-word; }
-        .detail-panel .d-items { grid-column: 1 / -1; }
-        .detail-panel .d-items table { width: 100%; font-size: 12px; margin-top: 6px; }
-        .detail-panel .d-items table th { background: #f3f4f6; font-size: 10px; padding: 6px 10px; }
-        .detail-panel .d-items table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; }
-
-        .sync-status { font-size: 11px; color: #6b7280; }
-        .sync-ok { color: #059669; }
-        .sync-error { color: #dc2626; }
-        .sync-running { color: #f59e0b; }
-
-        /* Modal */
-        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                         background: rgba(0,0,0,.45); z-index: 1000; justify-content: center; align-items: center; }
-        .modal-overlay.open { display: flex; }
-        .modal { background: #fff; border-radius: 12px; padding: 28px 32px; width: 600px; max-width: 95vw;
-                 max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 30px rgba(0,0,0,.15); }
-        .modal h3 { font-size: 18px; margin-bottom: 16px; color: #1a1a2e; }
-        .modal .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
-        .modal .form-group { display: flex; flex-direction: column; }
-        .modal .form-group.full { grid-column: 1 / -1; }
-        .modal label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .3px; margin-bottom: 3px; }
-        .modal input, .modal select, .modal textarea { padding: 8px 10px; border: 1px solid #e5e7eb;
-                 border-radius: 6px; font-size: 13px; font-family: inherit; }
-        .modal textarea { resize: vertical; min-height: 50px; }
-        .modal .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
-        .modal .btn-cancel { background: #f3f4f6; color: #374151; padding: 8px 20px; border: none;
-                 border-radius: 6px; cursor: pointer; font-size: 13px; }
-        .modal .btn-save { background: #7c3aed; color: #fff; padding: 8px 20px; border: none;
-                 border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
-        .modal .btn-save:hover { background: #6d28d9; }
-
-        .star-btn { background: none; border: none; cursor: pointer; font-size: 18px; color: #d1d5db; line-height: 1; padding: 2px; }
-        .star-btn:hover { color: #fbbf24; }
-        .star-btn.active { color: #ff6600; text-shadow: 0 0 6px rgba(255,0,0,.4); }
-        .order-extid { font-size: 10px; color: #9ca3af; margin-top: 2px; }
-
-        /* Column resizer */
-        th { position: relative; }
-        th .col-resize {
-            position: absolute; right: -3px; top: 0; bottom: 0; width: 7px;
-            cursor: col-resize; background: transparent; z-index: 10;
-            transition: background .15s;
+        /* ——— панель фильтров ——— */
+        .toolbar{
+            display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+            background:var(--card-bg);border:1px solid var(--line);
+            padding:12px 14px;border-radius:14px;margin-bottom:14px;
         }
-        th .col-resize::after {
-            content: ''; position: absolute; right: 3px; top: 4px; bottom: 4px;
-            width: 2px; background: #d1d5db; border-radius: 1px; opacity: 0; transition: opacity .15s;
+        .toolbar input,.toolbar select{
+            padding:8px 11px;border:1px solid var(--line);border-radius:9px;
+            font-size:12.5px;font-family:inherit;background:var(--input-bg);color:var(--ink);
+            transition:border-color .15s ease;
         }
-        th:hover .col-resize::after, th .col-resize.active::after { opacity: 1; }
-        th .col-resize.active::after { background: #6366f1; }
+        .toolbar input:focus,.toolbar select:focus{outline:none;border-color:var(--line-strong);}
+        .toolbar button{
+            padding:8px 15px;border:none;border-radius:9px;font-size:12.5px;
+            cursor:pointer;font-weight:600;font-family:inherit;
+            transition:background-color .15s ease,border-color .15s ease;
+        }
 
-        /* Language switcher */
-        .lang-switch { display: inline-flex; gap: 4px; margin-left: 12px; }
-        .lang-switch button { background: none; border: none; cursor: pointer; font-size: 18px;
-            padding: 2px 4px; border-radius: 4px; opacity: .5; transition: opacity .15s, box-shadow .15s; line-height: 1; }
-        .lang-switch button:hover { opacity: .8; }
-        .lang-switch button.active-lang { opacity: 1; box-shadow: 0 2px 0 0 #a5b4fc; }
+        /* ——— поиск ——— */
+        .search-wrap{position:relative;display:flex;align-items:center;flex:1 1 300px;min-width:240px;max-width:460px;}
+        .search-wrap svg{position:absolute;left:12px;width:15px;height:15px;stroke:var(--faint);pointer-events:none;}
+        .toolbar input#f-search{
+            width:100%;padding:10px 64px 10px 35px;border-radius:10px;font-size:13px;
+        }
+        .toolbar input#f-search:focus{border-color:var(--accent);}
+        .search-kbd{
+            position:absolute;right:34px;font-size:10.5px;font-weight:600;color:var(--faint);
+            background:var(--chip);border-radius:5px;padding:2px 6px;pointer-events:none;
+            font-family:'IBM Plex Mono',monospace;
+        }
+        .search-clear{
+            position:absolute;right:8px;display:none;align-items:center;justify-content:center;
+            width:20px;height:20px;border:none;border-radius:50%;cursor:pointer;
+            background:var(--chip);color:var(--muted);font-size:14px;line-height:1;padding:0;
+        }
+        .search-clear:hover{background:var(--line-strong);color:var(--ink);}
+        .search-info{font-size:12px;color:var(--muted);margin-left:2px;white-space:nowrap;}
+        .search-info b{color:var(--ink);font-weight:600;}
 
-        @media (max-width: 768px) {
-            .toolbar { flex-direction: column; }
-            .toolbar input[type="text"] { width: 100%; }
-            table { font-size: 12px; }
-            th, td { padding: 6px 8px; }
+        .btn-primary{background:var(--btn-bg);color:var(--btn-ink);}
+        .btn-primary:hover{background:var(--btn-hover);}
+        .btn-export{background:var(--accent);color:#fff;}
+        .btn-export:hover{filter:brightness(.93);}
+        .btn-sync{background:transparent;color:var(--warn-ink);border:1px solid var(--line)!important;}
+        .btn-sync:hover{background:var(--warn-bg);}
+        .btn-add{background:transparent;color:var(--ink-soft);border:1px solid var(--line)!important;}
+        .btn-add:hover{background:var(--chip);}
+        .btn-export-sel{background:var(--accent);color:#fff;}
+        .btn-export-sel:hover{filter:brightness(.93);}
+        .btn-sync.spinning{animation:spin 1s linear infinite;}
+        @keyframes spin{100%{transform:rotate(360deg);}}
+
+        /* ——— выпадашка магазинов ——— */
+        #f-source-btn{
+            padding:8px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;
+            background:var(--input-bg);color:var(--ink);cursor:pointer;min-width:160px;text-align:left;
+            font-family:inherit;font-weight:500;
+        }
+        #f-source-dropdown{
+            background:var(--card-bg);border:1px solid var(--line);border-radius:11px;
+            box-shadow:0 12px 30px rgba(0,0,0,.16);padding:6px 0;min-width:230px;
+            max-height:440px;overflow-y:auto;
+        }
+        #f-source-dropdown label{
+            display:block;padding:6px 14px;font-size:12.5px;cursor:pointer;color:var(--ink);
+        }
+        #f-source-dropdown label:hover{background:var(--chip);}
+        #f-source-dropdown input[type="checkbox"]{accent-color:var(--accent);margin-right:6px;}
+        .src-indent{padding-left:32px!important;color:var(--muted)!important;}
+
+        /* ——— карточка и таблица ——— */
+        .card{
+            background:var(--card-bg);border:1px solid var(--line);border-radius:14px;
+            padding:0;margin-bottom:14px;overflow:hidden;
+        }
+        .card-header{
+            padding:15px 18px;border-bottom:1px solid var(--line);
+            display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+        }
+        .card-header h3{font-size:14px;font-weight:600;letter-spacing:-.02em;}
+
+        table{width:100%;border-collapse:collapse;font-size:13px;}
+        th{
+            text-align:left;padding:10px 8px;background:var(--card-bg);
+            border-bottom:1px solid var(--line);font-weight:600;color:var(--faint);
+            font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;
+            position:sticky;top:0;white-space:nowrap;z-index:5;
+        }
+        td{
+            padding:10px 8px;border-bottom:1px solid var(--line-soft);vertical-align:top;
+            color:var(--ink);overflow:hidden;overflow-wrap:break-word;word-wrap:break-word;
+        }
+        tr:hover td{background:var(--chip);}
+        input[type="checkbox"]{accent-color:var(--accent);}
+
+        .badge{
+            display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;
+            font-weight:600;text-transform:uppercase;letter-spacing:.02em;
+        }
+        .badge-dobraszklarnia{background:rgba(75,123,245,.14);color:#4b7bf5;}
+        .badge-oteko{background:rgba(232,163,61,.16);color:#c07f18;}
+        .badge-cieplarnia{background:rgba(34,176,98,.14);color:#199553;}
+        .badge-allegro{background:rgba(245,118,61,.15);color:#dd5f1f;}
+        .badge-erli{background:rgba(226,74,138,.15);color:#d1467f;}
+        .badge-manual{background:rgba(155,110,247,.15);color:#8558e8;}
+        /* Тип документа: чек / фактура на фирму / именная фактура */
+        .fv{display:inline-block;padding:1px 6px;border-radius:5px;font-size:10px;
+            font-weight:700;letter-spacing:.02em;white-space:nowrap;vertical-align:middle;}
+        .fv-company{background:rgba(75,123,245,.14);color:#2f5fd0;}
+        .fv-person{background:rgba(217,119,6,.16);color:#b45309;}
+        .fv-receipt{background:var(--bg-soft,rgba(0,0,0,.05));color:var(--faint,#8a8a8a);font-weight:600;}
+        .fv-unknown{background:transparent;color:var(--faint,#8a8a8a);font-weight:600;}
+        html[data-theme="dark"] .fv-company{color:#7ba3ff;}
+        html[data-theme="dark"] .fv-person{color:#f0a63c;}
+        html[data-theme="dark"] .badge-oteko{color:#e8a33d;}
+        html[data-theme="dark"] .badge-cieplarnia{color:#2fc46f;}
+        html[data-theme="dark"] .badge-allegro{color:#f5763d;}
+        html[data-theme="dark"] .badge-erli{color:#ff6fa8;}
+        html[data-theme="dark"] .badge-manual{color:#b18cff;}
+
+        .status-processing,.status-payment_accepted{color:#4b7bf5;font-weight:600;}
+        .status-completed,.status-delivered{color:var(--pos-ink);font-weight:600;}
+        .status-cancelled,.status-refunded{color:var(--danger-ink);font-weight:600;}
+        .status-pending,.status-pending_payment{color:var(--warn-ink);font-weight:600;}
+        .status-shipped{color:#8558e8;font-weight:600;}
+        .status-on-hold{color:var(--muted);font-weight:600;}
+        html[data-theme="dark"] .status-shipped{color:#b18cff;}
+
+        .pagination{display:flex;justify-content:center;align-items:center;gap:7px;padding:16px;flex-wrap:wrap;}
+        .pagination button{
+            padding:7px 13px;border:1px solid var(--line);border-radius:9px;
+            background:var(--card-bg);color:var(--ink-soft);cursor:pointer;font-size:12.5px;
+            font-family:inherit;font-weight:500;transition:background-color .15s ease;
+        }
+        .pagination button:hover{background:var(--chip);}
+        .pagination button.active{background:var(--btn-bg);color:var(--btn-ink);border-color:var(--btn-bg);}
+        .pagination .info{padding:6px 4px;font-size:12.5px;color:var(--muted);}
+        .pagination button[disabled]{opacity:.4;cursor:default;}
+        .pagination button[disabled]:hover{background:var(--card-bg);}
+        .pagination .pag-dots{padding:6px 2px;color:var(--faint);font-size:12.5px;}
+        .pagination .pag-sep{width:1px;height:20px;background:var(--line);margin:0 4px;}
+        .pagination .pag-select,.pagination .pag-jump{
+            padding:6px 8px;border:1px solid var(--line);border-radius:9px;
+            background:var(--card-bg);color:var(--ink-soft);font-size:12.5px;
+            font-family:inherit;
+        }
+        .pagination .pag-jump{width:66px;text-align:center;}
+
+        .empty{text-align:center;padding:56px 20px;color:var(--faint);}
+        .empty h4{font-size:15px;margin-bottom:6px;color:var(--muted);font-weight:500;}
+
+        .items-list{font-size:11.5px;color:var(--muted);}
+        .items-list span{display:block;word-wrap:break-word;overflow-wrap:break-word;}
+        .price-breakdown{font-size:12.5px;font-variant-numeric:tabular-nums;}
+        .price-breakdown .ship{font-size:10.5px;color:var(--muted);}
+        .comment-cell{font-size:12.5px;color:var(--danger-ink);font-weight:600;white-space:pre-wrap;word-break:break-word;}
+        .editable-comment{cursor:pointer;border-bottom:1px dashed var(--line-strong);padding-bottom:1px;}
+        .editable-comment:hover{background:var(--warn-bg);}
+        .address-cell{font-size:11.5px;color:var(--ink-soft);word-wrap:break-word;overflow-wrap:break-word;}
+        .phone-cell{font-size:12.5px;white-space:nowrap;font-variant-numeric:tabular-nums;}
+        .config-cell{font-size:11.5px;color:var(--faint);font-style:italic;}
+        .seller-cell{font-size:11.5px;color:var(--muted);}
+
+        tr.order-row{cursor:pointer;}
+        tr.order-row:hover td{background:var(--chip);}
+        tr.order-row.exported td{background:var(--pos-bg);}
+        tr.order-row.exported:hover td{background:var(--pos-bg);filter:brightness(.97);}
+        tr.detail-row{display:none;}
+        tr.detail-row.open{display:table-row;}
+        tr.detail-row td{background:var(--chip);padding:0 14px 14px;border-bottom:1px solid var(--line);}
+
+        /* Раскрытый заказ — отдельная карточка с рамкой и зелёной полосой
+           слева, чтобы было видно, где он начинается и где кончается.
+           Раньше это был серый фон без границ и всё сливалось с таблицей. */
+        .detail-panel{
+            background:var(--card-bg);
+            border:1px solid var(--line-strong);
+            border-left:3px solid var(--accent);
+            border-radius:10px;
+            padding:4px 18px 16px;
+        }
+
+        /* Блоки «Клиент», «Доставка», «Оплата», «Документы» — в две колонки
+           на широком экране, чтобы карточка не растягивалась на пол-экрана. */
+        .detail-panel .d-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 40px;}
+        .detail-panel .d-sec{padding:12px 0 2px;}
+        .detail-panel .d-sec-title{
+            font-size:10px;font-weight:600;color:var(--accent);
+            text-transform:uppercase;letter-spacing:.09em;
+            margin:0 0 6px;padding-bottom:5px;
+            border-bottom:1px solid var(--line);
+        }
+
+        /* Каждое поле — своя строка во всю ширину: подпись слева, значение
+           справа. Так глаз идёт сверху вниз по одной колонке, а не скачет
+           по сетке из десяти мелких ячеек. */
+        .detail-panel .d-row{
+            display:flex;align-items:baseline;gap:14px;
+            padding:6px 0;border-bottom:1px solid var(--line-soft);
+        }
+        .detail-panel .d-row:last-child{border-bottom:none;}
+        .detail-panel .d-label{
+            flex:0 0 142px;font-size:11px;color:var(--muted);line-height:1.5;
+        }
+        .detail-panel .d-value{
+            flex:1 1 auto;min-width:0;
+            font-size:13px;color:var(--ink);line-height:1.5;word-break:break-word;
+        }
+        .detail-panel .d-value.is-mono{font-family:'IBM Plex Mono',monospace;font-size:12px;}
+        .detail-panel .d-value.is-pre{white-space:pre-line;}
+        .detail-panel .d-note{
+            font-size:13px;color:var(--ink);line-height:1.55;white-space:pre-line;
+            background:var(--warn-bg);border-radius:8px;padding:9px 12px;
+        }
+        .detail-panel .d-items{padding-top:12px;}
+        .detail-panel .d-items table{width:100%;font-size:12px;border-collapse:collapse;}
+        .detail-panel .d-items table th{
+            background:transparent;font-size:10px;color:var(--muted);font-weight:500;
+            text-transform:uppercase;letter-spacing:.06em;
+            padding:5px 10px;position:static;border-bottom:1px solid var(--line);
+        }
+        /* Общее правило tr:hover td{background:var(--chip)} из основной
+           таблицы протекало во вложенную таблицу позиций и красило её
+           строки в серый прямо посреди белой карточки. */
+        .detail-panel .d-items table td,
+        .detail-panel .d-items table tr:hover td{
+            padding:8px 10px;border-bottom:1px solid var(--line-soft);
+            background:transparent;
+        }
+        .detail-panel .d-items table tr:last-child td{border-bottom:none;}
+
+        .sync-status{font-size:11.5px;color:var(--muted);}
+        .sync-ok{color:var(--pos-ink);}
+        .sync-error{color:var(--danger-ink);}
+        .sync-running{color:var(--warn-ink);}
+
+        /* ——— модалка заказа ——— */
+        .modal{max-width:640px;}
+        .modal h3{font-size:17px;margin-bottom:18px;}
+        .modal .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px 16px;}
+        .modal .form-group{display:flex;flex-direction:column;}
+        .modal .form-group.full{grid-column:1/-1;}
+        .modal label{font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
+        .modal input,.modal select,.modal textarea{
+            padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;
+            font-family:inherit;background:var(--input-bg);color:var(--ink);
+        }
+        .modal input:focus,.modal select:focus,.modal textarea:focus{outline:none;border-color:var(--line-strong);}
+        .modal textarea{resize:vertical;min-height:54px;}
+        /* Состав заказа бывает длинным — поле должно показывать его целиком,
+           иначе непонятно, что уже вписано, а что ещё нет. */
+        .modal textarea.ta-config{min-height:120px;line-height:1.5;}
+        .modal textarea.ta-product{min-height:56px;line-height:1.45;}
+        .modal .form-actions{display:flex;gap:9px;justify-content:flex-end;margin-top:20px;}
+        .modal .btn-cancel{
+            background:transparent;color:var(--ink-soft);border:1px solid var(--line);
+            padding:9px 18px;border-radius:9px;cursor:pointer;font-size:12.5px;font-family:inherit;font-weight:600;
+        }
+        .modal .btn-cancel:hover{background:var(--chip);}
+        .modal .btn-save{
+            background:var(--btn-bg);color:var(--btn-ink);padding:9px 18px;border:none;
+            border-radius:9px;cursor:pointer;font-size:12.5px;font-weight:600;font-family:inherit;
+        }
+        .modal .btn-save:hover{background:var(--btn-hover);}
+        .modal{max-width:860px;}
+
+        /* ——— позиции заказа + выбор из каталога ——— */
+        .mi-list{display:flex;flex-direction:column;gap:6px;}
+        .mi-head,.mi-row{display:grid;grid-template-columns:1fr 64px 96px 84px 84px 26px;gap:6px;align-items:center;}
+        .mi-head{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;}
+        .mi-row input{padding:7px 8px !important;font-size:12.5px !important;min-width:0;}
+        .mi-row .mi-name-wrap{display:flex;flex-direction:column;min-width:0;}
+        .mi-row .mi-tag{font-size:10px;color:var(--faint);margin-top:2px;font-family:'IBM Plex Mono',monospace;}
+        .mi-row .mi-line{font-size:12px;text-align:right;color:var(--ink-soft);white-space:nowrap;}
+        .mi-row .mi-del{background:none;border:none;cursor:pointer;color:var(--faint);font-size:16px;}
+        .mi-row .mi-del:hover{color:var(--danger-ink);}
+        .mi-row input.mi-w-missing{border-color:var(--warn-ink);}
+        .mi-actions{display:flex;gap:8px;margin-top:8px;}
+        .mi-btn{background:var(--chip);border:1px solid var(--line);color:var(--ink);padding:7px 12px;border-radius:8px;cursor:pointer;font-size:12.5px;font-weight:600;font-family:inherit;}
+        .mi-btn:hover{border-color:var(--line-strong);}
+        .mi-sum{margin-top:10px;font-size:12.5px;color:var(--ink-soft);display:flex;gap:14px;flex-wrap:wrap;}
+        .mi-sum b{color:var(--ink);}
+        .mi-empty{font-size:12px;color:var(--faint);padding:6px 0;}
+        .picker{border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px;background:var(--card-bg);}
+        .picker input.pk-search{width:100%;margin-bottom:8px;}
+        .pk-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:7px;}
+        .pk-row .pk-label{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;width:70px;flex-shrink:0;}
+        .pk-chip{background:var(--input-bg);border:1px solid var(--line);color:var(--ink);padding:5px 10px;border-radius:7px;cursor:pointer;font-size:12px;font-family:inherit;}
+        .pk-chip:hover{border-color:var(--line-strong);}
+        .pk-chip.on{background:var(--btn-bg);color:var(--btn-ink);border-color:var(--btn-bg);}
+        .pk-results{max-height:220px;overflow:auto;border-top:1px solid var(--line-soft);margin-top:4px;padding-top:6px;}
+        .pk-res{display:flex;justify-content:space-between;gap:10px;padding:6px 8px;border-radius:7px;cursor:pointer;font-size:12.5px;}
+        .pk-res:hover{background:var(--chip);}
+        .pk-res span{color:var(--faint);font-size:11px;white-space:nowrap;}
+        .pk-more{font-size:11px;color:var(--faint);padding:4px 8px;}
+        .w-cell{white-space:nowrap;font-size:12px;}
+        .w-partial{color:var(--warn-ink);}
+        @media (max-width:700px){
+            .mi-head{display:none;}
+            .mi-row{grid-template-columns:1fr 1fr 1fr 26px;}
+            .mi-row .mi-name-wrap{grid-column:1/-1;}
+        }
+
+        .star-btn{background:none;border:none;cursor:pointer;font-size:17px;color:var(--line-strong);line-height:1;padding:2px;}
+        .star-btn:hover{color:var(--warn-ink);}
+        .star-btn.active{color:#ff6600;}
+        .order-extid{font-size:10px;color:var(--faint);margin-top:2px;font-family:'IBM Plex Mono',monospace;}
+
+        /* ——— тянем колонки ——— */
+        th{position:relative;}
+        th .col-resize{position:absolute;right:-3px;top:0;bottom:0;width:7px;cursor:col-resize;background:transparent;z-index:10;}
+        th .col-resize::after{content:'';position:absolute;right:3px;top:4px;bottom:4px;width:2px;background:var(--line-strong);border-radius:1px;opacity:0;transition:opacity .15s;}
+        th:hover .col-resize::after,th .col-resize.active::after{opacity:1;}
+        th .col-resize.active::after{background:var(--accent);}
+
+        /* ——— панель истории экспортов ——— */
+        .alog-head{display:flex;justify-content:space-between;align-items:center;
+            gap:12px;margin-bottom:10px;flex-wrap:wrap;}
+        .alog-head h4{font-size:14px;font-weight:600;color:var(--ink);}
+        .alog-tools{display:flex;align-items:center;gap:8px;}
+        .alog-tools select{font-size:12px;padding:4px 8px;border-radius:6px;
+            border:1px solid var(--line);background:var(--card);color:var(--ink);}
+        .alog-table{width:100%;font-size:12px;border-collapse:collapse;}
+        .alog-table th{background:transparent;position:static;text-align:left;
+            padding:6px 8px;font-size:11px;letter-spacing:.03em;color:var(--muted);
+            text-transform:uppercase;font-weight:600;border-bottom:1px solid var(--line);}
+        .alog-table th.r{text-align:right;}
+        .alog-table td{padding:7px 8px;border-bottom:1px solid var(--line-soft);
+            vertical-align:top;}
+        .alog-table tr.is-undone td{opacity:.55;}
+        .alog-when{white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--muted);}
+        .alog-who{word-break:break-all;}
+        .alog-what{font-weight:600;white-space:nowrap;}
+        .alog-order{font-variant-numeric:tabular-nums;}
+        .alog-from{color:var(--faint);text-decoration:line-through;}
+        .alog-arrow{color:var(--faint);margin:0 5px;}
+        .alog-to{font-weight:600;}
+        .alog-note{display:block;color:var(--muted);max-width:320px;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .alog-muted{color:var(--faint);font-size:11px;}
+        .alog-foot{display:flex;justify-content:space-between;align-items:center;
+            margin-top:10px;gap:12px;}
+        .alog-legacy{margin-top:16px;border-top:1px solid var(--line);padding-top:10px;}
+        .alog-legacy summary{cursor:pointer;font-size:12px;font-weight:600;
+            color:var(--muted);user-select:none;}
+        .alog-legacy p{margin:6px 0 10px;}
+        .alog-danger{display:flex;gap:8px;margin-top:10px;}
+        .alog-red{color:#b91c1c;border-color:rgba(185,28,28,.35);}
+        .alog-undo{background:transparent;border:1px solid var(--line);
+            border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;
+            color:var(--ink);}
+        .alog-undo:hover{background:var(--bg-soft);}
+        #export-history-panel{
+            background:var(--card-bg)!important;border:1px solid var(--line);
+            border-radius:14px!important;padding:14px 16px!important;margin-bottom:14px;
+            box-shadow:none!important;
+        }
+        #export-history-panel h4{color:var(--ink)!important;}
+        #export-history-panel th{background:transparent;position:static;}
+        #export-history-panel td{border-bottom:1px solid var(--line-soft);}
+
+        /* ——— заголовок страницы ——— */
+        .orders-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap;}
+        .orders-head h1{font-size:25px;font-weight:600;letter-spacing:-.03em;margin:0;}
+        .orders-head .sub{font-size:12.5px;color:var(--muted);margin-top:3px;}
+        .view-toggle{display:flex;background:var(--chip);border-radius:9px;padding:2px;}
+        .view-toggle button{
+            border:none;background:transparent;color:var(--muted);cursor:pointer;
+            padding:6px 13px;border-radius:7px;font-size:12px;font-weight:600;font-family:inherit;
+            transition:background-color .15s ease,color .15s ease;
+        }
+        .view-toggle button.is-active{background:var(--seg-active-bg);color:var(--ink);box-shadow:var(--seg-shadow);}
+
+        /* ——— вторая строка фильтров ——— */
+        .toolbar-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%;}
+        .toolbar-more{display:none;border-top:1px solid var(--line-soft);padding-top:11px;margin-top:3px;}
+        .toolbar-more.open{display:flex;}
+        .toolbar-spacer{flex:1 1 auto;}
+        .more-btn{
+            background:transparent!important;color:var(--muted)!important;
+            border:1px solid var(--line)!important;
+        }
+        .more-btn:hover{background:var(--chip)!important;color:var(--ink)!important;}
+        .more-btn.is-active{background:var(--chip)!important;color:var(--ink)!important;}
+
+        /* ——— кнопки действий внутри карточки заказа ——— */
+        .row-actions{display:flex;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line);}
+        .row-actions button{
+            padding:8px 15px;border:1px solid transparent;border-radius:9px;
+            font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;
+            transition:background-color .15s ease,border-color .15s ease,color .15s ease;
+        }
+        .row-act-edit{background:var(--btn-bg);color:var(--btn-ink);}
+        .row-act-edit:hover{background:var(--btn-hover);}
+        .row-act-del{background:transparent;border-color:var(--line);color:var(--danger-ink);}
+        .row-act-del:hover{background:var(--danger-bg);border-color:var(--danger-bg);}
+
+        /* ——— компактная строка заказа ——— */
+        tr.compact td{padding:11px 10px;vertical-align:middle;}
+        .c-date{white-space:nowrap;font-variant-numeric:tabular-nums;}
+        .c-date b{display:block;font-size:12.5px;font-weight:600;color:var(--ink);}
+        .c-date span{display:block;font-size:11px;color:var(--faint);font-family:'IBM Plex Mono',monospace;}
+        .c-client{min-width:240px;}
+        .c-client b{display:block;font-size:13px;font-weight:600;color:var(--ink);}
+        .c-client .c-prod{display:block;font-size:12px;color:var(--muted);margin-top:2px;line-height:1.4;}
+        .c-client .c-note{display:block;font-size:11.5px;color:var(--danger-ink);font-weight:600;margin-top:3px;
+            cursor:pointer;border-bottom:1px dashed var(--line-strong);padding-bottom:1px;}
+        .c-client .c-note:hover{background:var(--warn-bg);}
+        .c-client .c-extra{display:block;font-size:11px;color:var(--faint);margin-top:2px;}
+        .c-client .c-note.is-empty{color:var(--faint);font-weight:400;border-bottom-style:dotted;}
+        tr.compact.is-open{background:var(--chip);}
+        .c-amount{white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums;}
+        .c-amount b{display:block;font-size:13.5px;font-weight:600;color:var(--ink);}
+        .c-amount span{display:block;font-size:11px;color:var(--faint);}
+        .c-pay{font-size:12.5px;color:var(--ink-soft);white-space:nowrap;}
+        .c-src{font-size:12.5px;color:var(--ink-soft);white-space:nowrap;}
+        .c-src i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:1px;}
+        .c-src em{font-style:normal;color:var(--faint);}
+        .c-chev{text-align:center;color:var(--faint);width:30px;user-select:none;}
+        tr.compact.is-open .c-chev{color:var(--ink);transform:none;}
+
+        .pill{
+            display:inline-block;padding:3px 10px;border-radius:7px;
+            font-size:11.5px;font-weight:600;white-space:nowrap;
+        }
+        .pill-blue{background:rgba(75,123,245,.14);color:#3b68d8;}
+        .pill-green{background:var(--pos-bg);color:var(--pos-ink);}
+        .pill-amber{background:var(--warn-bg);color:var(--warn-ink);}
+        .pill-red{background:var(--danger-bg);color:var(--danger-ink);}
+        .pill-violet{background:rgba(155,110,247,.15);color:#8558e8;}
+        .pill-grey{background:var(--chip);color:var(--muted);}
+        html[data-theme="dark"] .pill-blue{color:#7fa0f8;}
+        html[data-theme="dark"] .pill-violet{color:#b18cff;}
+
+        @media (max-width:900px){
+            .container{padding:16px 14px 32px;}
+            .toolbar{flex-direction:column;align-items:stretch;}
+            .search-wrap{max-width:none;}
+            table{font-size:12px;}
+            th,td{padding:7px 6px;}
+            .detail-panel .d-cols{grid-template-columns:1fr;}
+            .detail-panel .d-label{flex-basis:110px;}
+            .modal .form-grid{grid-template-columns:1fr;}
         }
     </style>
 </head>
 <body>
-    <div class="navbar">
-        <h1>EKOMAT Dashboard</h1>
-        <div class="navbar-links">
-            <a href="/">Dashboard</a>
-            <a href="/orders" class="active">Orders</a>
-            {% if user and 'manage_users' in (user.permissions or '').split(',') %}<a href="/admin/users">Users</a>{% endif %}
-            {% if user %}<span style="color:#6b7280;font-size:12px;">{{ user.name }}</span><a href="/logout" data-i18n="logout">Wyloguj</a>{% else %}<a href="/login">Login</a>{% endif %}
-            <span class="lang-switch">
-                <button onclick="setLang('pl')" id="lang-pl" title="Polski">&#127477;&#127473;</button>
-                <button onclick="setLang('ru')" id="lang-ru" title="&#1056;&#1091;&#1089;&#1089;&#1082;&#1080;&#1081;">&#127479;&#127482;</button>
-            </span>
-        </div>
+<nav class="nav">
+    <span class="nav-logo">ekomat<span style="color:var(--accent);">.</span></span>
+    <div class="nav-links">
+        {% if user and 'dashboard' in (user.permissions or '').split(',') %}<a href="/" data-i18n="nav_dash">Pulpit</a>{% endif %}
+        <a href="/orders" class="active" data-i18n="nav_orders">Zamówienia</a>
+        {% if user and 'products' in (user.permissions or '').split(',') %}<a href="/products" data-i18n="nav_products">Katalog</a>{% endif %}
+        {% if user and ('assistant_kb' in (user.permissions or '').split(',') or 'manage_users' in (user.permissions or '').split(',')) %}<a href="/assistant" data-i18n="nav_assistant">Asystent</a>{% endif %}
+        {% if user and 'manage_users' in (user.permissions or '').split(',') %}<a href="/admin/users" data-i18n="nav_users">Użytkownicy</a>{% endif %}
     </div>
+    <div class="nav-right">
+        <a href="/ui/classic?next=/classic/orders" class="ui-switch" data-i18n="old_ui" data-help="Przełącza na stary wygląd panelu. Dane są te same — wszystko, co zrobisz w jednej wersji, od razu widać w drugiej." style="font-size:12px;color:var(--muted);text-decoration:none;border:1px solid var(--line);padding:4px 10px;border-radius:8px;white-space:nowrap;">Stara wersja</a>
+        <div class="seg">
+            <button type="button" data-lang="pl" onclick="setLang('pl')">PL</button>
+            <button type="button" data-lang="ru" onclick="setLang('ru')">RU</button>
+        </div>
+        <button type="button" class="theme-toggle" id="theme-toggle" title="Motyw">&#9790;</button>
+        {% if user %}
+        <div class="nav-sep"></div>
+        <span class="nav-user">{{ user.name }}</span>
+        <a href="/logout" class="logout" data-i18n="logout">Wyloguj</a>
+        {% else %}
+        <a href="/login" class="logout">Login</a>
+        {% endif %}
+    </div>
+</nav>
+
+<script>
+(function(){
+    var KEY='ekomat_theme';
+    function cur(){try{return localStorage.getItem(KEY)||'light';}catch(e){return 'light';}}
+    function paint(t){
+        document.documentElement.setAttribute('data-theme',t);
+        var b=document.getElementById('theme-toggle');
+        if(b)b.textContent=(t==='dark'?'\u2600':'\u263E');
+    }
+    paint(cur());
+    var btn=document.getElementById('theme-toggle');
+    if(btn)btn.addEventListener('click',function(){
+        var next=cur()==='dark'?'light':'dark';
+        try{localStorage.setItem(KEY,next);}catch(e){}
+        paint(next);
+    });
+})();
+</script>
 
     <div class="container">
+
+        <div class="orders-head">
+            <div>
+                <h1 data-i18n="orders_list">Zamówienia</h1>
+                <div class="sub" id="orders-count">&nbsp;</div>
+            </div>
+            <div class="view-toggle">
+                <button type="button" data-view="compact" onclick="setView('compact')" data-i18n="view_compact">Kompaktowo</button>
+                <button type="button" data-view="full" onclick="setView('full')" data-i18n="view_full">Pełna tabela</button>
+            </div>
+        </div>
+
         <!-- Статистика (только для пользователей с правом view_stats) -->
         {% if user and 'view_stats' in (user.permissions or '').split(',') %}
-        <div class="stats" id="stats-row">
+        <div class="stats-grid" id="stats-row">
             <div class="stat-card">
                 <div class="label" data-i18n="stat_all_orders">All orders</div>
                 <div class="value" id="s-total">—</div>
@@ -220,26 +550,38 @@
                 <div class="label">Allegro</div>
                 <div class="value" id="s-allegro">—</div>
             </div>
+            <div class="stat-card">
+                <div class="label">Erli</div>
+                <div class="value" id="s-erli">—</div>
+            </div>
         </div>
         {% endif %}
 
         <!-- Фильтры -->
         <div class="toolbar">
-            <input type="text" id="f-search" data-i18n-placeholder="search_customer" placeholder="Search customer...">
+            <div class="search-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                <input type="text" id="f-search" data-i18n-placeholder="search_customer" placeholder="Szukaj: nazwisko, telefon, nr zamówienia, miasto, produkt…" autocomplete="off">
+                <span class="search-kbd" id="search-kbd">/</span>
+                <button type="button" class="search-clear" id="search-clear" onclick="clearSearch()" title="&times;">&times;</button>
+            </div>
             <div style="position:relative;display:inline-block;" id="f-source-wrap">
-                <button type="button" id="f-source-btn" data-i18n="all_stores" onclick="toggleSourceDropdown()" style="padding:7px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;background:#fff;cursor:pointer;min-width:150px;text-align:left;">All stores &#9662;</button>
-                <div id="f-source-dropdown" style="display:none;position:absolute;top:100%;left:0;z-index:100;background:#fff;border:1px solid #e5e7eb;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.1);padding:6px 0;min-width:220px;max-height:300px;overflow-y:auto;">
-                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="dobraszklarnia"> dobraszklarnia.pl</label>
-                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="oteko"> oteko.pl</label>
-                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="cieplarnia"> cieplarnia.pl</label>
-                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="allegro"> Allegro (все)</label>
-                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:mantrade"> mantrade</label>
-                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:drogatrade"> drogatrade</label>
-                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:mega-agronom"> mega-agronom</label>
-                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:oteko_pl"> oteko_pl</label>
-                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:dobraszklarniapl"> dobraszklarniapl</label>
-                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:cieplarnia_pl"> cieplarnia_pl</label>
-                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="manual"> Ręczne</label>
+                <button type="button" id="f-source-btn" data-i18n="all_stores" onclick="toggleSourceDropdown()">Wszystkie sklepy &#9662;</button>
+                <div id="f-source-dropdown" style="display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:100;">
+                    <label><input type="checkbox" class="source-check" value="dobraszklarnia"> dobraszklarnia.pl</label>
+                    <label><input type="checkbox" class="source-check" value="oteko"> oteko.pl</label>
+                    <label><input type="checkbox" class="source-check" value="cieplarnia"> cieplarnia.pl</label>
+                    <label><input type="checkbox" class="source-check" value="allegro"> Allegro</label>
+                    <label class="src-indent"><input type="checkbox" class="source-check" value="allegro:mantrade"> mantrade</label>
+                    <label class="src-indent"><input type="checkbox" class="source-check" value="allegro:drogatrade"> drogatrade</label>
+                    <label class="src-indent"><input type="checkbox" class="source-check" value="allegro:mega-agronom"> mega-agronom</label>
+                    <label class="src-indent"><input type="checkbox" class="source-check" value="allegro:oteko_pl"> oteko_pl</label>
+                    <label class="src-indent"><input type="checkbox" class="source-check" value="allegro:dobraszklarniapl"> dobraszklarniapl</label>
+                    <label class="src-indent"><input type="checkbox" class="source-check" value="allegro:cieplarnia_pl"> cieplarnia_pl</label>
+                    <label><input type="checkbox" class="source-check" value="erli"> Erli</label>
+                    <label class="src-indent"><input type="checkbox" class="source-check" value="erli:erli_cieplarnia"> erli_cieplarnia</label>
+                    <label class="src-indent"><input type="checkbox" class="source-check" value="erli:erli_oteko"> erli_oteko</label>
+                    <label><input type="checkbox" class="source-check" value="manual"> Ręczne</label>
                 </div>
             </div>
             <select id="f-status">
@@ -255,78 +597,112 @@
                 <option value="awaiting_cod" data-i18n="status_awaiting_cod">Awaiting COD</option>
                 <option value="awaiting_proforma" data-i18n="status_awaiting_proforma">Awaiting proforma</option>
             </select>
-            <select id="f-exported">
-                <option value="" data-i18n="export_all">Eksport: wszystkie</option>
-                <option value="yes" data-i18n="exported_yes">Wyeksportowane</option>
-                <option value="no" data-i18n="exported_no">Niewyeksportowane</option>
-            </select>
-            <select id="f-priority">
-                <option value="" data-i18n="priority_all">Priorytet: wszystkie</option>
-                <option value="yes" data-i18n="priority_important">Ważne ★</option>
-            </select>
-            <select id="f-product-type">
-                <option value="" data-i18n="type_all">Typ: wszystkie</option>
-                <option value="Теплица" data-i18n="type_greenhouse">Теплица</option>
-                <option value="Поликарбонат" data-i18n="type_polycarbonate">Поликарбонат</option>
-                <option value="Теплица + Поликарбонат" data-i18n="type_greenhouse_poly">Теплица + Поликарбонат</option>
-            </select>
             <input type="date" id="f-from">
-            <span style="color:#9ca3af;">—</span>
+            <span style="color:var(--faint);">—</span>
             <input type="date" id="f-to">
-            <button class="btn-primary" onclick="loadOrders(1)" data-i18n="btn_filter">Filter</button>
+            <button class="btn-primary" onclick="loadOrders(1)" data-i18n="btn_filter">Filtruj</button>
+            <button type="button" class="more-btn" id="more-btn" onclick="toggleMoreFilters()" data-i18n="more_filters">Więcej filtrów</button>
+            <span class="toolbar-spacer"></span>
             {% if user and 'export' in (user.permissions or '').split(',') %}
             <button class="btn-export-sel" onclick="exportSelected()" id="btn-export-sel" style="display:none;"><span data-i18n="btn_export_selected">Eksport zaznaczonych</span> (<span id="sel-count">0</span>)</button>
+            <button class="more-btn" onclick="clearSelection()" id="btn-clear-sel" style="display:none;" data-i18n="sel_clear">Wyczyść zaznaczenie</button>
             {% endif %}
             {% if user and 'sync' in (user.permissions or '').split(',') %}
-            <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Sync now" data-i18n="btn_sync">Sync</button>
-            <button class="btn-sync" onclick="fullResync()" id="btn-full-sync" data-i18n="btn_full_sync" title="Pełna resynchronizacja (odświeża NIP, dane)" style="background:#dc2626;">Full Sync</button>
+            <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Sync now" data-i18n="btn_sync">Synchronizuj</button>
             {% endif %}
             {% if user and 'add_orders' in (user.permissions or '').split(',') %}
-            <button class="btn-add" onclick="openAddModal()" title="Dodaj zamówienie" data-i18n="btn_add">+ Dodaj</button>
+            <button class="btn-primary" onclick="openAddModal()" title="Dodaj zamówienie" data-i18n="btn_add">+ Dodaj</button>
             {% endif %}
+
+            <div class="toolbar-row toolbar-more" id="more-filters">
+                <select id="f-exported">
+                    <option value="" data-i18n="export_all">Eksport: wszystkie</option>
+                    <option value="yes" data-i18n="exported_yes">Wyeksportowane</option>
+                    <option value="no" data-i18n="exported_no">Niewyeksportowane</option>
+                </select>
+                <select id="f-priority">
+                    <option value="" data-i18n="priority_all">Priorytet: wszystkie</option>
+                    <option value="yes" data-i18n="priority_important">Ważne ★</option>
+                </select>
+                <select id="f-invoice">
+                    <option value="" data-i18n="fv_all">Dokument: wszystkie</option>
+                    <option value="faktura" data-i18n="fv_any">Faktura (dowolna)</option>
+                    <option value="company" data-i18n="fv_company_f">Faktura na firmę</option>
+                    <option value="person" data-i18n="fv_person_f">Faktura imienna</option>
+                    <option value="receipt" data-i18n="fv_receipt_f">Paragon</option>
+                    <option value="unknown" data-i18n="fv_unknown_f">Brak danych</option>
+                </select>
+                <select id="f-product-type">
+                    <option value="" data-i18n="type_all">Typ: wszystkie</option>
+                    <option value="Теплица" data-i18n="type_greenhouse">Теплица</option>
+                    <option value="Поликарбонат" data-i18n="type_polycarbonate">Поликарбонат</option>
+                    <option value="Теплица + Поликарбонат" data-i18n="type_greenhouse_poly">Теплица + Поликарбонат</option>
+                </select>
+                <span class="toolbar-spacer"></span>
+                {% if user and 'sync' in (user.permissions or '').split(',') %}
+                <button class="btn-sync" onclick="fullResync()" id="btn-full-sync" data-i18n="btn_full_sync" title="Pełna resynchronizacja (odświeża NIP, dane)">Pełna synchronizacja</button>
+                {% endif %}
+            </div>
         </div>
 
         <!-- Export history (admin only) -->
         {% if user and 'manage_users' in (user.permissions or '').split(',') %}
-        <div id="export-history-panel" style="display:none;background:#fff;border-radius:10px;padding:12px 16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                <h4 style="font-size:14px;font-weight:600;color:#1a1a2e;">Historia eksportów</h4>
-                <div>
-                    <button onclick="recoverExported()" style="background:#059669;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;margin-right:8px;">🔄 Восстановить пометки</button>
-                    <button onclick="resetAllExported()" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;margin-right:8px;">Resetuj wszystkie ✓</button>
-                    <button onclick="toggleExportHistory()" style="background:#f3f4f6;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;">Zamknij</button>
+        <div id="export-history-panel" style="display:none;">
+            <div class="alog-head">
+                <h4 data-i18n="alog_title">Dziennik zmian</h4>
+                <div class="alog-tools">
+                    <select id="alog-filter" onchange="loadActionLog(true)">
+                        <option value="" data-i18n="alog_f_all">Wszystkie działania</option>
+                        <option value="export" data-i18n="alog_f_export">Eksport do pliku</option>
+                        <option value="exported" data-i18n="alog_f_exported">Oznaczenie ✓</option>
+                        <option value="priority" data-i18n="alog_f_priority">Priorytet ★</option>
+                        <option value="comment" data-i18n="alog_f_comment">Komentarz</option>
+                    </select>
+                    <button onclick="toggleExportHistory()" class="btn-xs btn-ghost" data-i18n="alog_close">Zamknij</button>
                 </div>
             </div>
 
-            <!-- Bulk export detection — finds mass-exports by timestamp -->
-            <div style="margin-bottom:12px;padding:10px;background:#fef3c7;border-radius:8px;">
-                <div style="font-size:12px;font-weight:600;color:#92400e;margin-bottom:6px;">Masowe eksporty (wg sygnatury czasowej)</div>
-                <div style="font-size:11px;color:#78716c;margin-bottom:6px;">Jeśli widzisz eksport z dużą liczbą zamówień — możesz cofnąć TYLKO ten moment, zachowując ręczne oznaczenia.</div>
-                <table style="width:100%;font-size:12px;"><thead><tr>
-                    <th style="text-align:left;padding:4px 8px;">Czas</th>
-                    <th style="text-align:right;padding:4px 8px;">Zamówień</th>
-                    <th style="text-align:center;padding:4px 8px;">Akcja</th>
-                </tr></thead><tbody id="bulk-export-body"><tr><td colspan="3" style="text-align:center;padding:8px;color:#9ca3af;">Ładowanie...</td></tr></tbody></table>
+            <table class="alog-table">
+                <thead><tr>
+                    <th style="width:140px;" data-i18n="alog_col_when">Kiedy</th>
+                    <th style="width:170px;" data-i18n="alog_col_who">Kto</th>
+                    <th style="width:150px;" data-i18n="alog_col_what">Co</th>
+                    <th data-i18n="alog_col_order">Zamówienie</th>
+                    <th data-i18n="alog_col_change">Zmiana</th>
+                    <th style="width:110px;text-align:center;" data-i18n="alog_col_action">Akcja</th>
+                </tr></thead>
+                <tbody id="alog-body"></tbody>
+            </table>
+
+            <div class="alog-foot">
+                <span id="alog-count" class="alog-muted"></span>
+                <button id="alog-more" class="btn-xs btn-ghost" onclick="loadActionLog(false)"
+                        style="display:none;" data-i18n="alog_more">Pokaż więcej</button>
             </div>
 
-            <h4 style="font-size:13px;font-weight:600;color:#1a1a2e;margin-bottom:6px;">Log eksportów (nowe)</h4>
-            <table style="width:100%;font-size:12px;"><thead><tr>
-                <th style="text-align:left;padding:6px 8px;">Data</th>
-                <th style="text-align:left;padding:6px 8px;">Użytkownik</th>
-                <th style="text-align:right;padding:6px 8px;">Zamówień</th>
-                <th style="text-align:center;padding:6px 8px;">Status</th>
-                <th style="text-align:center;padding:6px 8px;">Akcja</th>
-            </tr></thead><tbody id="export-log-body"></tbody></table>
+            <details class="alog-legacy">
+                <summary data-i18n="alog_legacy">Stare eksporty (sprzed dziennika)</summary>
+                <p class="alog-muted" data-i18n="alog_legacy_hint">Masowe eksporty wykryte po sygnaturze czasowej. Dziennik ich nie zna — zostały zrobione zanim powstał.</p>
+                <table class="alog-table"><thead><tr>
+                    <th data-i18n="alog_col_when">Kiedy</th>
+                    <th class="r" data-i18n="alog_col_count">Zamówień</th>
+                    <th style="text-align:center;" data-i18n="alog_col_action">Akcja</th>
+                </tr></thead><tbody id="bulk-export-body"></tbody></table>
+                <div class="alog-danger">
+                    <button onclick="recoverExported()" class="btn-xs" data-i18n="alog_recover">Przywróć oznaczenia</button>
+                    <button onclick="resetAllExported()" class="btn-xs alog-red" data-i18n="alog_reset">Zresetuj wszystkie ✓</button>
+                </div>
+            </details>
         </div>
         {% endif %}
 
         <!-- Таблица заказов -->
         <div class="card">
             <div class="card-header">
-                <h3 data-i18n="orders_list">Orders list</h3>
-                <div style="display:flex;align-items:center;gap:12px;">
+                <span class="sync-status" id="sel-hint"></span>
+                <div style="display:flex;align-items:center;gap:12px;margin-left:auto;">
                     {% if user and 'manage_users' in (user.permissions or '').split(',') %}
-                    <button onclick="toggleExportHistory()" style="background:none;border:1px solid #e5e7eb;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:#6b7280;">📋 Historia eksportów</button>
+                    <button onclick="toggleExportHistory()" class="btn-xs btn-ghost" data-i18n="alog_btn">Dziennik zmian</button>
                     {% endif %}
                     <span class="sync-status" id="sync-info"></span>
                 </div>
@@ -334,8 +710,20 @@
             <div style="overflow-x: auto;">
                 <table>
                     <thead>
-                        <tr>
-                            <th style="width:30px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
+                        <tr id="head-compact">
+                            <th style="width:30px;"><input type="checkbox" class="select-all" onclick="toggleSelectAll(this)"></th>
+                            <th style="width:30px;" title="Priorytet">★</th>
+                            <th style="width:30px;" title="Wyeksportowano">&#10003;</th>
+                            <th style="width:78px;"><span data-i18n="col_date">Data</span></th>
+                            <th><span data-i18n="col_client_product">Klient / produkt</span></th>
+                            <th class="r" style="width:120px;"><span data-i18n="col_amount">Kwota</span></th>
+                            <th style="width:130px;"><span data-i18n="col_status">Status</span></th>
+                            <th style="width:120px;"><span data-i18n="col_payment">Płatność</span></th>
+                            <th style="width:180px;"><span data-i18n="col_source">Źródło</span></th>
+                            <th style="width:30px;"></th>
+                        </tr>
+                        <tr id="head-full" style="display:none;">
+                            <th style="width:30px;"><input type="checkbox" class="select-all" onclick="toggleSelectAll(this)"></th>
                             <th style="width:30px;" title="Priorytet">★</th>
                             <th style="width:30px;" title="Wyeksportowano">&#10003;</th>
                             <th><span data-i18n="col_date">Data</span><span class="col-resize"></span></th>
@@ -343,6 +731,7 @@
                             <th><span data-i18n="col_config">Konfiguracja</span><span class="col-resize"></span></th>
                             <th><span data-i18n="col_invoice">Faktura</span><span class="col-resize"></span></th>
                             <th><span data-i18n="col_price">Cena + dostawa</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_weight">Waga</span><span class="col-resize"></span></th>
                             <th><span data-i18n="col_product">Produkt</span><span class="col-resize"></span></th>
                             <th><span data-i18n="col_status">Status</span><span class="col-resize"></span></th>
                             <th><span data-i18n="col_payment">Płatność</span><span class="col-resize"></span></th>
@@ -354,7 +743,7 @@
                         </tr>
                     </thead>
                     <tbody id="orders-body">
-                        <tr><td colspan="16" class="empty">
+                        <tr><td colspan="17" class="empty">
                             <h4 data-i18n="loading">Loading...</h4>
                         </td></tr>
                     </tbody>
@@ -381,7 +770,7 @@
             // Filters
             all_stores: 'Wszystkie sklepy \u25BE',
             all_statuses: 'Wszystkie statusy',
-            search_customer: 'Szukaj klienta...',
+            search_customer: 'Szukaj: nazwisko, telefon, nr zamówienia, miasto, produkt\u2026',
             export_all: 'Eksport: wszystkie',
             exported_yes: 'Wyeksportowane',
             exported_no: 'Niewyeksportowane',
@@ -405,6 +794,14 @@
             col_comment: 'Komentarz',
             col_source: 'Źródło',
             col_account: 'Konto',
+            col_client_product: 'Klient / produkt',
+            col_amount: 'Kwota',
+            // View toggle
+            view_compact: 'Kompaktowo',
+            view_full: 'Pełna tabela',
+            more_filters: 'Więcej filtrów',
+            showing: 'Wyświetlono',
+            of_total: 'z',
             // Orders list
             orders_list: 'Lista zamówień',
             // Statuses
@@ -440,6 +837,18 @@
             status_awaiting_proforma: 'Oczekujemy na opłacenie Proformy',
             // Modal
             modal_add_order: 'Dodaj zamówienie ręcznie',
+            modal_items: 'Pozycje',
+            btn_from_catalog: '+ Z katalogu',
+            btn_manual_item: '+ Pozycja ręczna',
+            pk_search_ph: 'Szukaj: nazwa lub kod EAN',
+            mi_name: 'Produkt', mi_qty: 'Ilość', mi_price: 'Cena/szt. brutto', mi_weight: 'Waga/szt. kg', mi_line: 'Suma',
+            mi_empty: 'Brak pozycji — dodaj z katalogu albo ręcznie.',
+            mi_goods: 'Towary', mi_total: 'Razem', mi_weight_total: 'Waga',
+            mi_no_weight: 'bez wagi', mi_items_short: 'poz.',
+            mi_catalog: 'katalog', mi_need_item: 'Dodaj co najmniej jedną pozycję',
+            pk_category: 'Kategoria', pk_all: 'Wszystkie', pk_more: 'jeszcze', pk_none: 'Nic nie znaleziono',
+            pk_dup: 'Ten kod ma kilka produktów — wybierz ręcznie',
+            col_weight: 'Waga', detail_weight: 'Waga/szt.', nav_products: 'Katalog', nav_assistant: 'Asystent',
             modal_edit_order: 'Edytuj zamówienie',
             modal_date: 'Data',
             modal_product_name: 'Nazwa produktu',
@@ -458,6 +867,11 @@
             modal_cancel: 'Anuluj',
             modal_save: 'Zapisz zamówienie',
             // Detail panel
+            detail_sec_client: 'Klient',
+            detail_sec_delivery: 'Dostawa',
+            detail_sec_payment: 'P\u0142atno\u015b\u0107',
+            detail_sec_docs: 'Dokumenty',
+            detail_name: 'Imi\u0119 i nazwisko',
             detail_client: 'Klient',
             detail_email: 'Email',
             detail_phone: 'Telefon',
@@ -467,6 +881,58 @@
             detail_status: 'Status',
             detail_order_id: 'ID zamówienia',
             detail_nip: 'NIP (Faktura)',
+            // --- Журнал действий ---
+            alog_title: 'Dziennik zmian',
+            alog_close: 'Zamknij',
+            alog_btn: 'Dziennik zmian',
+            alog_f_all: 'Wszystkie działania',
+            alog_f_export: 'Eksport do pliku',
+            alog_f_exported: 'Oznaczenie \u2713',
+            alog_f_priority: 'Priorytet \u2605',
+            alog_f_comment: 'Komentarz',
+            alog_col_when: 'Kiedy',
+            alog_col_who: 'Kto',
+            alog_col_what: 'Co',
+            alog_col_order: 'Zam\u00f3wienie',
+            alog_col_change: 'Zmiana',
+            alog_col_action: 'Akcja',
+            alog_col_count: 'Zam\u00f3wie\u0144',
+            alog_a_export: 'Eksport do pliku',
+            alog_a_exported: 'Oznaczenie \u2713',
+            alog_a_priority: 'Priorytet \u2605',
+            alog_a_comment: 'Komentarz',
+            alog_marked: 'oznaczone \u2713',
+            alog_set: 'w\u0142\u0105czone',
+            alog_unset: 'wy\u0142\u0105czone',
+            alog_empty: '(puste)',
+            alog_empty_log: 'Nikt jeszcze nic nie zmieni\u0142',
+            alog_undo: 'Cofnij',
+            alog_done_undone: 'cofni\u0119te',
+            alog_confirm: 'Cofn\u0105\u0107 t\u0119 zmian\u0119? Warto\u015b\u0107 wr\u00f3ci do stanu sprzed niej.',
+            alog_err: 'B\u0142\u0105d',
+            alog_shown: 'Pokazano',
+            alog_more: 'Poka\u017c wi\u0119cej',
+            alog_pcs: 'szt.',
+            alog_small: 'ma\u0142y',
+            alog_none: 'Brak masowych eksport\u00f3w',
+            alog_legacy: 'Stare eksporty (sprzed dziennika)',
+            alog_legacy_hint: 'Masowe eksporty wykryte po sygnaturze czasowej. Dziennik ich nie zna \u2014 zosta\u0142y zrobione zanim powsta\u0142.',
+            alog_recover: 'Przywr\u00f3\u0107 oznaczenia',
+            alog_reset: 'Zresetuj wszystkie \u2713',
+            detail_doc_type: 'Dokument',
+            fv_all: 'Dokument: wszystkie',
+            fv_any: 'Faktura (dowolna)',
+            fv_company_f: 'Faktura na firmę',
+            fv_person_f: 'Faktura imienna',
+            fv_receipt_f: 'Paragon',
+            fv_unknown_f: 'Brak danych',
+            fv_company: 'FV firma',
+            fv_person: 'FV imienna',
+            fv_receipt: 'paragon',
+            fv_company_t: 'Faktura na firmę — jest NIP, dane ciągną się po NIP',
+            fv_person_t: 'Faktura imienna — bez NIP, na imię i nazwisko',
+            fv_receipt_t: 'Paragon — klient nie prosił o fakturę',
+            fv_unknown_t: 'Brak danych o dokumencie — to źródło jeszcze tego nie przekazuje',
             detail_invoice_data: 'Dane do faktury',
             detail_comment: 'Komentarz',
             detail_items: 'Pozycje zamówienia',
@@ -480,6 +946,13 @@
             pag_of: 'z',
             pag_prev: '\u2190 Poprz.',
             pag_next: 'Nast. \u2192',
+            pag_first: '\u00ab Pierwsza',
+            pag_last: 'Ostatnia \u00bb',
+            pag_per_page: 'Na stronie',
+            pag_goto: 'Id\u017a do strony',
+            pag_go: 'OK',
+            sel_selected: 'Zaznaczono',
+            sel_clear: 'Wyczy\u015b\u0107 zaznaczenie',
             // Empty state
             empty_title: 'Brak zamówień',
             empty_sub: 'Sprawdź filtry lub uruchom synchronizację',
@@ -491,6 +964,9 @@
             // Other
             loading: 'Ładowanie...',
             logout: 'Wyloguj',
+            nav_dash: 'Pulpit',
+            nav_orders: 'Zamówienia',
+            nav_users: 'Użytkownicy',
             click_to_edit: 'Kliknij, aby edytować',
             comment_prompt: 'Komentarz:',
             confirm_full_sync: 'Pełna resynchronizacja wszystkich zamówień?\nTo może potrwać kilka minut.\nNIP i inne dane zostaną zaktualizowane.',
@@ -515,7 +991,7 @@
             // Filters
             all_stores: 'Все магазины \u25BE',
             all_statuses: 'Все статусы',
-            search_customer: 'Поиск клиента...',
+            search_customer: 'Поиск: имя, телефон, номер заказа, город, товар\u2026',
             export_all: 'Экспорт: все',
             exported_yes: 'Экспортированные',
             exported_no: 'Неэкспортированные',
@@ -539,6 +1015,14 @@
             col_comment: 'Комментарий',
             col_source: 'Источник',
             col_account: 'Аккаунт',
+            col_client_product: 'Клиент / товар',
+            col_amount: 'Сумма',
+            // View toggle
+            view_compact: 'Компактно',
+            view_full: 'Полная таблица',
+            more_filters: 'Больше фильтров',
+            showing: 'Показано',
+            of_total: 'из',
             // Orders list
             orders_list: 'Список заказов',
             // Statuses
@@ -574,6 +1058,18 @@
             status_awaiting_proforma: 'Ожидание оплаты проформы',
             // Modal
             modal_add_order: 'Добавить заказ вручную',
+            modal_items: 'Позиции',
+            btn_from_catalog: '+ Из каталога',
+            btn_manual_item: '+ Позиция вручную',
+            pk_search_ph: 'Поиск: название или код EAN',
+            mi_name: 'Товар', mi_qty: 'Кол-во', mi_price: 'Цена/шт. брутто', mi_weight: 'Вес/шт. кг', mi_line: 'Сумма',
+            mi_empty: 'Позиций нет — добавьте из каталога или вручную.',
+            mi_goods: 'Товары', mi_total: 'Итого', mi_weight_total: 'Вес',
+            mi_no_weight: 'без веса', mi_items_short: 'поз.',
+            mi_catalog: 'каталог', mi_need_item: 'Добавьте хотя бы одну позицию',
+            pk_category: 'Категория', pk_all: 'Все', pk_more: 'ещё', pk_none: 'Ничего не найдено',
+            pk_dup: 'Этот код у нескольких товаров — выберите вручную',
+            col_weight: 'Вес', detail_weight: 'Вес/шт.', nav_products: 'Каталог', nav_assistant: 'Помощник',
             modal_edit_order: 'Редактировать заказ',
             modal_date: 'Дата',
             modal_product_name: 'Название продукта',
@@ -592,6 +1088,11 @@
             modal_cancel: 'Отмена',
             modal_save: 'Сохранить заказ',
             // Detail panel
+            detail_sec_client: 'Клиент',
+            detail_sec_delivery: 'Доставка',
+            detail_sec_payment: 'Оплата',
+            detail_sec_docs: 'Документы',
+            detail_name: 'Имя',
             detail_client: 'Клиент',
             detail_email: 'Email',
             detail_phone: 'Телефон',
@@ -601,6 +1102,58 @@
             detail_status: 'Статус',
             detail_order_id: 'ID заказа',
             detail_nip: 'NIP (Фактура)',
+            // --- Журнал действий ---
+            alog_title: 'Журнал изменений',
+            alog_close: 'Закрыть',
+            alog_btn: 'Журнал изменений',
+            alog_f_all: 'Все действия',
+            alog_f_export: 'Экспорт в файл',
+            alog_f_exported: 'Галочка \u2713',
+            alog_f_priority: 'Звёздочка \u2605',
+            alog_f_comment: 'Комментарий',
+            alog_col_when: 'Когда',
+            alog_col_who: 'Кто',
+            alog_col_what: 'Что',
+            alog_col_order: 'Заказ',
+            alog_col_change: 'Изменение',
+            alog_col_action: 'Действие',
+            alog_col_count: 'Заказов',
+            alog_a_export: 'Экспорт в файл',
+            alog_a_exported: 'Галочка \u2713',
+            alog_a_priority: 'Звёздочка \u2605',
+            alog_a_comment: 'Комментарий',
+            alog_marked: 'отмечены \u2713',
+            alog_set: 'поставили',
+            alog_unset: 'сняли',
+            alog_empty: '(пусто)',
+            alog_empty_log: 'Пока никто ничего не менял',
+            alog_undo: 'Отменить',
+            alog_done_undone: 'отменено',
+            alog_confirm: 'Отменить это изменение? Значение вернётся к тому, что было до него.',
+            alog_err: 'Ошибка',
+            alog_shown: 'Показано',
+            alog_more: 'Показать ещё',
+            alog_pcs: 'шт.',
+            alog_small: 'мелкий',
+            alog_none: 'Массовых экспортов нет',
+            alog_legacy: 'Старые экспорты (до журнала)',
+            alog_legacy_hint: 'Массовые экспорты, найденные по времени. Журнал про них не знает — их сделали раньше, чем он появился.',
+            alog_recover: 'Восстановить пометки',
+            alog_reset: 'Сбросить все \u2713',
+            detail_doc_type: 'Документ',
+            fv_all: 'Документ: все',
+            fv_any: 'Фактура (любая)',
+            fv_company_f: 'Фактура на фирму',
+            fv_person_f: 'Именная фактура',
+            fv_receipt_f: 'Чек',
+            fv_unknown_f: 'Нет данных',
+            fv_company: 'FV фирма',
+            fv_person: 'FV именная',
+            fv_receipt: 'чек',
+            fv_company_t: 'Фактура на фирму — есть NIP, данные тянутся по нему',
+            fv_person_t: 'Именная фактура — без NIP, на имя и фамилию',
+            fv_receipt_t: 'Чек — фактуру не просили',
+            fv_unknown_t: 'Нет данных о документе — этот источник пока его не отдаёт',
             detail_invoice_data: 'Данные для фактуры',
             detail_comment: 'Комментарий',
             detail_items: 'Позиции заказа',
@@ -614,6 +1167,13 @@
             pag_of: 'из',
             pag_prev: '\u2190 Назад',
             pag_next: 'Далее \u2192',
+            pag_first: '\u00ab Первая',
+            pag_last: 'Последняя \u00bb',
+            pag_per_page: 'На странице',
+            pag_goto: 'Перейти на страницу',
+            pag_go: 'OK',
+            sel_selected: 'Выбрано',
+            sel_clear: 'Снять выделение',
             // Empty state
             empty_title: 'Нет заказов',
             empty_sub: 'Проверьте фильтры или запустите синхронизацию',
@@ -625,6 +1185,9 @@
             // Other
             loading: 'Загрузка...',
             logout: 'Выход',
+            nav_dash: 'Сводка',
+            nav_orders: 'Заказы',
+            nav_users: 'Пользователи',
             click_to_edit: 'Нажмите для редактирования',
             comment_prompt: 'Комментарий:',
             confirm_full_sync: 'Полная синхронизация всех заказов?\nЭто может занять несколько минут.\nNIP и другие данные будут обновлены.',
@@ -663,11 +1226,18 @@
             var val = t(key);
             if (val !== key) el.placeholder = val;
         });
-        // Highlight active language button
-        var plBtn = document.getElementById('lang-pl');
-        var ruBtn = document.getElementById('lang-ru');
-        if (plBtn) plBtn.classList.toggle('active-lang', currentLang === 'pl');
-        if (ruBtn) ruBtn.classList.toggle('active-lang', currentLang === 'ru');
+        // Подсветка активного языка
+        document.querySelectorAll('[data-lang]').forEach(function(b) {
+            b.classList.toggle('is-active', b.getAttribute('data-lang') === currentLang);
+        });
+        document.documentElement.setAttribute('lang', currentLang);
+        if (typeof lastRenderedOrders !== 'undefined' && lastRenderedOrders) {
+            renderOrders(lastRenderedOrders);
+            // Пагинация рисуется из JS, поэтому её надо перерисовать тоже,
+            // иначе кнопки остаются на старом языке.
+            if (typeof renderPagination === 'function') renderPagination();
+            if (typeof updateSelCount === 'function') updateSelCount();
+        }
     }
 
     function getStatus(status) {
@@ -682,7 +1252,17 @@
     var isSuperAdmin = hasPerm('manage_users');
     var currentPage = 1;
     var perPage = 50;
+    try {
+        var _pp = parseInt(localStorage.getItem('ekomat_per_page'), 10);
+        if (_pp === 50 || _pp === 100 || _pp === 200) perPage = _pp;
+    } catch (e) {}
     var totalOrders = 0;
+
+    /* Какие заказы отмечены галочкой. Ключ — id заказа.
+       Раньше отметки жили только в DOM, поэтому при переходе на другую
+       страницу всё слетало и нельзя было выгрузить заказы со страницы 1
+       и со страницы 10 одним файлом. Теперь помним их здесь. */
+    var selectedIds = {};
 
     // Инициализация
     (function() {
@@ -701,6 +1281,10 @@
         return parseFloat(n || 0).toLocaleString('pl-PL');
     }
 
+    function fmtWeight(n) {
+        var v = parseFloat(n || 0);
+        return v.toLocaleString('pl-PL', {minimumFractionDigits: 0, maximumFractionDigits: v < 10 ? 2 : 1});
+    }
     function fmtMoney(n) {
         return parseFloat(n || 0).toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
@@ -758,6 +1342,7 @@
             exported: document.getElementById('f-exported').value,
             priority: document.getElementById('f-priority').value,
             product_type: document.getElementById('f-product-type').value,
+            invoice_type: (document.getElementById('f-invoice') || {}).value || '',
         };
     }
 
@@ -776,6 +1361,7 @@
             document.getElementById('s-oteko').textContent = fmt(o.oteko_count);
             document.getElementById('s-ciep').textContent = fmt(o.ciep_count);
             document.getElementById('s-allegro').textContent = fmt(o.allegro_count);
+            document.getElementById('s-erli').textContent = fmt(o.erli_count);
         });
     }
 
@@ -793,20 +1379,109 @@
         if (f.exported) url += '&exported=' + f.exported;
         if (f.priority) url += '&priority=' + f.priority;
         if (f.product_type) url += '&product_type=' + encodeURIComponent(f.product_type);
+        if (f.invoice_type) url += '&invoice_type=' + encodeURIComponent(f.invoice_type);
 
         fetch(url).then(function(r) { return r.json(); }).then(function(d) {
             totalOrders = d.total;
             renderOrders(d.orders);
             renderPagination();
+            updateSelCount();
         });
 
         loadStats();
     }
 
+    // ===== ВИД ТАБЛИЦЫ: компактный / полный =====
+    var VIEW = 'compact';
+    try { VIEW = localStorage.getItem('ekomat_orders_view') || 'compact'; } catch (e) {}
+    if (VIEW !== 'full' && VIEW !== 'compact') VIEW = 'compact';
+
+    function applyViewUI() {
+        var hc = document.getElementById('head-compact');
+        var hf = document.getElementById('head-full');
+        if (hc) hc.style.display = (VIEW === 'compact') ? '' : 'none';
+        if (hf) hf.style.display = (VIEW === 'full') ? '' : 'none';
+        document.querySelectorAll('[data-view]').forEach(function(b) {
+            b.classList.toggle('is-active', b.getAttribute('data-view') === VIEW);
+        });
+    }
+
+    function setView(v) {
+        VIEW = (v === 'full') ? 'full' : 'compact';
+        try { localStorage.setItem('ekomat_orders_view', VIEW); } catch (e) {}
+        applyViewUI();
+        if (VIEW === 'compact') {
+            if (window.__resetColLayout) window.__resetColLayout();
+        } else {
+            if (window.__restoreColWidths) window.__restoreColWidths();
+        }
+        if (lastRenderedOrders) renderOrders(lastRenderedOrders);
+    }
+
+    function toggleMoreFilters() {
+        var box = document.getElementById('more-filters');
+        var btn = document.getElementById('more-btn');
+        if (!box) return;
+        var open = box.classList.toggle('open');
+        if (btn) btn.classList.toggle('is-active', open);
+    }
+
+    applyViewUI();
+
+    // Цвет точки источника
+    var SRC_COLORS = {
+        dobraszklarnia: '#4b7bf5',
+        oteko: '#e8a33d',
+        cieplarnia: '#22b062',
+        allegro: '#f5763d',
+        erli: '#e24a8a',
+        manual: '#9b6ef7'
+    };
+    function srcColor(src) {
+        return SRC_COLORS[(src || '').toLowerCase()] || 'var(--line-strong)';
+    }
+
+    // Тип документа: что выписывать покупателю.
+    // company — фактура на фирму (есть NIP, данные тянутся по нему)
+    // person  — именная фактура (NIP нет, нужны имя и адрес)
+    // receipt — обычный чек, фактуру не просили
+    // пусто   — источник пока не отдаёт этот признак (сайты)
+    function invoiceBadge(o) {
+        var v = (o.invoice_type || '').toLowerCase();
+        if (v === 'company') return '<span class="fv fv-company" title="' + t('fv_company_t') + '">' + t('fv_company') + '</span>';
+        if (v === 'person')  return '<span class="fv fv-person" title="' + t('fv_person_t') + '">' + t('fv_person') + '</span>';
+        if (v === 'receipt') return '<span class="fv fv-receipt" title="' + t('fv_receipt_t') + '">' + t('fv_receipt') + '</span>';
+        return '<span class="fv fv-unknown" title="' + t('fv_unknown_t') + '">\u2014</span>';
+    }
+
+    // Статус → цвет плашки
+    var PILL_MAP = {
+        processing: 'pill-blue',
+        payment_accepted: 'pill-blue',
+        completed: 'pill-green',
+        delivered: 'pill-green',
+        shipped: 'pill-violet',
+        pending: 'pill-amber',
+        pending_payment: 'pill-amber',
+        awaiting_cod: 'pill-amber',
+        awaiting_proforma: 'pill-amber',
+        'on-hold': 'pill-amber',
+        cancelled: 'pill-red',
+        canceled: 'pill-red',
+        refunded: 'pill-red'
+    };
+    function pillClass(status) {
+        return PILL_MAP[(status || '').toLowerCase()] || 'pill-grey';
+    }
+
+    var lastRenderedOrders = null;
+
     function renderOrders(orders) {
+        lastRenderedOrders = orders;
         var tbody = document.getElementById('orders-body');
+        var COLS = (VIEW === 'compact') ? 10 : 17;
         if (!orders || orders.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="16" class="empty"><h4>' + t('empty_title') + '</h4><p>' + t('empty_sub') + '</p></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="' + COLS + '" class="empty"><h4>' + t('empty_title') + '</h4><p>' + t('empty_sub') + '</p></td></tr>';
             return;
         }
 
@@ -856,6 +1531,13 @@
             }
             priceHtml += '<br><span style="font-size:10px;color:#374151;">= ' + fmtMoney(totalVal) + ' PLN</span></div>';
 
+            // Вес заказа (кг). Если у части позиций вес неизвестен — помечаем.
+            var wVal = (o.weight_kg !== null && o.weight_kg !== undefined && o.weight_kg !== '') ? parseFloat(o.weight_kg) : null;
+            var wMissing = items.filter(function(it){ return !(parseFloat(it.weight) > 0); }).length;
+            var weightHtml = (wVal !== null && !isNaN(wVal))
+                ? '<span class="w-cell' + (wMissing ? ' w-partial' : '') + '" title="' + (wMissing ? (wMissing + ' ' + t('mi_items_short') + ' ' + t('mi_no_weight')) : '') + '">' + fmtWeight(wVal) + ' kg' + (wMissing ? ' +?' : '') + '</span>'
+                : '<span class="w-cell" style="color:var(--faint);">—</span>';
+
             // Address: city + full address
             var addrParts = [];
             if (o.customer_city) addrParts.push(o.customer_city);
@@ -876,15 +1558,69 @@
             var exportedClass = isExported ? ' exported' : '';
 
             var starActive = o.is_priority ? ' active' : '';
+
+            // ===== КОМПАКТНАЯ СТРОКА =====
+            if (VIEW === 'compact') {
+                var dDay = '', dTime = '';
+                var rawDt = o.external_created || o.created_at || '';
+                if (rawDt) {
+                    var cd = new Date(rawDt);
+                    dDay = ('0' + cd.getDate()).slice(-2) + '.' + ('0' + (cd.getMonth() + 1)).slice(-2);
+                    dTime = cd.toLocaleTimeString('pl-PL', {hour: '2-digit', minute: '2-digit'});
+                }
+                var prodLine = items.slice(0, 2).map(function(it) {
+                    return it.qty + 'x ' + shortenProduct(it.full_name || it.name || '', it.sku || '');
+                }).join(', ');
+                if (items.length > 2) prodLine += ' + ' + (items.length - 2) + ' ' + t('more_items');
+                if (!prodLine) prodLine = (o.product_type || '');
+
+                var extra = [];
+                if (o.customer_city) extra.push(o.customer_city);
+                if (o.customer_phone) extra.push(o.customer_phone);
+                // Фактуру видно сразу в списке — иначе бухгалтер узнаёт о ней
+                // только когда покупатель приходит ругаться.
+                var fvC = (o.invoice_type || '').toLowerCase();
+                if (fvC === 'company' || fvC === 'person') extra.push(invoiceBadge(o));
+
+                var noteTxt = (o.customer_comment || o.note || '');
+                noteTxt = ('' + noteTxt).replace(/\s+/g, ' ').trim();
+                if (noteTxt === '\u2014') noteTxt = '';
+
+                var srcHtml = '<i style="background:' + srcColor(o.source) + '"></i>'
+                    + (o.source || '\u2014')
+                    + (o.seller_account ? '<em> \u00b7 ' + o.seller_account + '</em>' : '');
+
+                html += '<tr class="order-row compact' + exportedClass + '" id="row-' + orderId + '">'
+                    + '<td onclick="event.stopPropagation()"><input type="checkbox" class="order-check" data-id="' + orderId + '"' + (selectedIds[orderId] ? ' checked' : '') + ' onchange="toggleSelect(this)"></td>'
+                    + '<td onclick="event.stopPropagation()"><button class="star-btn' + starActive + '" data-id="' + orderId + '" onclick="togglePriority(this)">\u2605</button></td>'
+                    + '<td onclick="event.stopPropagation()"><input type="checkbox" class="exported-check" data-id="' + orderId + '"' + (isExported ? ' checked' : '') + ' onchange="toggleExported(this)"></td>'
+                    + '<td class="c-date" onclick="toggleDetail(\'' + rowId + '\')"><b>' + dDay + '</b><span>' + dTime + '</span></td>'
+                    + '<td class="c-client">'
+                        + '<b onclick="toggleDetail(\'' + rowId + '\')">' + (o.customer_name || '\u2014') + '</b>'
+                        + '<span class="c-prod" onclick="toggleDetail(\'' + rowId + '\')">' + prodLine + '</span>'
+                        + (extra.length ? '<span class="c-extra" onclick="toggleDetail(\'' + rowId + '\')">' + extra.join(' \u00b7 ') + '</span>' : '')
+                        + '<span class="c-note editable-comment' + (noteTxt ? '' : ' is-empty') + '" data-id="' + orderId + '" onclick="event.stopPropagation();editComment(this)" title="' + t('click_to_edit') + '">' + (noteTxt || '\u2014') + '</span>'
+                    + '</td>'
+                    + '<td class="c-amount" onclick="toggleDetail(\'' + rowId + '\')"><b>' + fmtMoney(totalVal) + ' z\u0142</b>'
+                    + (shipCost > 0 ? '<span>+ ' + fmtMoney(shipCost) + ' ' + t('delivery_short') + '</span>' : '')
+                    + (wVal !== null && !isNaN(wVal) ? '<span>' + weightHtml + '</span>' : '') + '</td>'
+                    + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="pill ' + pillClass(o.status) + '">' + statusLabel + '</span></td>'
+                    + '<td class="c-pay" onclick="toggleDetail(\'' + rowId + '\')">' + (o.payment_method || '\u2014') + '</td>'
+                    + '<td class="c-src" onclick="toggleDetail(\'' + rowId + '\')">' + srcHtml + '</td>'
+                    + '<td class="c-chev" onclick="toggleDetail(\'' + rowId + '\')">\u2304</td>'
+                    + '</tr>';
+            } else {
             html += '<tr class="order-row' + exportedClass + '" id="row-' + orderId + '">'
-                + '<td onclick="event.stopPropagation()"><input type="checkbox" class="order-check" data-id="' + orderId + '" onchange="updateSelCount()"></td>'
+                + '<td onclick="event.stopPropagation()"><input type="checkbox" class="order-check" data-id="' + orderId + '"' + (selectedIds[orderId] ? ' checked' : '') + ' onchange="toggleSelect(this)"></td>'
                 + '<td onclick="event.stopPropagation()"><button class="star-btn' + starActive + '" data-id="' + orderId + '" onclick="togglePriority(this)">★</button></td>'
                 + '<td onclick="event.stopPropagation()"><input type="checkbox" class="exported-check" data-id="' + orderId + '"' + (isExported ? ' checked' : '') + ' onchange="toggleExported(this)"></td>'
                 + '<td style="white-space:nowrap;" onclick="toggleDetail(\'' + rowId + '\')">' + dt + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + (o.product_type || '') + '</td>'
                 + '<td class="config-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.configuration || '') + '</td>'
-                + '<td style="font-size:11px;" onclick="toggleDetail(\'' + rowId + '\')">' + (o.invoice_nip || '') + '</td>'
+                + '<td style="font-size:11px;" onclick="toggleDetail(\'' + rowId + '\')">' + invoiceBadge(o)
+                + (o.invoice_nip ? '<div class="order-extid">' + o.invoice_nip + '</div>' : '') + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + priceHtml + '</td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')">' + weightHtml + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + productHtml + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span></td>'
                 + '<td style="font-size:11px;" onclick="toggleDetail(\'' + rowId + '\')">' + (o.payment_method || '—') + '</td>'
@@ -897,9 +1633,10 @@
                 + '</td>'
                 + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.seller_account || '') + '</td>'
                 + '</tr>';
+            }
 
             // --- Detail row (expandable) ---
-            var itemsTable = '<table><thead><tr><th>' + t('detail_product') + '</th><th>' + t('detail_sku') + '</th><th>' + t('detail_qty') + '</th><th>' + t('detail_price_gross') + '</th></tr></thead><tbody>';
+            var itemsTable = '<table><thead><tr><th>' + t('detail_product') + '</th><th>' + t('detail_sku') + '</th><th>' + t('detail_qty') + '</th><th>' + t('detail_price_gross') + '</th><th>' + t('detail_weight') + '</th></tr></thead><tbody>';
             items.forEach(function(it) {
                 var fullName = it.full_name || it.name || '';
                 var itemPrice = parseFloat(it.price) || 0;
@@ -908,7 +1645,11 @@
                 var srcLower = (o.source || '').toLowerCase();
                 var isBrutto = (srcLower === 'allegro' || srcLower === 'manual' || srcLower === 'dobraszklarnia') || it.gross === true; // oteko из WooCommerce (с 12.11.2026) — уже брутто
                 var bruttoPrice = isBrutto ? itemPrice : itemPrice * 1.23;
-                itemsTable += '<tr><td>' + fullName + '</td><td>' + (it.sku || '—') + '</td><td>' + it.qty + '</td><td>' + fmtMoney(bruttoPrice) + ' PLN</td></tr>';
+                var itW = parseFloat(it.weight);
+                itemsTable += '<tr><td>' + fullName
+                    + (it.orig_name && it.orig_name !== fullName ? '<div class="order-extid">' + it.orig_name + '</div>' : '')
+                    + '</td><td>' + (it.code || it.sku || '—') + '</td><td>' + it.qty + '</td><td>' + fmtMoney(bruttoPrice) + ' PLN</td><td>'
+                    + (itW > 0 ? fmtWeight(itW) + ' kg' : '—') + '</td></tr>';
             });
             itemsTable += '</tbody></table>';
 
@@ -919,45 +1660,169 @@
                 var canEdit = isSuperAdmin || (hasPerm('add_orders') && o.created_by_email === userEmail);
                 var canDelete = isSuperAdmin;
                 if (canEdit || canDelete) {
-                    manualActions = '<div class="d-group" style="grid-column:1/-1;margin-top:8px;">';
-                    if (canEdit) manualActions += '<button class="btn-primary" style="margin-right:8px;font-size:12px;padding:4px 12px;" onclick="editManualOrder(' + orderId + ')">' + t('btn_edit') + '</button>';
-                    if (canDelete) manualActions += '<button style="background:#ef4444;color:#fff;border:none;border-radius:4px;font-size:12px;padding:4px 12px;cursor:pointer;" onclick="deleteManualOrder(' + orderId + ')">' + t('btn_delete') + '</button>';
+                    manualActions = '<div class="row-actions">';
+                    if (canEdit) manualActions += '<button type="button" class="row-act-edit" onclick="editManualOrder(' + orderId + ')">' + t('btn_edit') + '</button>';
+                    if (canDelete) manualActions += '<button type="button" class="row-act-del" onclick="deleteManualOrder(' + orderId + ')">' + t('btn_delete') + '</button>';
                     manualActions += '</div>';
                 }
             }
 
-            html += '<tr class="detail-row" id="' + rowId + '"><td colspan="16"><div class="detail-panel">'
-                + '<div class="d-group"><div class="d-label">' + t('detail_client') + '</div><div class="d-value">' + (o.customer_name || '—') + '</div></div>'
-                + '<div class="d-group"><div class="d-label">' + t('detail_email') + '</div><div class="d-value">' + (o.customer_email || '—') + '</div></div>'
-                + '<div class="d-group"><div class="d-label">' + t('detail_phone') + '</div><div class="d-value">' + (o.customer_phone || '—') + '</div></div>'
-                + '<div class="d-group"><div class="d-label">' + t('detail_address') + '</div><div class="d-value">' + addrHtml + '</div></div>'
-                + '<div class="d-group"><div class="d-label">' + t('detail_shipping_method') + '</div><div class="d-value">' + (o.shipping_method || '—') + '</div></div>'
-                + '<div class="d-group"><div class="d-label">' + t('detail_payment') + '</div><div class="d-value">' + (o.payment_method || '—') + '</div></div>'
-                + '<div class="d-group"><div class="d-label">' + t('detail_status') + '</div><div class="d-value"><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span> (' + (o.status || '') + ')</div></div>'
-                + '<div class="d-group"><div class="d-label">' + t('detail_order_id') + '</div><div class="d-value">#' + (o.external_id || o.id) + '</div></div>'
-                + (o.invoice_nip ? '<div class="d-group"><div class="d-label">' + t('detail_nip') + '</div><div class="d-value">' + o.invoice_nip + '</div></div>' : '')
-                + (o.invoice_data ? '<div class="d-group"><div class="d-label">' + t('detail_invoice_data') + '</div><div class="d-value" style="white-space:pre-line;">' + o.invoice_data + '</div></div>' : '')
-                + '<div class="d-group"><div class="d-label">' + t('detail_comment') + '</div><div class="d-value">' + (o.customer_comment || o.note || '—') + '</div></div>'
-                + '<div class="d-items"><div class="d-label">' + t('detail_items') + '</div>' + itemsTable + '</div>'
+            var secClient = dSec(t('detail_sec_client'),
+                  dRow(t('detail_name'), o.customer_name)
+                + dRow(t('detail_phone'), o.customer_phone)
+                + dRow(t('detail_email'), o.customer_email));
+
+            var secDelivery = dSec(t('detail_sec_delivery'),
+                  dRow(t('detail_address'), addrHtml)
+                + dRow(t('detail_shipping_method'), o.shipping_method));
+
+            var secPayment = dSec(t('detail_sec_payment'),
+                  dRow(t('detail_payment'), o.payment_method)
+                + dRow(t('detail_status'),
+                       '<span class="status-' + (o.status || '').replace(/ /g, '-') + '">'
+                       + statusLabel + '</span>'));
+
+            var secDocs = dSec(t('detail_sec_docs'),
+                  dRow(t('detail_order_id'), '#' + (o.external_id || o.id), 'is-mono')
+                + dRow(t('detail_doc_type'), ((o.invoice_type || '').toLowerCase() === 'company' ? t('fv_company_t')
+                    : (o.invoice_type || '').toLowerCase() === 'person' ? t('fv_person_t')
+                    : (o.invoice_type || '').toLowerCase() === 'receipt' ? t('fv_receipt_t') : t('fv_unknown_t')))
+                + dRow(t('detail_nip'), o.invoice_nip, 'is-mono')
+                + dRow(t('detail_invoice_data'), o.invoice_data, 'is-pre'));
+
+            var noteTxtFull = (o.customer_comment || o.note || '').trim();
+            var secNote = noteTxtFull
+                ? dSec(t('detail_comment'), '<div class="d-note">' + noteTxtFull + '</div>')
+                : '';
+
+            html += '<tr class="detail-row" id="' + rowId + '"><td colspan="' + COLS + '">'
+                + '<div class="detail-panel">'
+                + '<div class="d-cols">' + secClient + secDelivery + secPayment + secDocs + '</div>'
+                + secNote
+                + dSec(t('detail_items'), itemsTable, 'd-items')
                 + manualActions
                 + '</div></td></tr>';
         });
         tbody.innerHTML = html;
     }
 
+    /* Строка карточки: подпись + значение. Пустые поля вообще не рисуем —
+       десяток прочерков подряд только зашумляет экран. */
+    function dRow(label, value, cls) {
+        if (value === undefined || value === null) return '';
+        var v = String(value).trim();
+        if (!v || v === '\u2014') return '';
+        return '<div class="d-row"><span class="d-label">' + label + '</span>'
+             + '<span class="d-value' + (cls ? ' ' + cls : '') + '">' + v + '</span></div>';
+    }
+
+    /* Блок целиком пропадает, если в нём не осталось ни одной строки. */
+    function dSec(title, rows, cls) {
+        if (!rows) return '';
+        return '<section class="d-sec' + (cls ? ' ' + cls : '') + '">'
+             + '<h4 class="d-sec-title">' + title + '</h4>' + rows + '</section>';
+    }
+
     function toggleDetail(id) {
         var row = document.getElementById(id);
-        if (row) row.classList.toggle('open');
+        if (!row) return;
+        var open = row.classList.toggle('open');
+        var prev = row.previousElementSibling;
+        if (prev) prev.classList.toggle('is-open', open);
+    }
+
+    function setPerPage(v) {
+        var n = parseInt(v, 10);
+        if (n !== 50 && n !== 100 && n !== 200) n = 50;
+        perPage = n;
+        try { localStorage.setItem('ekomat_per_page', String(n)); } catch (e) {}
+        loadOrders(1);
+    }
+
+    function gotoPage(v) {
+        var totalPages = Math.max(1, Math.ceil(totalOrders / perPage));
+        var n = parseInt(v, 10);
+        if (isNaN(n)) return;
+        if (n < 1) n = 1;
+        if (n > totalPages) n = totalPages;
+        loadOrders(n);
+    }
+
+    function gotoPageKey(e, input) {
+        if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); gotoPage(input.value); }
+    }
+
+    /* Номера страниц: первая, последняя, соседи текущей, многоточия между.
+       Раньше были только «назад» и «далее», и чтобы попасть на 12-ю
+       страницу, надо было нажать «далее» одиннадцать раз. */
+    function pageNumbers(current, total) {
+        var out = [];
+        var add = function(x) { if (out[out.length - 1] !== x) out.push(x); };
+        var i;
+        if (total <= 9) {
+            for (i = 1; i <= total; i++) add(i);
+            return out;
+        }
+        add(1);
+        if (current > 4) add('...');
+        for (i = current - 2; i <= current + 2; i++) {
+            if (i > 1 && i < total) add(i);
+        }
+        if (current < total - 3) add('...');
+        add(total);
+        return out;
+    }
+
+    function perPageSelect() {
+        var html = '<span class="info">' + t('pag_per_page') + ':</span>'
+                 + '<select class="pag-select" onchange="setPerPage(this.value)">';
+        [50, 100, 200].forEach(function(n) {
+            html += '<option value="' + n + '"' + (n === perPage ? ' selected' : '') + '>' + n + '</option>';
+        });
+        return html + '</select>';
     }
 
     function renderPagination() {
-        var totalPages = Math.ceil(totalOrders / perPage);
+        var totalPages = Math.max(1, Math.ceil(totalOrders / perPage));
         var el = document.getElementById('pagination');
-        if (totalPages <= 1) { el.innerHTML = '<span class="info">' + t('pag_total') + ': ' + totalOrders + '</span>'; return; }
+        var oc = document.getElementById('orders-count');
+        if (oc) {
+            var shown = (lastRenderedOrders && lastRenderedOrders.length) || 0;
+            oc.textContent = t('showing') + ' ' + shown + ' ' + t('of_total') + ' ' + fmt(totalOrders);
+        }
+        if (!el) return;
 
-        var html = '<span class="info">' + t('pag_total') + ': ' + fmt(totalOrders) + ' | ' + t('pag_page') + ' ' + currentPage + ' ' + t('pag_of') + ' ' + totalPages + '</span>';
-        if (currentPage > 1) html += '<button onclick="loadOrders(' + (currentPage-1) + ')">' + t('pag_prev') + '</button>';
-        if (currentPage < totalPages) html += '<button onclick="loadOrders(' + (currentPage+1) + ')">' + t('pag_next') + '</button>';
+        var html = '<span class="info">' + t('pag_total') + ': ' + fmt(totalOrders) + '</span>';
+        html += perPageSelect();
+
+        if (totalPages > 1) {
+            html += '<span class="pag-sep"></span>';
+            html += '<button' + (currentPage <= 1 ? ' disabled' : '')
+                  + ' onclick="loadOrders(1)">' + t('pag_first') + '</button>';
+            html += '<button' + (currentPage <= 1 ? ' disabled' : '')
+                  + ' onclick="loadOrders(' + (currentPage - 1) + ')">' + t('pag_prev') + '</button>';
+
+            pageNumbers(currentPage, totalPages).forEach(function(x) {
+                if (x === '...') {
+                    html += '<span class="pag-dots">\u2026</span>';
+                } else {
+                    html += '<button class="' + (x === currentPage ? 'active' : '')
+                          + '" onclick="loadOrders(' + x + ')">' + x + '</button>';
+                }
+            });
+
+            html += '<button' + (currentPage >= totalPages ? ' disabled' : '')
+                  + ' onclick="loadOrders(' + (currentPage + 1) + ')">' + t('pag_next') + '</button>';
+            html += '<button' + (currentPage >= totalPages ? ' disabled' : '')
+                  + ' onclick="loadOrders(' + totalPages + ')">' + t('pag_last') + '</button>';
+
+            html += '<span class="pag-sep"></span>';
+            html += '<span class="info">' + t('pag_goto') + ':</span>'
+                  + '<input type="number" class="pag-jump" min="1" max="' + totalPages + '"'
+                  + ' value="' + currentPage + '" onkeydown="gotoPageKey(event, this)">'
+                  + '<button onclick="gotoPage(this.previousElementSibling.value)">' + t('pag_go') + '</button>';
+        }
+
         el.innerHTML = html;
     }
 
@@ -978,7 +1843,7 @@
         var btn = document.getElementById('btn-sync');
         btn.textContent = t('syncing');
         btn.disabled = true;
-        fetch('/admin/sync').then(function(r) { return r.json(); }).then(function(d) {
+        fetch('/admin/sync', { method: 'POST' }).then(function(r) { return r.json(); }).then(function(d) {
             btn.textContent = t('btn_sync');
             btn.disabled = false;
             // Перезагружаем через 5 сек (время на синк)
@@ -991,10 +1856,10 @@
         var btn = document.getElementById('btn-full-sync');
         btn.textContent = t('syncing');
         btn.disabled = true;
-        var sources = ['dobraszklarnia', 'oteko', 'cieplarnia', 'allegro'];
+        var sources = ['dobraszklarnia', 'oteko', 'cieplarnia', 'allegro', 'erli'];
         var done = 0;
         sources.forEach(function(src) {
-            fetch('/admin/sync?source=' + src + '&full=true').then(function(r) { return r.json(); }).then(function() {
+            fetch('/admin/sync?source=' + src + '&full=true', { method: 'POST' }).then(function(r) { return r.json(); }).then(function() {
                 done++;
                 btn.textContent = t('btn_full_sync') + ' (' + done + '/' + sources.length + ')';
                 if (done === sources.length) {
@@ -1026,24 +1891,62 @@
     }
 
     // --- Selection logic ---
+    /* Отметки хранятся в selectedIds, а не в таблице, поэтому переход на
+       другую страницу их не сбрасывает и можно выгрузить заказы сразу
+       с нескольких страниц. */
+    function selectedList() {
+        return Object.keys(selectedIds).filter(function(k) { return selectedIds[k]; });
+    }
+
     function updateSelCount() {
-        var checks = document.querySelectorAll('.order-check:checked');
-        var cnt = checks.length;
+        var cnt = selectedList().length;
         var btn = document.getElementById('btn-export-sel');
-        document.getElementById('sel-count').textContent = cnt;
-        btn.style.display = cnt > 0 ? 'inline-block' : 'none';
+        var clr = document.getElementById('btn-clear-sel');
+        var lbl = document.getElementById('sel-count');
+        if (lbl) lbl.textContent = cnt;
+        if (btn) btn.style.display = cnt > 0 ? 'inline-block' : 'none';
+        if (clr) clr.style.display = cnt > 0 ? 'inline-block' : 'none';
+        var hint = document.getElementById('sel-hint');
+        if (hint) hint.textContent = cnt > 0 ? (t('sel_selected') + ': ' + cnt) : '';
+        syncMasterCheckbox();
+    }
+
+    /* Галочка в шапке отражает только то, что видно на текущей странице. */
+    function syncMasterCheckbox() {
+        var checks = document.querySelectorAll('.order-check');
+        var total = checks.length;
+        var on = document.querySelectorAll('.order-check:checked').length;
+        document.querySelectorAll('.select-all').forEach(function(cb) {
+            cb.checked = total > 0 && on === total;
+            cb.indeterminate = on > 0 && on < total;
+        });
+    }
+
+    function toggleSelect(cb) {
+        var id = cb.getAttribute('data-id');
+        if (cb.checked) selectedIds[id] = true;
+        else delete selectedIds[id];
+        updateSelCount();
     }
 
     function toggleSelectAll(master) {
-        var checks = document.querySelectorAll('.order-check');
-        checks.forEach(function(cb) { cb.checked = master.checked; });
+        document.querySelectorAll('.order-check').forEach(function(cb) {
+            cb.checked = master.checked;
+            var id = cb.getAttribute('data-id');
+            if (master.checked) selectedIds[id] = true;
+            else delete selectedIds[id];
+        });
+        updateSelCount();
+    }
+
+    function clearSelection() {
+        selectedIds = {};
+        document.querySelectorAll('.order-check').forEach(function(cb) { cb.checked = false; });
         updateSelCount();
     }
 
     function exportSelected() {
-        var checks = document.querySelectorAll('.order-check:checked');
-        var ids = [];
-        checks.forEach(function(cb) { ids.push(cb.getAttribute('data-id')); });
+        var ids = selectedList();
         if (ids.length === 0) return;
         // Download XLSX — backend auto-marks as exported
         window.location.href = '/api/orders/export?ids=' + ids.join(',');
@@ -1096,10 +1999,55 @@
         });
     }
 
-    // Enter в поиске
-    document.getElementById('f-search').addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') loadOrders(1);
-    });
+    // ===== ПОИСК =====
+    function runSearch() {
+        loadOrders(1);
+        if (document.getElementById('stats-row')) loadStats();
+    }
+
+    function clearSearch() {
+        var si = document.getElementById('f-search');
+        if (!si.value) { si.focus(); return; }
+        si.value = '';
+        updateSearchUI();
+        runSearch();
+    }
+
+    function updateSearchUI() {
+        var si = document.getElementById('f-search');
+        var has = si.value.trim().length > 0;
+        document.getElementById('search-clear').style.display = has ? 'flex' : 'none';
+        document.getElementById('search-kbd').style.display = has ? 'none' : 'block';
+    }
+
+    (function initSearch() {
+        var si = document.getElementById('f-search');
+        var timer = null;
+        si.addEventListener('input', function() {
+            updateSearchUI();
+            clearTimeout(timer);
+            timer = setTimeout(runSearch, 450);
+        });
+        si.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { clearTimeout(timer); runSearch(); }
+            if (e.key === 'Escape') { clearTimeout(timer); clearSearch(); }
+        });
+        document.addEventListener('keydown', function(e) {
+            var tag = (document.activeElement && document.activeElement.tagName) || '';
+            var typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+                e.preventDefault(); si.focus(); si.select();
+            } else if (e.key === '/' && !typing) {
+                e.preventDefault(); si.focus();
+            }
+        });
+        // /orders?q=... — переход из помощника: сразу ищем этот заказ
+        try {
+            var qp = new URLSearchParams(location.search).get('q');
+            if (qp) { si.value = qp; setTimeout(runSearch, 300); }
+        } catch (e) {}
+        updateSearchUI();
+    })();
 
     // --- Add/Edit order modal ---
     var editingOrderId = null;
@@ -1114,11 +2062,11 @@
             + ':' + String(now.getMinutes()).padStart(2,'0');
         document.getElementById('m-date').value = dtStr;
         document.getElementById('m-source').value = 'manual';
-        document.getElementById('m-product').value = '';
         document.getElementById('m-type').value = '';
         document.getElementById('m-config').value = '';
-        document.getElementById('m-price').value = '';
         document.getElementById('m-shipping').value = '0';
+        setItems([]);
+        closePicker();
         document.getElementById('m-status').value = 'awaiting_cod';
         document.getElementById('m-payment').value = '';
         document.getElementById('m-name').value = '';
@@ -1129,19 +2077,221 @@
         document.getElementById('m-comment').value = '';
         document.getElementById('m-seller').value = '';
     }
+
+    // ===== Позиции заказа + выбор из каталога =====
+    var CATALOG = null, ATTR_ORDER = [], pkState = {cat: '', sel: {}};
+
+    function escH(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+    function num(v) { var f = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isNaN(f) ? 0 : f; }
+
+    function setItems(list) {
+        document.getElementById('m-items').innerHTML = '';
+        (list || []).forEach(function(it) { addItemRow(it, false); });
+        updateItemsSum();
+    }
+
+    function addItemRow(it, focus) {
+        it = it || {};
+        var box = document.getElementById('m-items');
+        if (!box.querySelector('.mi-head')) {
+            box.innerHTML = '<div class="mi-head"><span>' + t('mi_name') + '</span><span>' + t('mi_qty') + '</span><span>'
+                + t('mi_price') + '</span><span>' + t('mi_weight') + '</span><span style="text-align:right">' + t('mi_line') + '</span><span></span></div>';
+        }
+        var fromCat = !!it.product_id;
+        var row = document.createElement('div');
+        row.className = 'mi-row';
+        row.dataset.pid = it.product_id || '';
+        row.dataset.code = it.code || '';
+        row.innerHTML =
+            '<div class="mi-name-wrap"><input type="text" class="mi-name" value="' + escH(it.name || '') + '"' + (fromCat ? ' readonly' : '') + ' placeholder="' + escH(t('mi_name')) + '">'
+            + (fromCat ? '<span class="mi-tag">' + t('mi_catalog') + (it.code ? ' · ' + escH(it.code) : '') + '</span>' : '') + '</div>'
+            + '<input type="number" class="mi-qty" min="0" step="1" value="' + escH(it.qty || 1) + '">'
+            + '<input type="number" class="mi-price" min="0" step="0.01" value="' + escH(it.price === undefined || it.price === null ? '' : it.price) + '" placeholder="0.00">'
+            + '<input type="number" class="mi-w" min="0" step="0.001" value="' + escH(it.weight || '') + '" placeholder="—">'
+            + '<span class="mi-line"></span>'
+            + '<button type="button" class="mi-del" title="×">×</button>';
+        row.querySelectorAll('input').forEach(function(inp) { inp.addEventListener('input', updateItemsSum); });
+        row.querySelector('.mi-del').addEventListener('click', function() { row.remove(); updateItemsSum(); });
+        box.appendChild(row);
+        updateItemsSum();
+        if (focus) {
+            var f = fromCat ? row.querySelector('.mi-price') : row.querySelector('.mi-name');
+            if (f) f.focus();
+        }
+        return row;
+    }
+
+    function readItems() {
+        var out = [];
+        document.querySelectorAll('#m-items .mi-row').forEach(function(r) {
+            var name = r.querySelector('.mi-name').value.trim();
+            var pr = num(r.querySelector('.mi-price').value);
+            // Старые ручные заказы бывают без названия, но с ценой — их не теряем
+            if (!name && !(pr > 0)) return;
+            out.push({
+                product_id: r.dataset.pid ? parseInt(r.dataset.pid, 10) : null,
+                code: r.dataset.code || '',
+                name: name,
+                qty: num(r.querySelector('.mi-qty').value) || 1,
+                price: num(r.querySelector('.mi-price').value),
+                weight: r.querySelector('.mi-w').value === '' ? null : num(r.querySelector('.mi-w').value)
+            });
+        });
+        return out;
+    }
+
+    function updateItemsSum() {
+        var goods = 0, w = 0, noW = 0, n = 0;
+        document.querySelectorAll('#m-items .mi-row').forEach(function(r) {
+            var q = num(r.querySelector('.mi-qty').value) || 1;
+            var p = num(r.querySelector('.mi-price').value);
+            var wi = r.querySelector('.mi-w');
+            var ww = num(wi.value);
+            goods += p * q; n++;
+            if (ww > 0) w += ww * q; else noW++;
+            wi.classList.toggle('mi-w-missing', !(ww > 0) && !!r.dataset.pid);
+            r.querySelector('.mi-line').textContent = fmtMoney(p * q);
+        });
+        var box = document.getElementById('m-items');
+        if (!n) box.innerHTML = '<div class="mi-empty">' + t('mi_empty') + '</div>';
+        var ship = num(document.getElementById('m-shipping').value);
+        document.getElementById('m-sum').innerHTML = n ? (
+            '<span>' + t('mi_goods') + ': <b>' + fmtMoney(goods) + '</b></span>'
+            + '<span>' + t('mi_total') + ': <b>' + fmtMoney(goods + ship) + ' PLN</b></span>'
+            + '<span>' + t('mi_weight_total') + ': <b>' + fmtWeight(w) + ' kg</b>'
+            + (noW ? ' <span class="w-partial">(' + noW + ' ' + t('mi_items_short') + ' ' + t('mi_no_weight') + ')</span>' : '') + '</span>'
+        ) : '';
+    }
+
+    function closePicker() { var p = document.getElementById('m-picker'); if (p) p.style.display = 'none'; }
+    function togglePicker() {
+        var p = document.getElementById('m-picker');
+        if (p.style.display !== 'none') { closePicker(); return; }
+        p.style.display = '';
+        if (CATALOG) { renderPicker(); document.getElementById('pk-search').focus(); return; }
+        document.getElementById('pk-body').innerHTML = '<div class="pk-more">…</div>';
+        fetch('/api/products').then(function(r){ return r.json(); }).then(function(d) {
+            CATALOG = (d.products || []);
+            ATTR_ORDER = d.attr_order || [];
+            CATALOG.forEach(function(pr) {
+                pr._hay = (pr.name + ' ' + (pr.codes || []).map(function(c){ return c.code; }).join(' ')).toLowerCase();
+            });
+            renderPicker();
+            document.getElementById('pk-search').focus();
+        });
+    }
+
+    function pkKeys(list) {
+        var keys = {};
+        list.forEach(function(p) { Object.keys(p.attrs || {}).forEach(function(k) { keys[k] = 1; }); });
+        return Object.keys(keys).sort(function(a, b) {
+            var ia = ATTR_ORDER.indexOf(a), ib = ATTR_ORDER.indexOf(b);
+            return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+        });
+    }
+    function pkSort(vals) {
+        return vals.sort(function(a, b) {
+            var na = parseFloat(String(a).replace(',', '.')), nb = parseFloat(String(b).replace(',', '.'));
+            if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+            return String(a).localeCompare(String(b), 'pl', {numeric: true});
+        });
+    }
+    function pkSearch() {
+        // Новый поиск — сбрасываем выбранные параметры; по коду ищем во всём каталоге
+        pkState.sel = {};
+        var q = (document.getElementById('pk-search').value || '').trim();
+        if (/^\d{8,14}$/.test(q)) pkState.cat = '';
+        renderPicker();
+    }
+    function pkCat(c) { pkState.cat = (pkState.cat === c ? '' : c); pkState.sel = {}; renderPicker(); }
+    function pkSel(k, v) {
+        if (pkState.sel[k] === v) delete pkState.sel[k]; else pkState.sel[k] = v;
+        // параметры правее выбранного сбрасываем — набор вариантов зависит от предыдущих
+        var keys = pkKeys(CATALOG.filter(function(p){ return p.category === pkState.cat; }));
+        var idx = keys.indexOf(k);
+        keys.slice(idx + 1).forEach(function(kk) { delete pkState.sel[kk]; });
+        renderPicker();
+    }
+
+    function renderPicker() {
+        if (!CATALOG) return;
+        var q = (document.getElementById('pk-search').value || '').trim().toLowerCase();
+        var cats = [];
+        CATALOG.forEach(function(p) { if (cats.indexOf(p.category) < 0) cats.push(p.category); });
+        var html = '<div class="pk-row"><span class="pk-label">' + t('pk_category') + '</span>';
+        cats.forEach(function(c) {
+            html += '<button type="button" class="pk-chip' + (pkState.cat === c ? ' on' : '') + '" onclick="pkCat(' + escH(JSON.stringify(c)) + ')">' + escH(c) + '</button>';
+        });
+        html += '</div>';
+
+        var list = CATALOG;
+        if (q) {
+            var words = q.split(/\s+/);
+            list = list.filter(function(p) { return words.every(function(w) { return p._hay.indexOf(w) >= 0; }); });
+        }
+        if (pkState.cat) {
+            list = list.filter(function(p) { return p.category === pkState.cat; });
+            var keys = pkKeys(list);
+            keys.forEach(function(k) {
+                var vals = [];
+                list.forEach(function(p) { var v = (p.attrs || {})[k]; if (v && vals.indexOf(v) < 0) vals.push(v); });
+                if (vals.length < 2 && !pkState.sel[k]) { return; }
+                html += '<div class="pk-row"><span class="pk-label">' + escH(k) + '</span>';
+                pkSort(vals).forEach(function(v) {
+                    var label = (k === 'NANO' && v === '—') ? 'bez NANO' : v;
+                    html += '<button type="button" class="pk-chip' + (pkState.sel[k] === v ? ' on' : '') + '" onclick="pkSel(' + escH(JSON.stringify(k)) + ',' + escH(JSON.stringify(v)) + ')">' + escH(label) + '</button>';
+                });
+                html += '</div>';
+                if (pkState.sel[k]) list = list.filter(function(p) { return (p.attrs || {})[k] === pkState.sel[k]; });
+            });
+        }
+
+        // Точное совпадение кода — сразу наверх; код у нескольких товаров — предупреждение
+        if (/^\d{8,14}$/.test(q)) {
+            var exact = list.filter(function(p) { return (p.codes || []).some(function(c){ return c.code === q; }); });
+            if (exact.length > 1) html += '<div class="pk-more w-partial">' + t('pk_dup') + '</div>';
+        }
+
+        html += '<div class="pk-results">';
+        if (!q && !pkState.cat) {
+            html += '</div>';
+            document.getElementById('pk-body').innerHTML = html;
+            return;
+        }
+        if (!list.length) html += '<div class="pk-more">' + t('pk_none') + '</div>';
+        list.slice(0, 60).forEach(function(p) {
+            html += '<div class="pk-res" onclick="pkPick(' + p.id + ')"><b style="font-weight:500">' + escH(p.name) + '</b>'
+                + '<span>' + (p.weight_kg ? fmtWeight(p.weight_kg) + ' kg' : '') + '</span></div>';
+        });
+        if (list.length > 60) html += '<div class="pk-more">+ ' + (list.length - 60) + ' ' + t('pk_more') + '</div>';
+        html += '</div>';
+        document.getElementById('pk-body').innerHTML = html;
+    }
+
+    function pkPick(id) {
+        var p = null;
+        CATALOG.forEach(function(x) { if (x.id === id) p = x; });
+        if (!p) return;
+        var q = (document.getElementById('pk-search').value || '').trim();
+        var code = '';
+        (p.codes || []).forEach(function(c) { if (c.code === q) code = c.code; });
+        addItemRow({product_id: p.id, name: p.name, qty: 1, price: '', weight: p.weight_kg || '', code: code}, true);
+    }
+
     function closeAddModal() {
         document.getElementById('add-modal').classList.remove('open');
         editingOrderId = null;
     }
     function editManualOrder(orderId) {
-        // Find order data from loaded orders
-        fetch('/api/orders?limit=1&offset=0&search=&source=&status=').then(function(r){return r.json();}).then(function(){
-            // Easier: fetch single order by iterating rendered data
-        });
-        // Use data from DOM — fetch order by id
-        fetch('/api/orders?limit=1000&offset=0').then(function(r){return r.json();}).then(function(d) {
+        // Заказ уже есть в отрисованном списке — берём его оттуда (раньше искали
+        // среди первых 1000 заказов, и старые ручные заказы «не находились»).
+        var cached = null;
+        (lastRenderedOrders || []).forEach(function(o) { if (o.id == orderId) cached = o; });
+        var src = cached ? Promise.resolve({orders: [cached]})
+                         : fetch('/api/orders?limit=1000&offset=0').then(function(r){return r.json();});
+        src.then(function(d) {
             var order = null;
-            d.orders.forEach(function(o) { if (o.id == orderId) order = o; });
+            (d.orders || []).forEach(function(o) { if (o.id == orderId) order = o; });
             if (!order) { alert(t('order_not_found')); return; }
             editingOrderId = orderId;
             document.getElementById('modal-order-title').textContent = t('modal_edit_order') + ' #' + orderId;
@@ -1158,13 +2308,20 @@
             document.getElementById('m-source').value = order.source || 'manual';
             var items = [];
             try { items = JSON.parse(order.items_json || '[]'); } catch(e) {}
-            document.getElementById('m-product').value = items.length > 0 ? (items[0].full_name || items[0].name || '') : '';
             document.getElementById('m-type').value = order.product_type || '';
             document.getElementById('m-config').value = order.configuration || '';
             var shipCost = parseFloat(order.shipping_cost || 0);
             var totalVal = parseFloat(order.total || 0);
-            document.getElementById('m-price').value = (totalVal - shipCost).toFixed(2);
             document.getElementById('m-shipping').value = shipCost.toFixed(2);
+            // Старые ручные заказы — одна строка без цены за шт.: цена = итог − доставка
+            if (items.length === 1 && !items[0].product_id && (parseFloat(items[0].qty) || 1) === 1) {
+                items[0].price = (totalVal - shipCost).toFixed(2);
+            }
+            setItems(items.map(function(it) {
+                return {product_id: it.product_id || null, name: it.full_name || it.name || '',
+                        qty: it.qty || 1, price: (it.price === undefined || it.price === '' || it.price === null) ? '' : parseFloat(it.price), weight: it.weight || '', code: it.code || ''};
+            }));
+            closePicker();
             document.getElementById('m-status').value = order.status || 'awaiting_cod';
             document.getElementById('m-payment').value = order.payment_method || '';
             document.getElementById('m-name').value = order.customer_name || '';
@@ -1186,13 +2343,13 @@
             });
     }
     function saveManualOrder() {
+        var items = readItems();
         var data = {
             date: document.getElementById('m-date').value,
             source: document.getElementById('m-source').value,
-            product_name: document.getElementById('m-product').value,
+            items: items,
             product_type: document.getElementById('m-type').value,
             configuration: document.getElementById('m-config').value,
-            price: parseFloat(document.getElementById('m-price').value) || 0,
             shipping_cost: parseFloat(document.getElementById('m-shipping').value) || 0,
             status: document.getElementById('m-status').value,
             payment_method: document.getElementById('m-payment').value,
@@ -1226,7 +2383,7 @@
         try { localStorage.removeItem('ekomat_col_widths'); } catch(e) {}
         try { localStorage.removeItem('ekomat_col_minwidths_v2'); } catch(e) {}
 
-        var STORAGE_KEY = 'ekomat_col_w_v3';
+        var STORAGE_KEY = 'ekomat_col_w_v4';
         var startX, startW, activeTh, tableStartW;
         var locked = false;
 
@@ -1236,8 +2393,8 @@
             if (locked) return;
             var table = getTable();
             if (!table) return;
-            var ths = table.querySelectorAll('thead th');
-            if (ths.length === 0) return;
+            var ths = table.querySelectorAll('#head-full th');
+            if (ths.length === 0 || VIEW !== 'full') return;
             // Capture current auto-layout widths
             var widths = [];
             ths.forEach(function(th) { widths.push(th.offsetWidth); });
@@ -1255,7 +2412,7 @@
         function saveWidths() {
             var table = getTable();
             if (!table) return;
-            var ths = table.querySelectorAll('thead th');
+            var ths = table.querySelectorAll('#head-full th');
             var widths = {};
             ths.forEach(function(th, idx) {
                 if (th.style.width) widths[idx] = th.style.width;
@@ -1270,7 +2427,7 @@
                 if (!saved._tw) return false;
                 var table = getTable();
                 if (!table) return false;
-                var ths = table.querySelectorAll('thead th');
+                var ths = table.querySelectorAll('#head-full th');
                 var any = false;
                 Object.keys(saved).forEach(function(key) {
                     if (key === '_tw') return;
@@ -1309,8 +2466,18 @@
             document.removeEventListener('mouseup', onUp);
         }
 
+        window.__restoreColWidths = restoreWidths;
+        window.__resetColLayout = function() {
+            var table = getTable();
+            if (!table) return;
+            table.style.width = '';
+            table.style.tableLayout = '';
+            table.querySelectorAll('#head-full th').forEach(function(th) { th.style.width = ''; });
+            locked = false;
+        };
+
         setTimeout(function() {
-            restoreWidths();
+            if (VIEW === 'full') restoreWidths();
             var grips = document.querySelectorAll('.col-resize');
             grips.forEach(function(grip) {
                 grip.addEventListener('mousedown', function(e) {
@@ -1344,69 +2511,136 @@
         }
     }
 
+    // Журнал действий: одна лента «кто что когда», с откатом по строке.
+    var alogOffset = 0;
+    var ALOG_PAGE = 50;
+
+    function actionName(kind) {
+        return t('alog_a_' + kind) || kind;
+    }
+
+    /* Читаемое «было → стало». Для галочек это вкл/выкл, для комментария —
+       сам текст. Длинные комментарии режем, чтобы таблица не расползалась. */
+    function actionChange(e) {
+        var cut = function(s) {
+            s = String(s || '').replace(/\s+/g, ' ').trim();
+            if (!s) return t('alog_empty');
+            return s.length > 60 ? s.slice(0, 60) + '…' : s;
+        };
+        if (e.action === 'export') {
+            return '<span class="alog-to">' + t('alog_marked') + '</span>';
+        }
+        if (e.action === 'comment') {
+            return '<span class="alog-from">' + esc(cut(e.old_value)) + '</span>'
+                 + '<span class="alog-arrow">→</span>'
+                 + '<span class="alog-to">' + esc(cut(e.new_value)) + '</span>';
+        }
+        var on = (e.new_value === '1');
+        return '<span class="alog-to">' + t(on ? 'alog_set' : 'alog_unset') + '</span>';
+    }
+
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
     function loadExportHistory() {
-        // Load bulk export timestamps
+        alogOffset = 0;
+        loadActionLog(true);
+
+        // Старые массовые экспорты — свёрнутый блок внизу.
         fetch('/api/orders/exported-timestamps').then(function(r){return r.json();}).then(function(d) {
             var tbody = document.getElementById('bulk-export-body');
             if (!tbody) return;
-            if (!d.timestamps || d.timestamps.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:8px;color:#9ca3af;">Brak masowych eksportów</td></tr>';
+            if (!d.timestamps || !d.timestamps.length) {
+                tbody.innerHTML = '<tr><td colspan="3" class="alog-muted" style="padding:8px;">'
+                    + t('alog_none') + '</td></tr>';
                 return;
             }
             var html = '';
             d.timestamps.forEach(function(entry) {
-                var dt = entry.timestamp ? new Date(entry.timestamp).toLocaleString('pl-PL') : '—';
+                var dt = entry.timestamp ? new Date(entry.timestamp).toLocaleString(currentLang === 'ru' ? 'ru-RU' : 'pl-PL') : '—';
                 var isBulk = entry.count > 10;
-                var rowStyle = isBulk ? 'background:#fef2f2;' : '';
-                html += '<tr style="' + rowStyle + '">'
-                    + '<td style="padding:4px 8px;">' + dt + '</td>'
-                    + '<td style="padding:4px 8px;text-align:right;font-weight:' + (isBulk ? '700' : '400') + ';">' + entry.count + '</td>'
-                    + '<td style="padding:4px 8px;text-align:center;">'
-                    + (isBulk ? '<button onclick="revertBulkExport(\'' + entry.timestamp + '\', ' + entry.count + ')" style="background:#f59e0b;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;">Cofnij ten eksport</button>' : '<span style="color:#9ca3af;font-size:11px;">mały</span>')
-                    + '</td></tr>';
-            });
-            tbody.innerHTML = html;
-        });
-
-        // Load export log
-        fetch('/api/export-log?limit=20').then(function(r){return r.json();}).then(function(d) {
-            var tbody = document.getElementById('export-log-body');
-            if (!tbody) return;
-            if (!d.log || d.log.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:12px;color:#9ca3af;">Brak eksportów</td></tr>';
-                return;
-            }
-            var html = '';
-            d.log.forEach(function(entry) {
-                var dt = entry.created_at ? new Date(entry.created_at).toLocaleString('pl-PL') : '—';
-                var statusHtml = entry.undone
-                    ? '<span style="color:#dc2626;">Cofnięty</span>'
-                    : '<span style="color:#059669;">Aktywny</span>';
-                var actionHtml = entry.undone
-                    ? '—'
-                    : '<button onclick="undoExport(' + entry.id + ')" style="background:#f59e0b;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;">Cofnij</button>';
                 html += '<tr>'
-                    + '<td style="padding:6px 8px;">' + dt + '</td>'
-                    + '<td style="padding:6px 8px;">' + (entry.user_email || '—') + '</td>'
-                    + '<td style="padding:6px 8px;text-align:right;">' + entry.orders_count + '</td>'
-                    + '<td style="padding:6px 8px;text-align:center;">' + statusHtml + '</td>'
-                    + '<td style="padding:6px 8px;text-align:center;">' + actionHtml + '</td>'
-                    + '</tr>';
+                    + '<td class="alog-when">' + dt + '</td>'
+                    + '<td class="r" style="text-align:right;font-weight:' + (isBulk ? '700' : '400') + ';">' + entry.count + '</td>'
+                    + '<td style="text-align:center;">'
+                    + (isBulk
+                        ? '<button class="alog-undo" onclick="revertBulkExport(\'' + entry.timestamp + '\', ' + entry.count + ')">' + t('alog_undo') + '</button>'
+                        : '<span class="alog-muted">' + t('alog_small') + '</span>')
+                    + '</td></tr>';
             });
             tbody.innerHTML = html;
         });
     }
 
-    function undoExport(logId) {
-        if (!confirm('Cofnąć ten eksport? Wszystkie zamówienia z tego eksportu stracą oznaczenie ✓')) return;
-        fetch('/api/export-log/' + logId + '/undo', { method: 'POST' })
+    function loadActionLog(reset) {
+        var tbody = document.getElementById('alog-body');
+        if (!tbody) return;
+        if (reset) { alogOffset = 0; tbody.innerHTML = ''; }
+
+        var kind = (document.getElementById('alog-filter') || {}).value || '';
+        var url = '/api/action-log?limit=' + ALOG_PAGE + '&offset=' + alogOffset;
+        if (kind) url += '&action=' + encodeURIComponent(kind);
+
+        fetch(url).then(function(r){return r.json();}).then(function(d) {
+            if (d.error) {
+                tbody.innerHTML = '<tr><td colspan="6" class="alog-muted" style="padding:12px;">'
+                    + esc(d.error) + '</td></tr>';
+                return;
+            }
+            var log = d.log || [];
+            if (!log.length && alogOffset === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="alog-muted" style="padding:12px;">'
+                    + t('alog_empty_log') + '</td></tr>';
+            }
+            var html = '';
+            log.forEach(function(e) {
+                var dt = e.created_at
+                    ? new Date(e.created_at).toLocaleString(currentLang === 'ru' ? 'ru-RU' : 'pl-PL')
+                    : '—';
+                var who = (e.user_email || '—').split('@')[0];
+                var what = actionName(e.action);
+                var target = e.action === 'export'
+                    ? (e.count + ' ' + t('alog_pcs'))
+                    : esc(e.label || ('#' + (e.order_id || '')));
+                var act;
+                if (e.undone) {
+                    act = '<span class="alog-muted" title="' + esc(e.undone_by || '') + '">'
+                        + t('alog_done_undone') + '</span>';
+                } else {
+                    act = '<button class="alog-undo" onclick="undoAction(' + e.id + ')">'
+                        + t('alog_undo') + '</button>';
+                }
+                html += '<tr class="' + (e.undone ? 'is-undone' : '') + '">'
+                    + '<td class="alog-when">' + dt + '</td>'
+                    + '<td class="alog-who" title="' + esc(e.user_email) + '">' + esc(who) + '</td>'
+                    + '<td class="alog-what">' + what + '</td>'
+                    + '<td class="alog-order">' + target + '</td>'
+                    + '<td>' + actionChange(e) + '</td>'
+                    + '<td style="text-align:center;">' + act + '</td>'
+                    + '</tr>';
+            });
+            tbody.insertAdjacentHTML('beforeend', html);
+
+            alogOffset += log.length;
+            var cnt = document.getElementById('alog-count');
+            if (cnt) cnt.textContent = t('alog_shown') + ' ' + alogOffset + ' / ' + (d.total || 0);
+            var more = document.getElementById('alog-more');
+            if (more) more.style.display = (alogOffset < (d.total || 0)) ? '' : 'none';
+        });
+    }
+
+    function undoAction(logId) {
+        if (!confirm(t('alog_confirm'))) return;
+        fetch('/api/action-log/' + logId + '/undo', { method: 'POST' })
             .then(function(r){return r.json();})
             .then(function(d) {
                 if (d.ok) {
-                    loadExportHistory();
+                    loadActionLog(true);
                     loadOrders(currentPage);
                 } else {
-                    alert('Błąd: ' + (d.error || 'unknown'));
+                    alert(t('alog_err') + ': ' + (d.error || '?'));
                 }
             });
     }
@@ -1466,7 +2700,7 @@
     </script>
 
     <!-- Modal: add manual order -->
-    <div class="modal-overlay" id="add-modal" onclick="if(event.target===this)closeAddModal()">
+    <div class="modal-overlay" id="add-modal">
         <div class="modal">
             <h3 id="modal-order-title" data-i18n="modal_add_order">Dodaj zamówienie ręcznie</h3>
             <div class="form-grid">
@@ -1478,24 +2712,29 @@
                     <input type="hidden" id="m-source" value="manual">
                 </div>
                 <div class="form-group full">
-                    <label data-i18n="modal_product_name">Nazwa produktu</label>
-                    <input type="text" id="m-product" placeholder="np. Szklarnia Mocna 3x6m 6mm">
+                    <label data-i18n="modal_items">Pozycje</label>
+                    <div class="mi-list" id="m-items"></div>
+                    <div class="mi-actions">
+                        <button type="button" class="mi-btn" onclick="togglePicker()" data-i18n="btn_from_catalog">+ Z katalogu</button>
+                        <button type="button" class="mi-btn" onclick="addItemRow({}, true)" data-i18n="btn_manual_item">+ Pozycja ręczna</button>
+                    </div>
+                    <div class="picker" id="m-picker" style="display:none;">
+                        <input type="text" class="pk-search" id="pk-search" data-i18n-placeholder="pk_search_ph" placeholder="Szukaj: nazwa lub kod EAN" oninput="pkSearch()">
+                        <div id="pk-body"></div>
+                    </div>
+                    <div class="mi-sum" id="m-sum"></div>
                 </div>
                 <div class="form-group">
                     <label data-i18n="modal_product_type">Typ towaru</label>
                     <input type="text" id="m-type" placeholder="Szklarnia / Poliwęglan">
                 </div>
-                <div class="form-group">
+                <div class="form-group full">
                     <label data-i18n="modal_config">Konfiguracja</label>
-                    <input type="text" id="m-config" placeholder="">
-                </div>
-                <div class="form-group">
-                    <label data-i18n="modal_price">Cena towaru (PLN)</label>
-                    <input type="number" step="0.01" id="m-price" placeholder="0.00">
+                    <textarea id="m-config" class="ta-config" rows="5" placeholder=""></textarea>
                 </div>
                 <div class="form-group">
                     <label data-i18n="modal_shipping">Dostawa (PLN)</label>
-                    <input type="number" step="0.01" id="m-shipping" value="0" placeholder="0.00">
+                    <input type="number" step="0.01" id="m-shipping" value="0" placeholder="0.00" oninput="updateItemsSum()">
                 </div>
                 <div class="form-group">
                     <label data-i18n="modal_status">Status</label>
@@ -1543,5 +2782,26 @@
             </div>
         </div>
     </div>
+<script>
+    /* Окно закрывается только если и нажатие, и отпускание мыши были на
+       подложке. Раньше хватало одного click по подложке, поэтому когда
+       выделяешь текст в поле и отпускаешь мышь чуть за краем окна, оно
+       считало это кликом по фону и закрывалось — весь заказ пропадал. */
+    (function(){
+        var ov = document.getElementById('add-modal');
+        if (!ov) return;
+        var pressedOnOverlay = false;
+        ov.addEventListener('mousedown', function(e){
+            pressedOnOverlay = (e.target === ov);
+        });
+        ov.addEventListener('mouseup', function(e){
+            var hit = pressedOnOverlay && e.target === ov;
+            pressedOnOverlay = false;
+            if (hit) closeAddModal();
+        });
+    })();
+</script>
+<script src="/static/help.js" defer></script>
+<script src="/static/assistant.js" defer></script>
 </body>
 </html>

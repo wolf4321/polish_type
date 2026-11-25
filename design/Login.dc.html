@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;}
+  *{box-sizing:border-box;}
+  body{font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;transition:background-color .2s ease,color .2s ease;}
+  a{text-decoration:none;transition:color .15s ease,background-color .15s ease;}
+  input,button{font-family:inherit;letter-spacing:-.01em;}
+  input:focus{outline:none;}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:{{ L.outerPad }};background:{{ p.bg }};color:{{ p.ink }};position:relative;">
+  <div style="position:absolute;top:20px;right:24px;display:flex;align-items:center;gap:10px;">
+    <div style="display:flex;background:{{ p.chip }};border-radius:9px;padding:2px;">
+      <button onClick="{{ setPl }}" style="border:none;cursor:pointer;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:7px;background:{{ p.plBg }};color:{{ p.plColor }};box-shadow:{{ p.plShadow }};transition:all .15s ease;">PL</button>
+      <button onClick="{{ setRu }}" style="border:none;cursor:pointer;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:7px;background:{{ p.ruBg }};color:{{ p.ruColor }};box-shadow:{{ p.ruShadow }};transition:all .15s ease;">RU</button>
+    </div>
+    <button onClick="{{ toggleTheme }}" title="{{ t.theme }}" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid {{ p.line }};border-radius:9px;background:{{ p.cardBg }};cursor:pointer;font-size:14px;color:{{ p.muted }};transition:all .15s ease;" style-hover="color:{{ p.ink }};border-color:{{ p.lineStrong }};">{{ themeIcon }}</button>
+  </div>
+
+  <div style="width:392px;max-width:100%;">
+    <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:26px;">
+      <span style="font-weight:600;font-size:23px;letter-spacing:-.05em;margin-bottom:8px;">ekomat<span style="color:#16a34a;">.</span></span>
+      <p style="font-size:13px;color:{{ p.muted }};margin:0;">{{ t.panel }}</p>
+    </div>
+
+    <div style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:16px;padding:{{ L.cardPad }};transition:background-color .2s ease,border-color .2s ease;">
+      <h2 style="font-size:15px;font-weight:600;text-align:center;color:{{ p.inkSoft }};margin:0 0 22px;letter-spacing:-.025em;">{{ t.signin }}</h2>
+
+      <label style="display:block;font-size:12.5px;color:{{ p.muted }};font-weight:500;margin-bottom:6px;">Email</label>
+      <input type="email" placeholder="jan@ekomat.pl" style="width:100%;padding:11px 14px;border:1px solid {{ p.line }};border-radius:10px;font-size:14px;margin-bottom:16px;background:{{ p.inputBg }};color:{{ p.ink }};transition:border-color .15s ease;" style-focus="border-color:{{ p.lineStrong }};">
+
+      <label style="display:block;font-size:12.5px;color:{{ p.muted }};font-weight:500;margin-bottom:6px;">{{ t.password }}</label>
+      <input type="password" placeholder="••••••••" style="width:100%;padding:11px 14px;border:1px solid {{ p.line }};border-radius:10px;font-size:14px;margin-bottom:22px;background:{{ p.inputBg }};color:{{ p.ink }};transition:border-color .15s ease;" style-focus="border-color:{{ p.lineStrong }};">
+
+      <a href="Dashboard.dc.html" style="display:block;text-align:center;width:100%;padding:12px;background:{{ p.btnBg }};color:{{ p.btnInk }};border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;" style-hover="background:{{ p.btnHover }};">{{ t.signin_btn }}</a>
+    </div>
+
+    <p style="text-align:center;font-size:12px;color:{{ p.faint }};margin:18px 0 0;">© 2026 EKOMAT · {{ t.rights }}</p>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(props){
+    super(props);
+    let lang='pl', theme='light';
+    try{ lang=localStorage.getItem('ekomat_lang')||'pl'; theme=localStorage.getItem('ekomat_theme')||'light'; }catch(e){}
+    const w=typeof window!=='undefined'?window.innerWidth:1200;
+    this.state={lang,theme,isMobile:w<=760};
+    this.T={
+      pl:{theme:'Motyw',panel:'Panel analityczny',signin:'Zaloguj się do konta',password:'Hasło',
+        signin_btn:'Zaloguj się',rights:'Wszystkie prawa zastrzeżone'},
+      ru:{theme:'Тема',panel:'Аналитическая панель',signin:'Вход в аккаунт',password:'Пароль',
+        signin_btn:'Войти',rights:'Все права защищены'}
+    };
+  }
+  componentDidMount(){
+    this._onResize=()=>{
+      const m=window.innerWidth<=760;
+      if(m!==this.state.isMobile) this.setState({isMobile:m});
+    };
+    window.addEventListener('resize',this._onResize);
+    this._onResize();
+  }
+  componentWillUnmount(){ if(this._onResize) window.removeEventListener('resize',this._onResize); }
+
+  setLang(l){ this.setState({lang:l}); try{ localStorage.setItem('ekomat_lang',l); }catch(e){} }
+  toggleTheme(){
+    const next=this.state.theme==='dark'?'light':'dark';
+    this.setState({theme:next});
+    try{ localStorage.setItem('ekomat_theme',next); }catch(e){}
+  }
+  palette(){
+    const dark=this.state.theme==='dark', st=this.state;
+    const base = dark ? {
+      bg:'#0e0f11', cardBg:'#16181c', chip:'#22252b', inputBg:'#1b1e23',
+      ink:'#f2f3f5', inkSoft:'#c8ccd2', muted:'#9aa0a8', faint:'#6e747c',
+      line:'#282c33', lineStrong:'#3a3f47', btnBg:'#f2f3f5', btnInk:'#111214', btnHover:'#d8dade'
+    } : {
+      bg:'#f6f6f5', cardBg:'#ffffff', chip:'#f0f0ef', inputBg:'#ffffff',
+      ink:'#111214', inkSoft:'#3a3d42', muted:'#6f747b', faint:'#9ba0a7',
+      line:'#e4e4e2', lineStrong:'#cfcfcc', btnBg:'#111214', btnInk:'#ffffff', btnHover:'#2a2c31'
+    };
+    const activeBg=dark?'#31353d':'#ffffff';
+    const shadow=dark?'none':'0 1px 2px rgba(0,0,0,.07)';
+    return {...base,
+      plBg:st.lang==='pl'?activeBg:'transparent', plColor:st.lang==='pl'?base.ink:base.muted, plShadow:st.lang==='pl'?shadow:'none',
+      ruBg:st.lang==='ru'?activeBg:'transparent', ruColor:st.lang==='ru'?base.ink:base.muted, ruShadow:st.lang==='ru'?shadow:'none'
+    };
+  }
+  renderVals(){
+    const dark=this.state.theme==='dark';
+    const mob=this.state.isMobile;
+    const L={ cardPad: mob?'26px 20px':'30px', noPad: mob?'34px 22px':'44px 40px', outerPad: mob?'64px 16px 24px':'24px' };
+    return {p:this.palette(), t:this.T[this.state.lang], L,
+      setPl:()=>this.setLang('pl'), setRu:()=>this.setLang('ru'),
+      toggleTheme:()=>this.toggleTheme(), themeIcon:dark?'☀':'☾'};
+  }
+}
+</script>
+</body>
+</html>

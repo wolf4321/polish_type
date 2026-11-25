@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Секреты — никогда не коммитим
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Дампы базы
+*.sql
+*.dump
+*.sql.gz
+backups/
+
+# Экспорты и временные файлы
+*.xlsx
+!templates/**/*.xlsx
+*.log
+.DS_Store
+Thumbs.db
+
+# Редакторы
+.vscode/
+.idea/
+*.swp

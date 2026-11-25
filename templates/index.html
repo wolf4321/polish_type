@@ -1,697 +1,545 @@
 <!doctype html>
-<html lang="pl">
+<html lang="pl" data-theme="light">
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
-    <title>EKOMAT Dashboard</title>
+    <title>Pulpit — EKOMAT Dashboard</title>
+
+    <script>
+      (function(){try{var t=localStorage.getItem('ekomat_theme');
+        if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/theme.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-               background: #f3f4f6; color: #1f2937; }
-        .navbar { background: #1a1a2e; color: #fff; padding: 12px 24px;
-                  display: flex; align-items: center; justify-content: space-between; }
-        .navbar h1 { font-size: 16px; font-weight: 600; }
-        .navbar-links { display: flex; gap: 16px; align-items: center; }
-        .navbar a { color: #a5b4fc; font-size: 13px; text-decoration: none; }
-        .navbar a:hover { color: #fff; }
-        .navbar a.active { color: #fff; font-weight: 600; border-bottom: 2px solid #a5b4fc; padding-bottom: 2px; }
-        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
-
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-                 gap: 14px; margin-bottom: 20px; }
-        .stat-card { background: #fff; border-radius: 10px; padding: 18px;
-                     box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-        .stat-card .label { font-size: 11px; color: #6b7280; margin-bottom: 6px; text-transform: uppercase;
-                            letter-spacing: .5px; }
-        .stat-card .value { font-size: 26px; font-weight: 700; color: #1a1a2e; }
-        .stat-card .sub { font-size: 11px; color: #9ca3af; margin-top: 4px; }
-
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-        @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
-
-        .card { background: #fff; border-radius: 10px; padding: 20px;
-                box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 16px; }
-        .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
-
-        /* Source bars */
-        .source-section { margin-bottom: 16px; }
-        .source-section-title { font-size: 12px; color: #9ca3af; text-transform: uppercase;
-                                letter-spacing: .5px; margin-bottom: 8px; padding-bottom: 4px;
-                                border-bottom: 1px solid #f3f4f6; }
-
-        .source-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-        .source-bar .name { font-size: 13px; font-weight: 500; min-width: 150px; }
-        .source-bar .bar { flex: 1; height: 32px; background: #f3f4f6; border-radius: 6px; overflow: hidden; }
-        .source-bar .bar-fill { height: 100%; border-radius: 6px; display: flex; align-items: center;
-                                padding-left: 10px; font-size: 12px; color: #fff; font-weight: 600;
-                                min-width: 40px; transition: width .5s ease; }
-        .bar-dobraszklarnia { background: #3b82f6; }
-        .bar-oteko { background: #f59e0b; }
-        .bar-cieplarnia { background: #10b981; }
-        .bar-allegro { background: #ff5a00; }
-        .bar-manual { background: #7c3aed; }
-        .bar-seller { background: #ff8533; }
-        .source-bar .amount { font-size: 12px; color: #6b7280; min-width: 110px; text-align: right; }
-        .source-bar .count { font-size: 12px; color: #374151; font-weight: 600; min-width: 50px; text-align: right; }
-
-        .sync-list { list-style: none; }
-        .sync-list li { padding: 10px 0; border-bottom: 1px solid #f3f4f6; font-size: 13px;
-                        display: flex; justify-content: space-between; align-items: center; }
-        .sync-list li:last-child { border-bottom: none; }
-        .sync-ok { color: #059669; font-weight: 600; }
-        .sync-error { color: #dc2626; font-weight: 600; }
-        .sync-running { color: #f59e0b; font-weight: 600; }
-
-        .empty { text-align: center; padding: 40px; color: #9ca3af; font-size: 14px; }
-
-        .filters { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
-        .filters input, .filters select {
-            padding: 7px 10px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px; }
-        .filters button { padding: 7px 14px; background: #1a1a2e; color: #fff; border: none;
-                          border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 500; }
-        .filters button:hover { background: #2d2d5e; }
-
-        .chart-container { position: relative; height: 320px; }
-
-        /* Source table */
-        .source-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        .source-table th { text-align: left; padding: 8px 12px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
-                           font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: #6b7280; font-weight: 600; }
-        .source-table td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; }
-        .source-table tr:hover td { background: #f9fafb; }
-        .source-table .src-badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
-                                   font-size: 11px; font-weight: 600; text-transform: uppercase; }
-        .src-dobraszklarnia { background: #dbeafe; color: #1d4ed8; }
-        .src-oteko { background: #fef3c7; color: #92400e; }
-        .src-cieplarnia { background: #d1fae5; color: #065f46; }
-        .src-allegro { background: #fff0e6; color: #cc4800; }
-        .src-manual { background: #f3e8ff; color: #7c3aed; }
-        .source-table .revenue { font-weight: 700; color: #1a1a2e; }
-        .source-table .avg { color: #6b7280; font-size: 12px; }
-
-        .seller-sub { padding-left: 32px !important; background: #fafbfc; }
-        .seller-name { font-size: 12px; color: #6b7280; }
-
-        /* Channel breakdown */
-        .channel-group { margin-bottom: 20px; }
-        .channel-group-title { font-size: 14px; font-weight: 600; color: #1a1a2e; margin-bottom: 8px;
-                               padding: 8px 12px; background: #f9fafb; border-radius: 6px;
-                               display: flex; justify-content: space-between; align-items: center; }
-        .channel-group-title .total { font-size: 12px; color: #6b7280; font-weight: 400; }
-        .channel-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 4px; }
-        .channel-table th { text-align: left; padding: 6px 12px; font-size: 10px; text-transform: uppercase;
-                            color: #9ca3af; letter-spacing: .3px; font-weight: 600; }
-        .channel-table td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; }
-        .channel-table tr:last-child td { border-bottom: none; }
-        .channel-badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
-                         font-size: 11px; font-weight: 600; }
-        .ch-google { background: #dbeafe; color: #1d4ed8; }
-        .ch-facebook { background: #ede9fe; color: #7c3aed; }
-        .ch-direct { background: #f3f4f6; color: #374151; }
-        .ch-organic { background: #d1fae5; color: #065f46; }
-        .ch-allegro { background: #fff0e6; color: #cc4800; }
-        .ch-other { background: #fef3c7; color: #92400e; }
-        .channel-bar-wrap { width: 100%; max-width: 200px; height: 8px; background: #f3f4f6;
-                            border-radius: 4px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px; }
-        .channel-bar-fill { height: 100%; border-radius: 4px; background: #3b82f6; transition: width .4s ease; }
-    </style>
 </head>
 <body>
-    <div class="navbar">
-        <h1>EKOMAT Dashboard</h1>
-        <div class="navbar-links">
-            <a href="/" class="active">Dashboard</a>
-            {% if user and 'orders' in (user.permissions or '').split(',') %}<a href="/orders">Orders</a>{% endif %}
-            {% if user and 'manage_users' in (user.permissions or '').split(',') %}<a href="/admin/users">Users</a>{% endif %}
-            {% if user %}<span style="color:#6b7280;font-size:12px;">{{ user.name }}</span><a href="/logout">Wyloguj</a>{% else %}<a href="/login">Login</a>{% endif %}
-        </div>
+
+<nav class="nav">
+    <span class="nav-logo">ekomat<span style="color:var(--accent);">.</span></span>
+    <div class="nav-links">
+        <a href="/" class="active" data-i18n="nav_dash">Pulpit</a>
+        {% if user and 'orders' in (user.permissions or '').split(',') %}<a href="/orders" data-i18n="nav_orders">Zamówienia</a>{% endif %}
+        {% if user and 'products' in (user.permissions or '').split(',') %}<a href="/products" data-i18n="nav_products">Katalog</a>{% endif %}
+        {% if user and ('assistant_kb' in (user.permissions or '').split(',') or 'manage_users' in (user.permissions or '').split(',')) %}<a href="/assistant" data-i18n="nav_assistant">Asystent</a>{% endif %}
+        {% if user and 'manage_users' in (user.permissions or '').split(',') %}<a href="/admin/users" data-i18n="nav_users">Użytkownicy</a>{% endif %}
     </div>
-
-    <div class="container">
-        <!-- Stats cards (dynamic) -->
-        <div class="stats" id="stats-cards">
-            <div class="stat-card">
-                <div class="label">Zamówienia</div>
-                <div class="value" id="d-total">—</div>
-                <div class="sub" id="d-today"></div>
-            </div>
-            {% if user and 'prices' in (user.permissions or '').split(',') %}
-            <div class="stat-card">
-                <div class="label">Przychód (PLN)</div>
-                <div class="value" id="d-revenue">—</div>
-            </div>
-            {% endif %}
+    <div class="nav-right">
+        <a href="/ui/classic?next=/classic" class="ui-switch" data-i18n="old_ui" data-help="Przełącza na stary wygląd panelu. Dane są te same — wszystko, co zrobisz w jednej wersji, od razu widać w drugiej." style="font-size:12px;color:var(--muted);text-decoration:none;border:1px solid var(--line);padding:4px 10px;border-radius:8px;white-space:nowrap;">Stara wersja</a>
+        <div class="seg">
+            <button type="button" data-lang="pl">PL</button>
+            <button type="button" data-lang="ru">RU</button>
         </div>
+        <button type="button" class="theme-toggle" data-theme-toggle data-i18n-title="theme">&#9790;</button>
+        {% if user %}
+        <div class="nav-sep"></div>
+        <span class="nav-user">{{ user.name }}</span>
+        <a href="/logout" class="logout" data-i18n="logout">Wyloguj</a>
+        {% else %}
+        <a href="/login" class="logout" data-i18n="signin_btn">Zaloguj się</a>
+        {% endif %}
+    </div>
+</nav>
 
-        <!-- Filters -->
+<main class="main">
+
+    <div class="page-head">
+        <div>
+            <h1 data-i18n="dashboard">Pulpit</h1>
+            <p class="sub" id="d-subtitle" data-i18n="subtitle">Sprzedaż we wszystkich kanałach</p>
+        </div>
         <div class="filters">
-            <input type="date" id="f-from">
-            <span style="color:#9ca3af;">—</span>
-            <input type="date" id="f-to">
-            <select id="f-source">
-                <option value="">Wszystkie źródła</option>
+            <input type="date" id="f-from" class="ctrl num">
+            <span style="color:var(--faint);">—</span>
+            <input type="date" id="f-to" class="ctrl num">
+            <select id="f-source" class="ctrl">
+                <option value="" data-i18n="all_sources">Wszystkie źródła</option>
                 <option value="dobraszklarnia">dobraszklarnia.pl</option>
                 <option value="oteko">oteko.pl</option>
                 <option value="cieplarnia">cieplarnia.pl</option>
+                <option value="erli">Erli</option>
                 <option value="allegro">Allegro</option>
-                <option value="manual">Ręczne</option>
+                <option value="manual" data-i18n="src_manual">Ręczne</option>
             </select>
-            <button onclick="applyFilters()">Zastosuj</button>
-        </div>
-
-        <!-- Source breakdown table -->
-        <div class="card" id="source-card">
-            <h3>Zamówienia wg źródła</h3>
-            <table class="source-table" id="source-table">
-                <thead>
-                    <tr>
-                        <th>Źródło</th>
-                        <th style="text-align:right;">Zamówienia</th>
-                        {% if user and 'prices' in (user.permissions or '').split(',') %}
-                        <th style="text-align:right;">Przychód (PLN)</th>
-                        <th style="text-align:right;">Śr. zamówienie</th>
-                        {% endif %}
-                    </tr>
-                </thead>
-                <tbody id="source-body">
-                    <tr><td colspan="4" class="empty">Ładowanie...</td></tr>
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Traffic channels breakdown per source -->
-        <div class="card" id="channels-card">
-            <h3>Kanały ruchu wg sklepu</h3>
-            <div id="channels-container">
-                <div class="empty">Ładowanie...</div>
-            </div>
-        </div>
-
-        <!-- Campaigns breakdown -->
-        <div class="grid-2">
-            <div class="card" id="campaigns-card">
-                <h3>Kampanie reklamowe</h3>
-                <div id="campaigns-container"><div class="empty">Ładowanie...</div></div>
-            </div>
-            <div class="card" id="devices-card">
-                <h3>Urządzenia (dobraszklarnia.pl)</h3>
-                <div id="devices-container"><div class="empty">Ładowanie...</div></div>
-            </div>
-        </div>
-
-        <!-- Chart: orders + revenue by day -->
-        <div class="card">
-            <h3>Zamówienia i przychód dziennie</h3>
-            <div class="chart-container">
-                <canvas id="dailyChart"></canvas>
-            </div>
-        </div>
-
-        <div class="grid-2">
-            <!-- Visual bars by source -->
-            <div class="card">
-                <h3>Rozkład zamówień</h3>
-                <div id="source-bars">
-                    <div class="empty">Ładowanie...</div>
-                </div>
-            </div>
-
-            <!-- Sync status -->
-            <div class="card">
-                <h3>Status synchronizacji</h3>
-                {% if last_syncs %}
-                <ul class="sync-list">
-                    {% for s in last_syncs %}
-                    <li>
-                        <span>
-                            <b>{% if s.source == 'allegro' %}Allegro{% else %}{{ s.source }}.pl{% endif %}</b>
-                            <span class="sync-{{ s.status or 'running' }}">
-                                {{ s.status or 'running' }}
-                            </span>
-                            {% if s.orders_new %} (+{{ s.orders_new }} new){% endif %}
-                        </span>
-                        <span style="color:#9ca3af; font-size:12px;">
-                            {% if s.finished_at %}
-                                {{ s.finished_at.strftime('%d.%m %H:%M') }}
-                            {% else %}
-                                w trakcie...
-                            {% endif %}
-                        </span>
-                    </li>
-                    {% endfor %}
-                </ul>
-                {% else %}
-                <div class="empty">
-                    Brak synchronizacji.<br>
-                    <a href="/admin/sync" style="color:#3b82f6;">Uruchom sync →</a>
-                </div>
-                {% endif %}
-            </div>
+            <button class="btn-sm" onclick="applyFilters()" data-i18n="apply">Zastosuj</button>
         </div>
     </div>
 
-    <script>
-    var dailyChart = null;
-    var showPrices = {{ 'true' if user and 'prices' in (user.permissions or '').split(',') else 'false' }};
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="label" data-i18n="st_orders">Zamówienia</div>
+            <div class="value num" id="d-total">—</div>
+            <div class="sub" id="d-today"></div>
+        </div>
+        {% if user and 'prices' in (user.permissions or '').split(',') %}
+        <div class="stat-card">
+            <div class="label" data-i18n="st_revenue">Przychód, zł</div>
+            <div class="value num" id="d-revenue">—</div>
+            <div class="sub"></div>
+        </div>
+        <div class="stat-card">
+            <div class="label" data-i18n="st_avg">Śr. wartość zam.</div>
+            <div class="value num" id="d-avg">—</div>
+            <div class="sub" data-i18n="sub_avg">zł / zam.</div>
+        </div>
+        {% endif %}
+        <div class="stat-card">
+            <div class="label" data-i18n="st_channels">Aktywne kanały</div>
+            <div class="value num" id="d-channels">—</div>
+            <div class="sub" id="d-channels-sub"></div>
+        </div>
+    </div>
 
-    function fmt(n) {
-        return parseFloat(n || 0).toLocaleString('pl-PL');
+    <div class="section">
+        <div class="section-head">
+            <h3 data-i18n="chart_title">Zamówienia i przychód dziennie</h3>
+            <div style="display:flex;gap:18px;">
+                <div style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);">
+                    <span style="width:11px;height:11px;border-radius:3px;background:var(--bar-fill);border:1px solid var(--bar-line);"></span>
+                    <span data-i18n="revenue">Przychód</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);">
+                    <span style="width:14px;height:3px;border-radius:2px;background:var(--accent);"></span>
+                    <span data-i18n="orders">Zamówienia</span>
+                </div>
+            </div>
+        </div>
+        <div style="position:relative;height:290px;"><canvas id="dailyChart"></canvas></div>
+    </div>
+
+    <div class="grid-split">
+        <div class="section" style="margin-bottom:0;">
+            <div class="section-head">
+                <h3 data-i18n="by_source">Zamówienia wg źródła</h3>
+                <span class="num" id="sb-total" style="font-size:12px;color:var(--faint);"></span>
+            </div>
+            <div id="source-bars"><div class="empty" data-i18n="loading">Ładowanie...</div></div>
+        </div>
+
+        <div class="section" style="margin-bottom:0;">
+            <h3 data-i18n="devices">Urządzenia</h3>
+            <p style="font-size:12px;color:var(--faint);margin:4px 0 18px;">dobraszklarnia.pl</p>
+            <div id="devices-container"><div class="empty" data-i18n="loading">Ładowanie...</div></div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3 style="margin-bottom:18px;" data-i18n="by_source_tbl">Szczegóły wg źródła</h3>
+        <table class="tbl">
+            <thead>
+                <tr>
+                    <th data-i18n="th_source">Źródło</th>
+                    <th class="r" data-i18n="th_orders">Zamówienia</th>
+                    {% if user and 'prices' in (user.permissions or '').split(',') %}
+                    <th class="r" data-i18n="th_revenue">Przychód</th>
+                    <th class="r" data-i18n="th_avg">Śr. zam.</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody id="source-body">
+                <tr><td colspan="4" class="empty" data-i18n="loading">Ładowanie...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3 style="margin-bottom:18px;" data-i18n="channels">Kanały ruchu wg sklepu</h3>
+        <div id="channels-container"><div class="empty" data-i18n="loading">Ładowanie...</div></div>
+    </div>
+
+    <div class="grid-2">
+        <div class="section" style="margin-bottom:0;">
+            <h3 style="margin-bottom:18px;" data-i18n="campaigns">Kampanie reklamowe</h3>
+            <div id="campaigns-container"><div class="empty" data-i18n="loading">Ładowanie...</div></div>
+        </div>
+
+        <div class="section" style="margin-bottom:0;">
+            <h3 style="margin-bottom:18px;" data-i18n="sync_status">Status synchronizacji</h3>
+            {% if last_syncs %}
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                {% for s in last_syncs %}
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line-soft);">
+                    <div style="display:flex;align-items:center;gap:9px;min-width:0;">
+                        <span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;background:{% if s.status == 'ok' %}#22b062{% elif s.status == 'error' %}#dc2626{% else %}#e8a33d{% endif %};"></span>
+                        <span style="font-size:13px;font-weight:500;white-space:nowrap;">{% if s.source == 'allegro' %}Allegro{% else %}{{ s.source }}.pl{% endif %}</span>
+                        <span class="badge {% if s.status == 'ok' %}badge-ok{% elif s.status == 'error' %}badge-err{% else %}badge-warn{% endif %}">{{ s.status or 'running' }}</span>
+                        {% if s.orders_new %}<span style="font-size:12px;color:var(--faint);white-space:nowrap;">+{{ s.orders_new }}</span>{% endif %}
+                    </div>
+                    <span class="num" style="font-size:12px;color:var(--faint);white-space:nowrap;">
+                        {% if s.finished_at %}{{ s.finished_at.strftime('%d.%m · %H:%M') }}{% else %}…{% endif %}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty" data-i18n-html="no_sync">Brak synchronizacji.</div>
+            {% endif %}
+        </div>
+    </div>
+
+</main>
+
+<script src="/static/i18n.js"></script>
+<script>
+EKOMAT.extend({
+  pl:{nav_dash:'Pulpit',nav_orders:'Zamówienia',nav_users:'Użytkownicy',nav_products:'Katalog',nav_assistant:'Asystent',logout:'Wyloguj',
+      dashboard:'Pulpit',subtitle:'Sprzedaż we wszystkich kanałach',all_sources:'Wszystkie źródła',
+      src_manual:'Ręczne',apply:'Zastosuj',loading:'Ładowanie...',
+      chart_title:'Zamówienia i przychód dziennie',revenue:'Przychód',orders:'Zamówienia',
+      by_source:'Zamówienia wg źródła',by_source_tbl:'Szczegóły wg źródła',
+      th_source:'Źródło',th_orders:'Zamówienia',th_revenue:'Przychód',th_avg:'Śr. zam.',
+      devices:'Urządzenia',channels:'Kanały ruchu wg sklepu',campaigns:'Kampanie reklamowe',
+      sync_status:'Status synchronizacji',no_sync:'Brak synchronizacji.',
+      st_orders:'Zamówienia',st_revenue:'Przychód, zł',st_avg:'Śr. wartość zam.',st_channels:'Aktywne kanały',
+      sub_avg:'zł / zam.',ord_short:'zam.',total:'Razem',today:'dziś',
+      no_data:'Brak danych w wybranym okresie',
+      no_channels:'Brak danych o kanałach ruchu.<br>Uruchom pełną synchronizację, aby pobrać UTM.',
+      no_campaigns:'Brak danych o kampaniach.',no_devices:'Brak danych o urządzeniach.',
+      th_channel:'Kanał',th_type:'Typ',th_pct:'%',th_campaign:'Kampania'},
+  ru:{nav_dash:'Панель',nav_orders:'Заказы',nav_users:'Пользователи',nav_products:'Каталог',nav_assistant:'Помощник',logout:'Выйти',
+      dashboard:'Панель',subtitle:'Продажи по всем каналам',all_sources:'Все источники',
+      src_manual:'Вручную',apply:'Применить',loading:'Загрузка...',
+      chart_title:'Заказы и выручка по дням',revenue:'Выручка',orders:'Заказы',
+      by_source:'Заказы по источникам',by_source_tbl:'Детали по источникам',
+      th_source:'Источник',th_orders:'Заказы',th_revenue:'Выручка',th_avg:'Ср. чек',
+      devices:'Устройства',channels:'Каналы трафика по магазинам',campaigns:'Рекламные кампании',
+      sync_status:'Статус синхронизации',no_sync:'Синхронизаций не было.',
+      st_orders:'Заказы',st_revenue:'Выручка, zł',st_avg:'Средний чек',st_channels:'Активные каналы',
+      sub_avg:'zł / заказ',ord_short:'зак.',total:'Итого',today:'сегодня',
+      no_data:'Нет данных за выбранный период',
+      no_channels:'Нет данных о каналах трафика.<br>Запусти полную синхронизацию, чтобы подтянуть UTM.',
+      no_campaigns:'Нет данных о кампаниях.',no_devices:'Нет данных об устройствах.',
+      th_channel:'Канал',th_type:'Тип',th_pct:'%',th_campaign:'Кампания'}
+});
+
+var T = function(k){ return EKOMAT.t(k); };
+var dailyChart = null;
+var showPrices = {{ 'true' if user and 'prices' in (user.permissions or '').split(',') else 'false' }};
+var lastStats = null;
+var lastDaily = null;
+
+var SRC = {
+  dobraszklarnia:{label:'dobraszklarnia.pl',color:'#4b7bf5'},
+  oteko:{label:'oteko.pl',color:'#e8a33d'},
+  cieplarnia:{label:'cieplarnia.pl',color:'#22b062'},erli:{label:'Erli',color:'#e24a8a'},
+  allegro:{label:'Allegro',color:'#f5763d'},
+  manual:{label:'Ręczne',color:'#9b6ef7'}
+};
+function srcLabel(s){ return (SRC[s] && (s === 'manual' ? T('src_manual') : SRC[s].label)) || s; }
+function srcColor(s){ return (SRC[s] && SRC[s].color) || '#9ba0a7'; }
+
+function fmt(n){ return parseFloat(n || 0).toLocaleString('pl-PL'); }
+function fmtMoney(n){ return parseFloat(n || 0).toLocaleString('pl-PL', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+(function(){
+  var to = new Date(), from = new Date();
+  from.setDate(from.getDate() - 90);
+  document.getElementById('f-from').value = from.toISOString().slice(0,10);
+  document.getElementById('f-to').value = to.toISOString().slice(0,10);
+  applyFilters();
+})();
+
+function applyFilters(){ loadDashboardStats(); loadChart(); }
+
+window.onEkomatThemeChange = function(){ if (lastDaily) renderChart(lastDaily); };
+window.onEkomatLangChange  = function(){ if (lastStats) paintStats(lastStats); };
+
+function loadDashboardStats(){
+  var from = document.getElementById('f-from').value;
+  var to = document.getElementById('f-to').value;
+  if (!from || !to) return;
+  fetch('/api/dashboard/stats?date_from=' + from + '&date_to=' + to)
+    .then(function(r){ return r.json(); })
+    .then(function(d){ lastStats = d; paintStats(d); });
+}
+
+function paintStats(d){
+  var bySrc = d.by_source || [];
+  var totalOrders = 0, totalRevenue = 0;
+  bySrc.forEach(function(s){ totalOrders += s.cnt; totalRevenue += (s.revenue || 0); });
+
+  document.getElementById('d-total').textContent = fmt(d.total_orders);
+  var todayEl = document.getElementById('d-today');
+  if (todayEl) todayEl.textContent = d.today_orders > 0 ? '+' + d.today_orders + ' ' + T('today') : '';
+
+  if (showPrices){
+    var rev = document.getElementById('d-revenue');
+    if (rev) rev.textContent = d.revenue !== null && d.revenue !== undefined ? fmtMoney(d.revenue) : '—';
+    var avgEl = document.getElementById('d-avg');
+    if (avgEl) avgEl.textContent = totalOrders > 0 && totalRevenue ? fmtMoney(totalRevenue / totalOrders) : '—';
+  }
+  var chEl = document.getElementById('d-channels');
+  if (chEl) chEl.textContent = bySrc.length;
+
+  document.getElementById('sb-total').textContent = fmt(totalOrders) + ' ' + T('ord_short');
+
+  renderSourceTable(bySrc, d.by_seller);
+  renderSourceBars(bySrc, d.by_seller);
+  renderChannels(d.by_channel || [], bySrc);
+  renderCampaigns(d.by_campaign || []);
+  renderDevices(d.by_device || []);
+}
+
+function renderSourceTable(bySrc, bySeller){
+  var tbody = document.getElementById('source-body');
+  if (!bySrc || !bySrc.length){
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">' + T('no_data') + '</td></tr>';
+    return;
+  }
+  var totalOrders = 0, totalRevenue = 0;
+  bySrc.forEach(function(s){ totalOrders += s.cnt; totalRevenue += (s.revenue || 0); });
+
+  var html = '';
+  bySrc.forEach(function(s){
+    var avg = s.cnt > 0 && s.revenue ? (s.revenue / s.cnt) : 0;
+    var pct = totalOrders > 0 ? ((s.cnt / totalOrders) * 100).toFixed(1) : '0';
+    html += '<tr><td><span class="src-badge src-' + s.source + '">' + srcLabel(s.source) + '</span>'
+          + ' <span class="num" style="font-size:11px;color:var(--faint);">' + pct + '%</span></td>'
+          + '<td class="r num" style="font-weight:600;">' + fmt(s.cnt) + '</td>';
+    if (showPrices){
+      html += '<td class="r num">' + (s.revenue !== null ? fmtMoney(s.revenue) + ' zł' : '—') + '</td>'
+            + '<td class="r num" style="color:var(--muted);">' + (avg > 0 ? fmtMoney(avg) + ' zł' : '—') + '</td>';
     }
-    function fmtMoney(n) {
-        return parseFloat(n || 0).toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    }
+    html += '</tr>';
 
-    var sourceLabels = {
-        dobraszklarnia: 'dobraszklarnia.pl',
-        oteko: 'oteko.pl',
-        cieplarnia: 'cieplarnia.pl',
-        allegro: 'Allegro',
-        manual: 'Ręczne'
-    };
-
-    function getSourceLabel(src) {
-        return sourceLabels[src] || src;
-    }
-
-    (function() {
-        var to = new Date();
-        var from = new Date();
-        from.setDate(from.getDate() - 90);
-        document.getElementById('f-from').value = from.toISOString().slice(0,10);
-        document.getElementById('f-to').value = to.toISOString().slice(0,10);
-        applyFilters();
-    })();
-
-    function applyFilters() {
-        loadDashboardStats();
-        loadChart();
-    }
-
-    function loadDashboardStats() {
-        var from = document.getElementById('f-from').value;
-        var to = document.getElementById('f-to').value;
-        if (!from || !to) return;
-
-        var url = '/api/dashboard/stats?date_from=' + from + '&date_to=' + to;
-
-        fetch(url).then(function(r) { return r.json(); }).then(function(d) {
-            // Update stat cards
-            document.getElementById('d-total').textContent = fmt(d.total_orders);
-            var todayEl = document.getElementById('d-today');
-            if (todayEl) todayEl.textContent = d.today_orders > 0 ? '+' + d.today_orders + ' dziś' : '';
-
-            if (showPrices && document.getElementById('d-revenue')) {
-                document.getElementById('d-revenue').textContent = d.revenue !== null ? fmtMoney(d.revenue) : '—';
-            }
-
-            // Render source table
-            renderSourceTable(d.by_source, d.by_seller);
-
-            // Render visual bars
-            renderSourceBars(d.by_source, d.by_seller);
-
-            // Render traffic channels
-            renderChannels(d.by_channel || [], d.by_source || []);
-
-            // Render campaigns
-            renderCampaigns(d.by_campaign || []);
-
-            // Render devices
-            renderDevices(d.by_device || []);
-        });
-    }
-
-    function renderSourceTable(bySrc, bySeller) {
-        var tbody = document.getElementById('source-body');
-        if (!bySrc || bySrc.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="empty">Brak danych w wybranym okresie</td></tr>';
-            return;
-        }
-
-        // Build seller lookup: seller -> {cnt, revenue}
-        var sellerMap = {};
-        (bySeller || []).forEach(function(s) {
-            sellerMap[s.seller] = s;
-        });
-
-        var totalOrders = 0;
-        var totalRevenue = 0;
-        bySrc.forEach(function(s) { totalOrders += s.cnt; totalRevenue += (s.revenue || 0); });
-
-        var html = '';
-        bySrc.forEach(function(s) {
-            var avg = s.cnt > 0 && s.revenue ? (s.revenue / s.cnt) : 0;
-            var pct = totalOrders > 0 ? ((s.cnt / totalOrders) * 100).toFixed(1) : '0';
-            html += '<tr>'
-                + '<td><span class="src-badge src-' + s.source + '">' + getSourceLabel(s.source) + '</span>'
-                + ' <span style="font-size:11px;color:#9ca3af;">(' + pct + '%)</span></td>'
-                + '<td style="text-align:right;font-weight:600;">' + fmt(s.cnt) + '</td>';
-            if (showPrices) {
-                html += '<td style="text-align:right;" class="revenue">' + (s.revenue !== null ? fmtMoney(s.revenue) + ' PLN' : '—') + '</td>'
-                    + '<td style="text-align:right;" class="avg">' + (avg > 0 ? fmtMoney(avg) + ' PLN' : '—') + '</td>';
-            }
-            html += '</tr>';
-
-            // If this is allegro, show seller sub-rows
-            if (s.source === 'allegro' && bySeller && bySeller.length > 0) {
-                bySeller.forEach(function(sl) {
-                    var slAvg = sl.cnt > 0 && sl.revenue ? (sl.revenue / sl.cnt) : 0;
-                    html += '<tr>'
-                        + '<td class="seller-sub"><span class="seller-name">↳ ' + sl.seller + '</span></td>'
-                        + '<td style="text-align:right;font-size:12px;color:#6b7280;">' + fmt(sl.cnt) + '</td>';
-                    if (showPrices) {
-                        html += '<td style="text-align:right;font-size:12px;color:#6b7280;">' + (sl.revenue !== null ? fmtMoney(sl.revenue) + ' PLN' : '—') + '</td>'
-                            + '<td style="text-align:right;font-size:12px;color:#9ca3af;">' + (slAvg > 0 ? fmtMoney(slAvg) + ' PLN' : '—') + '</td>';
-                    }
-                    html += '</tr>';
-                });
-            }
-        });
-
-        // Total row
-        html += '<tr style="border-top:2px solid #e5e7eb;font-weight:700;">'
-            + '<td>RAZEM</td>'
-            + '<td style="text-align:right;">' + fmt(totalOrders) + '</td>';
-        if (showPrices) {
-            var totalAvg = totalOrders > 0 ? (totalRevenue / totalOrders) : 0;
-            html += '<td style="text-align:right;">' + fmtMoney(totalRevenue) + ' PLN</td>'
-                + '<td style="text-align:right;color:#6b7280;">' + fmtMoney(totalAvg) + ' PLN</td>';
+    if (s.source === 'allegro' && bySeller && bySeller.length){
+      bySeller.forEach(function(sl){
+        var slAvg = sl.cnt > 0 && sl.revenue ? (sl.revenue / sl.cnt) : 0;
+        html += '<tr class="sub-row"><td style="padding-left:16px;color:var(--faint);">&#8627; ' + sl.seller + '</td>'
+              + '<td class="r num">' + fmt(sl.cnt) + '</td>';
+        if (showPrices){
+          html += '<td class="r num">' + (sl.revenue !== null ? fmtMoney(sl.revenue) + ' zł' : '—') + '</td>'
+                + '<td class="r num" style="color:var(--faint);">' + (slAvg > 0 ? fmtMoney(slAvg) + ' zł' : '—') + '</td>';
         }
         html += '</tr>';
-
-        tbody.innerHTML = html;
+      });
     }
+  });
 
-    function renderSourceBars(bySrc, bySeller) {
-        var container = document.getElementById('source-bars');
-        if (!bySrc || bySrc.length === 0) {
-            container.innerHTML = '<div class="empty">Brak danych</div>';
-            return;
-        }
+  html += '<tr style="border-top:1px solid var(--line);"><td style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">'
+        + T('total') + '</td><td class="r num" style="font-weight:600;">' + fmt(totalOrders) + '</td>';
+  if (showPrices){
+    var totalAvg = totalOrders > 0 ? (totalRevenue / totalOrders) : 0;
+    html += '<td class="r num" style="font-weight:600;color:var(--accent);">' + fmtMoney(totalRevenue) + ' zł</td>'
+          + '<td class="r num" style="color:var(--muted);">' + fmtMoney(totalAvg) + ' zł</td>';
+  }
+  html += '</tr>';
+  tbody.innerHTML = html;
+}
 
-        var maxCnt = 0;
-        bySrc.forEach(function(s) { if (s.cnt > maxCnt) maxCnt = s.cnt; });
-        if (maxCnt === 0) maxCnt = 1;
+function bar(label, color, width, cnt, revenue, dim){
+  return '<div class="row-line">'
+    + '<div class="rl-name" style="' + (dim ? 'padding-left:16px;color:var(--faint);' : 'font-weight:600;') + '">'
+    + '<span class="dot" style="background:' + color + ';"></span>' + label + '</div>'
+    + '<div class="track"><i style="background:' + color + ';width:' + width + '%;"></i></div>'
+    + '<span class="rl-cnt num">' + fmt(cnt) + '</span>'
+    + '<span class="rl-rev num">' + revenue + '</span></div>';
+}
 
-        var html = '';
+function renderSourceBars(bySrc, bySeller){
+  var box = document.getElementById('source-bars');
+  if (!bySrc || !bySrc.length){ box.innerHTML = '<div class="empty">' + T('no_data') + '</div>'; return; }
 
-        // Main sources
-        bySrc.forEach(function(s) {
-            var pct = Math.max(5, (s.cnt / maxCnt) * 100);
-            html += '<div class="source-bar">'
-                + '<div class="name">' + getSourceLabel(s.source) + '</div>'
-                + '<div class="bar"><div class="bar-fill bar-' + s.source + '" style="width:' + pct.toFixed(0) + '%">' + s.cnt + '</div></div>'
-                + '<div class="count">' + fmt(s.cnt) + '</div>';
-            if (showPrices && s.revenue !== null) {
-                html += '<div class="amount">' + fmtMoney(s.revenue) + ' PLN</div>';
-            }
-            html += '</div>';
-        });
+  var maxCnt = 1;
+  bySrc.forEach(function(s){ if (s.cnt > maxCnt) maxCnt = s.cnt; });
 
-        // Allegro sub-sellers
-        if (bySeller && bySeller.length > 1) {
-            var maxSeller = 0;
-            bySeller.forEach(function(s) { if (s.cnt > maxSeller) maxSeller = s.cnt; });
-            if (maxSeller === 0) maxSeller = 1;
-
-            html += '<div class="source-section-title" style="margin-top:16px;">Konta Allegro</div>';
-            bySeller.forEach(function(s) {
-                var pct = Math.max(5, (s.cnt / maxSeller) * 100);
-                html += '<div class="source-bar">'
-                    + '<div class="name" style="font-size:12px;color:#6b7280;">' + s.seller + '</div>'
-                    + '<div class="bar"><div class="bar-fill bar-seller" style="width:' + pct.toFixed(0) + '%">' + s.cnt + '</div></div>'
-                    + '<div class="count">' + fmt(s.cnt) + '</div>';
-                if (showPrices && s.revenue !== null) {
-                    html += '<div class="amount">' + fmtMoney(s.revenue) + ' PLN</div>';
-                }
-                html += '</div>';
-            });
-        }
-
-        container.innerHTML = html;
+  var html = '';
+  bySrc.forEach(function(s){
+    var w = Math.max(5, (s.cnt / maxCnt) * 100).toFixed(0);
+    var rev = showPrices && s.revenue !== null ? fmtMoney(s.revenue) + ' zł' : '';
+    html += bar(srcLabel(s.source), srcColor(s.source), w, s.cnt, rev, false);
+    if (s.source === 'allegro' && bySeller && bySeller.length){
+      bySeller.forEach(function(sl){
+        var w2 = Math.max(5, (sl.cnt / maxCnt) * 100).toFixed(0);
+        var r2 = showPrices && sl.revenue !== null ? fmtMoney(sl.revenue) + ' zł' : '';
+        html += bar(sl.seller, '#f8c4a4', w2, sl.cnt, r2, true);
+      });
     }
+  });
+  box.innerHTML = html;
+}
 
-    function getChannelClass(channel) {
-        var ch = (channel || '').toLowerCase();
-        if (ch.indexOf('google') !== -1) return 'ch-google';
-        if (ch.indexOf('facebook') !== -1 || ch.indexOf('fb') !== -1 || ch.indexOf('meta') !== -1 || ch.indexOf('instagram') !== -1) return 'ch-facebook';
-        if (ch === 'direct / unknown' || ch === 'direct' || ch === '(direct)') return 'ch-direct';
-        if (ch.indexOf('organic') !== -1 || ch === 'bing' || ch === 'yahoo') return 'ch-organic';
-        if (ch.indexOf('allegro') !== -1) return 'ch-allegro';
-        return 'ch-other';
-    }
+function getChannelClass(channel){
+  var ch = (channel || '').toLowerCase();
+  if (ch.indexOf('google') !== -1) return 'ch-google';
+  if (ch.indexOf('facebook') !== -1 || ch.indexOf('fb') !== -1 || ch.indexOf('meta') !== -1 || ch.indexOf('instagram') !== -1) return 'ch-facebook';
+  if (ch === 'direct / unknown' || ch === 'direct' || ch === '(direct)') return 'ch-direct';
+  if (ch.indexOf('organic') !== -1 || ch === 'bing' || ch === 'yahoo') return 'ch-organic';
+  if (ch.indexOf('allegro') !== -1) return 'ch-allegro';
+  return 'ch-other';
+}
+function getChannelLabel(channel, medium){
+  var ch = (channel || '').toLowerCase();
+  var med = (medium || '').toLowerCase();
+  if (ch === 'direct / unknown') return 'Direct';
+  var label = channel;
+  if (med && med !== ch && med !== 'marketplace') label += ' / ' + medium;
+  return label;
+}
 
-    function getChannelLabel(channel, medium) {
-        var ch = (channel || '').toLowerCase();
-        var med = (medium || '').toLowerCase();
-        if (ch === 'direct / unknown') return 'Direct / Nieznany';
-        // Pretty labels
-        var label = channel;
-        if (med && med !== ch && med !== 'marketplace') {
-            label += ' / ' + medium;
+function renderChannels(byChannel, bySrc){
+  var box = document.getElementById('channels-container');
+  if (!byChannel || !byChannel.length){ box.innerHTML = '<div class="empty">' + T('no_channels') + '</div>'; return; }
+
+  var groups = {}, order = [];
+  bySrc.forEach(function(s){ if (order.indexOf(s.source) === -1) order.push(s.source); });
+  byChannel.forEach(function(c){
+    if (!groups[c.source]) groups[c.source] = [];
+    groups[c.source].push(c);
+    if (order.indexOf(c.source) === -1) order.push(c.source);
+  });
+
+  var html = '';
+  order.forEach(function(src){
+    var chans = groups[src];
+    if (!chans || !chans.length || src === 'allegro') return;
+
+    var totalCnt = 0, totalRev = 0;
+    chans.forEach(function(c){ totalCnt += c.cnt; totalRev += (c.revenue || 0); });
+    var maxCnt = chans[0] ? chans[0].cnt : 1;
+
+    html += '<div class="channel-group"><div class="channel-group-title">'
+          + '<span class="src-badge src-' + src + '">' + srcLabel(src) + '</span>'
+          + '<span class="total num">' + fmt(totalCnt) + ' ' + T('ord_short');
+    if (showPrices && totalRev > 0) html += ' · ' + fmtMoney(totalRev) + ' zł';
+    html += '</span></div>';
+
+    html += '<table class="tbl"><thead><tr><th>' + T('th_channel') + '</th><th>' + T('th_type') + '</th>'
+          + '<th style="width:180px;"></th><th class="r">' + T('th_orders') + '</th><th class="r">' + T('th_pct') + '</th>';
+    if (showPrices) html += '<th class="r">' + T('th_revenue') + '</th>';
+    html += '</tr></thead><tbody>';
+
+    chans.forEach(function(c){
+      var pct = totalCnt > 0 ? ((c.cnt / totalCnt) * 100).toFixed(1) : '0';
+      var barPct = maxCnt > 0 ? Math.max(3, (c.cnt / maxCnt) * 100) : 3;
+      html += '<tr><td><span class="channel-badge ' + getChannelClass(c.channel) + '">' + getChannelLabel(c.channel, c.medium) + '</span></td>'
+            + '<td style="font-size:11.5px;color:var(--faint);">' + (c.medium || '—') + '</td>'
+            + '<td><div class="track" style="max-width:180px;"><i style="background:' + srcColor(src) + ';width:' + barPct.toFixed(0) + '%;"></i></div></td>'
+            + '<td class="r num" style="font-weight:600;">' + fmt(c.cnt) + '</td>'
+            + '<td class="r num" style="color:var(--muted);">' + pct + '%</td>';
+      if (showPrices) html += '<td class="r num">' + (c.revenue !== null ? fmtMoney(c.revenue) + ' zł' : '—') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+  });
+
+  box.innerHTML = html || '<div class="empty">' + T('no_channels') + '</div>';
+}
+
+function renderCampaigns(byCampaign){
+  var box = document.getElementById('campaigns-container');
+  if (!byCampaign || !byCampaign.length){ box.innerHTML = '<div class="empty">' + T('no_campaigns') + '</div>'; return; }
+
+  var html = '<table class="tbl"><thead><tr><th>' + T('th_campaign') + '</th><th>' + T('th_source') + '</th><th class="r">' + T('th_orders') + '</th>';
+  if (showPrices) html += '<th class="r">' + T('th_revenue') + '</th>';
+  html += '</tr></thead><tbody>';
+
+  byCampaign.forEach(function(c){
+    var name = (c.campaign || '').replace(/[{}]/g, '');
+    html += '<tr><td style="font-size:12.5px;font-weight:500;">' + name + '</td>'
+          + '<td><span class="channel-badge ' + getChannelClass(c.utm_source) + '">' + c.utm_source + '</span></td>'
+          + '<td class="r num" style="font-weight:600;">' + fmt(c.cnt) + '</td>';
+    if (showPrices) html += '<td class="r num">' + (c.revenue !== null ? fmtMoney(c.revenue) + ' zł' : '—') + '</td>';
+    html += '</tr>';
+  });
+  box.innerHTML = html + '</tbody></table>';
+}
+
+function renderDevices(byDevice){
+  var box = document.getElementById('devices-container');
+  if (!byDevice || !byDevice.length){ box.innerHTML = '<div class="empty">' + T('no_devices') + '</div>'; return; }
+
+  var total = 0;
+  byDevice.forEach(function(d){ total += d.cnt; });
+  var colors = {Desktop:'#4b7bf5', Mobile:'#e8a33d', Tablet:'#22b062'};
+
+  var html = '<div style="display:flex;flex-direction:column;gap:18px;">';
+  byDevice.forEach(function(d){
+    var pct = total > 0 ? ((d.cnt / total) * 100).toFixed(1) : '0';
+    var w = total > 0 ? Math.max(4, (d.cnt / total) * 100) : 4;
+    html += '<div><div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;">'
+          + '<span style="font-size:13px;font-weight:500;">' + d.device + '</span>'
+          + '<span class="num" style="font-size:12.5px;color:var(--muted);"><b style="color:var(--ink);font-weight:600;">'
+          + fmt(d.cnt) + '</b> · ' + pct + '%</span></div>'
+          + '<div class="track"><i style="background:' + (colors[d.device] || '#9b6ef7') + ';width:' + w.toFixed(0) + '%;"></i></div></div>';
+  });
+  box.innerHTML = html + '</div>';
+}
+
+function loadChart(){
+  var from = document.getElementById('f-from').value;
+  var to = document.getElementById('f-to').value;
+  var source = document.getElementById('f-source').value;
+  if (!from || !to) return;
+  var url = '/api/orders/daily?date_from=' + from + '&date_to=' + to;
+  if (source) url += '&source=' + encodeURIComponent(source);
+  fetch(url).then(function(r){ return r.json(); }).then(function(d){ lastDaily = d; renderChart(d); });
+}
+
+function renderChart(data){
+  var el = document.getElementById('dailyChart');
+  if (!el) return;
+  if (dailyChart) dailyChart.destroy();
+
+  var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  var accent = cssVar('--accent'), barFill = cssVar('--bar-fill'), barLine = cssVar('--bar-line');
+  var gridLine = cssVar('--grid-line'), tick = cssVar('--tick');
+
+  var labels = data.days.map(function(d){ var p = d.split('-'); return p[2] + '.' + p[1]; });
+
+  var datasets = [{
+    label: T('orders'), data: data.orders_count, type: 'line', yAxisID: 'yO',
+    borderColor: accent, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4,
+    pointBackgroundColor: accent, fill: false, tension: 0.4, order: 1
+  }];
+  var scales = {
+    x: { grid:{display:false}, border:{display:false},
+         ticks:{font:{family:'IBM Plex Mono',size:10}, color:tick, maxRotation:0, autoSkip:true, maxTicksLimit:10} },
+    yO:{ position: showPrices ? 'right' : 'left', beginAtZero:true,
+         grid:{display: !showPrices, color:gridLine}, border:{display:false},
+         ticks:{font:{family:'IBM Plex Mono',size:10}, color:accent} }
+  };
+
+  if (showPrices){
+    datasets.unshift({
+      label: T('revenue'), data: data.revenue, yAxisID:'yR',
+      backgroundColor: barFill, borderColor: barLine, borderWidth: 1, borderRadius: 3,
+      order: 2, barPercentage: 0.72, categoryPercentage: 0.85
+    });
+    scales.yR = { position:'left', beginAtZero:true, grid:{color:gridLine}, border:{display:false},
+      ticks:{font:{family:'IBM Plex Mono',size:10}, color:tick,
+        callback:function(v){ return v >= 1000 ? (v/1000).toFixed(0) + 'k' : v; }} };
+  }
+
+  dailyChart = new Chart(el.getContext('2d'), {
+    type: 'bar',
+    data: { labels: labels, datasets: datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: dark ? '#2a2e35' : '#111214', padding: 11, cornerRadius: 8,
+          titleFont: {family:'IBM Plex Sans', size:12}, bodyFont: {family:'IBM Plex Mono', size:12},
+          displayColors: false,
+          callbacks: { label: function(c){
+            return c.dataset.yAxisID === 'yR'
+              ? T('revenue') + ': ' + c.parsed.y.toLocaleString('pl-PL') + ' zł'
+              : T('orders') + ': ' + c.parsed.y;
+          }}
         }
-        return label;
+      },
+      scales: scales
     }
-
-    function renderChannels(byChannel, bySrc) {
-        var container = document.getElementById('channels-container');
-        if (!byChannel || byChannel.length === 0) {
-            container.innerHTML = '<div class="empty">Brak danych o kanałach ruchu.<br>Uruchom Full Sync po aktualizacji, aby pobrać UTM z zamówień.</div>';
-            return;
-        }
-
-        // Group by source
-        var groups = {};
-        var sourceOrder = [];
-        bySrc.forEach(function(s) {
-            if (sourceOrder.indexOf(s.source) === -1) sourceOrder.push(s.source);
-        });
-        byChannel.forEach(function(ch) {
-            if (!groups[ch.source]) groups[ch.source] = [];
-            groups[ch.source].push(ch);
-            if (sourceOrder.indexOf(ch.source) === -1) sourceOrder.push(ch.source);
-        });
-
-        var html = '';
-        sourceOrder.forEach(function(src) {
-            var channels = groups[src];
-            if (!channels || channels.length === 0) return;
-
-            // Skip allegro — it's always marketplace
-            if (src === 'allegro') return;
-
-            var totalCnt = 0;
-            var totalRev = 0;
-            channels.forEach(function(c) { totalCnt += c.cnt; totalRev += (c.revenue || 0); });
-            var maxCnt = channels[0] ? channels[0].cnt : 1;
-
-            html += '<div class="channel-group">';
-            html += '<div class="channel-group-title"><span><span class="src-badge src-' + src + '">'
-                + getSourceLabel(src) + '</span></span>'
-                + '<span class="total">' + fmt(totalCnt) + ' zam.';
-            if (showPrices && totalRev > 0) html += ' · ' + fmtMoney(totalRev) + ' PLN';
-            html += '</span></div>';
-
-            html += '<table class="channel-table"><thead><tr>'
-                + '<th>Kanał</th><th>Typ</th><th style="width:200px;"></th><th style="text-align:right;">Zam.</th><th style="text-align:right;">%</th>';
-            if (showPrices) html += '<th style="text-align:right;">Przychód</th>';
-            html += '</tr></thead><tbody>';
-
-            channels.forEach(function(c) {
-                var pct = totalCnt > 0 ? ((c.cnt / totalCnt) * 100).toFixed(1) : '0';
-                var barPct = maxCnt > 0 ? Math.max(3, (c.cnt / maxCnt) * 100) : 3;
-                var chClass = getChannelClass(c.channel);
-                var label = getChannelLabel(c.channel, c.medium);
-
-                html += '<tr>'
-                    + '<td><span class="channel-badge ' + chClass + '">' + label + '</span></td>'
-                    + '<td style="font-size:11px;color:#9ca3af;">' + (c.medium || '—') + '</td>'
-                    + '<td><div class="channel-bar-wrap"><div class="channel-bar-fill" style="width:' + barPct.toFixed(0) + '%"></div></div></td>'
-                    + '<td style="text-align:right;font-weight:600;">' + fmt(c.cnt) + '</td>'
-                    + '<td style="text-align:right;color:#6b7280;">' + pct + '%</td>';
-                if (showPrices) {
-                    html += '<td style="text-align:right;">' + (c.revenue !== null ? fmtMoney(c.revenue) + ' PLN' : '—') + '</td>';
-                }
-                html += '</tr>';
-            });
-            html += '</tbody></table></div>';
-        });
-
-        if (!html) {
-            html = '<div class="empty">Brak danych o kanałach ruchu dla sklepów (tylko serwisy WWW).<br>Uruchom Full Sync, aby pobrać UTM z zamówień WooCommerce.</div>';
-        }
-
-        container.innerHTML = html;
-    }
-
-    function renderCampaigns(byCampaign) {
-        var container = document.getElementById('campaigns-container');
-        if (!byCampaign || byCampaign.length === 0) {
-            container.innerHTML = '<div class="empty">Brak danych o kampaniach.<br>Uruchom Full Sync dla dobraszklarnia.</div>';
-            return;
-        }
-        var maxCnt = byCampaign[0] ? byCampaign[0].cnt : 1;
-        var html = '<table class="channel-table"><thead><tr>'
-            + '<th>Kampania</th><th>Źródło</th><th style="text-align:right;">Zam.</th>';
-        if (showPrices) html += '<th style="text-align:right;">Przychód</th><th style="text-align:right;">Śr.</th>';
-        html += '</tr></thead><tbody>';
-
-        byCampaign.forEach(function(c) {
-            var name = c.campaign.replace(/[{}]/g, '');
-            var avg = c.cnt > 0 && c.revenue ? (c.revenue / c.cnt) : 0;
-            html += '<tr>'
-                + '<td style="font-size:12px;font-weight:500;">' + name + '</td>'
-                + '<td><span class="channel-badge ' + getChannelClass(c.utm_source) + '">' + c.utm_source + '</span></td>'
-                + '<td style="text-align:right;font-weight:600;">' + fmt(c.cnt) + '</td>';
-            if (showPrices) {
-                html += '<td style="text-align:right;">' + (c.revenue !== null ? fmtMoney(c.revenue) + ' PLN' : '—') + '</td>'
-                    + '<td style="text-align:right;font-size:12px;color:#6b7280;">' + (avg > 0 ? fmtMoney(avg) : '—') + '</td>';
-            }
-            html += '</tr>';
-        });
-        html += '</tbody></table>';
-        container.innerHTML = html;
-    }
-
-    function renderDevices(byDevice) {
-        var container = document.getElementById('devices-container');
-        if (!byDevice || byDevice.length === 0) {
-            container.innerHTML = '<div class="empty">Brak danych o urządzeniach.<br>Uruchom Full Sync.</div>';
-            return;
-        }
-        var totalCnt = 0;
-        byDevice.forEach(function(d) { totalCnt += d.cnt; });
-        var html = '';
-        byDevice.forEach(function(d) {
-            var pct = totalCnt > 0 ? ((d.cnt / totalCnt) * 100).toFixed(1) : '0';
-            var icon = d.device === 'Desktop' ? '🖥' : d.device === 'Mobile' ? '📱' : '📟';
-            var barPct = totalCnt > 0 ? Math.max(5, (d.cnt / totalCnt) * 100) : 5;
-            html += '<div class="source-bar">'
-                + '<div class="name">' + icon + ' ' + d.device + ' <span style="font-size:11px;color:#9ca3af;">(' + getSourceLabel(d.source) + ')</span></div>'
-                + '<div class="bar"><div class="bar-fill" style="width:' + barPct.toFixed(0) + '%;background:' + (d.device === 'Desktop' ? '#3b82f6' : d.device === 'Mobile' ? '#f59e0b' : '#10b981') + '">' + pct + '%</div></div>'
-                + '<div class="count">' + fmt(d.cnt) + '</div>';
-            if (showPrices && d.revenue !== null) {
-                html += '<div class="amount">' + fmtMoney(d.revenue) + ' PLN</div>';
-            }
-            html += '</div>';
-        });
-        container.innerHTML = html;
-    }
-
-    function loadChart() {
-        var from = document.getElementById('f-from').value;
-        var to = document.getElementById('f-to').value;
-        var source = document.getElementById('f-source').value;
-        if (!from || !to) return;
-
-        var url = '/api/orders/daily?date_from=' + from + '&date_to=' + to;
-        if (source) url += '&source=' + encodeURIComponent(source);
-
-        fetch(url).then(function(r) { return r.json(); }).then(function(d) {
-            renderChart(d);
-        });
-    }
-
-    function renderChart(data) {
-        var ctx = document.getElementById('dailyChart').getContext('2d');
-
-        if (dailyChart) {
-            dailyChart.destroy();
-        }
-
-        var labels = data.days.map(function(d) {
-            var parts = d.split('-');
-            return parts[2] + '.' + parts[1];
-        });
-
-        var datasets = [
-            {
-                label: 'Zamówienia',
-                data: data.orders_count,
-                type: 'line',
-                borderColor: '#f59e0b',
-                backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                borderWidth: 3,
-                pointRadius: 3,
-                pointBackgroundColor: '#f59e0b',
-                fill: true,
-                tension: 0.3,
-                yAxisID: 'y-orders',
-                order: 1,
-            }
-        ];
-
-        var scales = {
-            x: {
-                grid: { display: false },
-                ticks: { font: { size: 11 }, maxRotation: 0 }
-            },
-            'y-orders': {
-                type: 'linear',
-                position: showPrices ? 'right' : 'left',
-                beginAtZero: true,
-                grid: { drawOnChartArea: !showPrices },
-                ticks: { font: { size: 11 } },
-                title: { display: true, text: 'Zamówienia', font: { size: 11 }, color: '#f59e0b' }
-            }
-        };
-
-        if (showPrices) {
-            datasets.unshift({
-                label: 'Przychód (PLN)',
-                data: data.revenue,
-                backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                borderColor: 'rgba(59, 130, 246, 0.8)',
-                borderWidth: 2,
-                borderRadius: 4,
-                yAxisID: 'y-revenue',
-                order: 2,
-            });
-            scales['y-revenue'] = {
-                type: 'linear',
-                position: 'left',
-                beginAtZero: true,
-                grid: { color: 'rgba(0,0,0,0.04)' },
-                ticks: {
-                    font: { size: 11 },
-                    callback: function(v) {
-                        if (v >= 1000) return (v/1000).toFixed(0) + 'k';
-                        return v;
-                    }
-                },
-                title: { display: true, text: 'Przychód (PLN)', font: { size: 11 }, color: '#3b82f6' }
-            };
-        }
-
-        dailyChart = new Chart(ctx, {
-            type: 'bar',
-            data: { labels: labels, datasets: datasets },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: { font: { size: 12 }, usePointStyle: true, padding: 20 }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(ctx) {
-                                var v = ctx.parsed.y;
-                                if (ctx.dataset.yAxisID === 'y-revenue') {
-                                    return 'Przychód: ' + v.toLocaleString('pl-PL', {minimumFractionDigits: 0}) + ' PLN';
-                                }
-                                return 'Zamówienia: ' + v;
-                            }
-                        }
-                    }
-                },
-                scales: scales
-            }
-        });
-    }
-    </script>
+  });
+}
+</script>
+<script src="/static/help.js" defer></script>
+<script src="/static/assistant.js" defer></script>
 </body>
 </html>

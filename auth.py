@@ -7,14 +7,34 @@ Sessions stored in DB (survive restarts).
 
 import os
 import hashlib
+import hmac
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+try:
+    import bcrypt
+    BCRYPT_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    BCRYPT_AVAILABLE = False
+    print("[auth] bcrypt не установлен — пароли останутся на старом хеше. "
+          "Добавь bcrypt в requirements.txt")
+
 templates = Jinja2Templates(directory="templates")
 auth_router = APIRouter()
+
+# ── Настройки сессий и cookie ──
+# Срок жизни сессии. Раньше колонка expires_at существовала, но никогда
+# не заполнялась и не проверялась — сессия жила вечно.
+SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "30"))
+
+# secure=True требует HTTPS. Railway отдаёт HTTPS, поэтому по умолчанию включено.
+# Для локальной разработки по http:// поставь COOKIE_SECURE=false.
+COOKIE_SECURE = (os.getenv("COOKIE_SECURE", "true").strip().lower()
+                 in ("1", "true", "yes", "on"))
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
 
 # ── All available permissions ──
 ALL_PERMISSIONS = [
@@ -28,6 +48,8 @@ ALL_PERMISSIONS = [
     ("add_orders",    "Dodawanie zamówień",     "Może dodawać zamówienia ręcznie"),
     ("edit_comments", "Edycja komentarzy",      "Może edytować komentarze"),
     ("mark_delivery", "Oznaczanie dostawy",     "Może oznaczać zamówienia jako dostarczone"),
+    ("products",      "Katalog produktów",      "Może edytować katalog: nazwy, kody EAN, wagę"),
+    ("assistant_kb",  "Baza wiedzy asystenta",  "Może edytować odpowiedzi asystenta i widzi pytania bez odpowiedzi"),
     ("manage_users",  "Zarządzanie użytkownikami", "Może dodawać/edytować/usuwać użytkowników"),
 ]
 
@@ -47,9 +69,71 @@ async def _get_pool():
 
 
 # ── Password hashing ──
+#
+# Старая схема: SHA-256 с одной солью на всех пользователей. SHA-256 считается
+# миллиардами хешей в секунду на обычной видеокарте, а общая соль означает,
+# что одинаковые пароли дают одинаковый хеш — подбор по словарю ломает всю
+# базу разом.
+#
+# Новая схема: bcrypt, отдельная соль на пароль, настраиваемая стоимость.
+# Миграция прозрачная: старый хеш продолжает приниматься при входе, и в тот же
+# момент пароль перезаписывается bcrypt-хешем. Никто ничего не замечает,
+# сбрасывать пароли не нужно.
+
+_LEGACY_SALT = "ekomat-salt-2024"
+BCRYPT_ROUNDS = int(os.getenv("BCRYPT_ROUNDS", "12"))
+
+# Переезд со старой версии: пока BCRYPT_MIGRATE не включён, пароли остаются
+# в старом формате (и новые тоже пишутся в нём). Так откат на старый код
+# не запрёт людей — старый код bcrypt не понимает. Входить можно с любым
+# форматом. Когда откат больше не нужен — BCRYPT_MIGRATE=true.
+BCRYPT_MIGRATE = (os.getenv("BCRYPT_MIGRATE") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _hash_pw_legacy(password: str) -> str:
+    """Старый SHA-256-хеш. Только для проверки унаследованных паролей."""
+    return hashlib.sha256(f"{_LEGACY_SALT}:{password}".encode()).hexdigest()
+
+
+def _is_legacy_hash(stored: str) -> bool:
+    """Старый хеш — 64 hex-символа. bcrypt начинается с $2."""
+    return bool(stored) and not stored.startswith("$2") and len(stored) == 64
+
+
 def _hash_pw(password: str) -> str:
-    salt = "ekomat-salt-2024"
-    return hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
+    """Хеширует пароль для сохранения. bcrypt, если доступен."""
+    if BCRYPT_AVAILABLE and BCRYPT_MIGRATE:
+        return bcrypt.hashpw(password.encode("utf-8"),
+                             bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode("utf-8")
+    return _hash_pw_legacy(password)
+
+
+def _verify_pw(password: str, stored: str) -> bool:
+    """Проверяет пароль против сохранённого хеша любого из двух форматов."""
+    if not stored:
+        return False
+    if _is_legacy_hash(stored):
+        # compare_digest — чтобы время сравнения не зависело от совпадения.
+        return hmac.compare_digest(_hash_pw_legacy(password), stored)
+    if not BCRYPT_AVAILABLE:
+        return False
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), stored.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
+
+
+async def _upgrade_hash_if_legacy(conn, user_id: int, password: str, stored: str):
+    """После успешного входа по старому хешу тихо переводит пароль на bcrypt."""
+    if not BCRYPT_AVAILABLE or not BCRYPT_MIGRATE or not _is_legacy_hash(stored):
+        return
+    try:
+        await conn.execute("UPDATE users SET pw_hash=$1 WHERE id=$2",
+                           _hash_pw(password), user_id)
+        print(f"[auth] пароль пользователя #{user_id} переведён на bcrypt")
+    except Exception as e:
+        # Не критично: вход уже состоялся, переведём при следующем.
+        print(f"[auth] не удалось обновить хеш для #{user_id}: {e}")
 
 
 # ── Permission helpers ──
@@ -108,12 +192,35 @@ async def init_auth_tables(conn):
         except Exception:
             pass  # column already exists or other benign error
 
+    # Сессии, созданные до появления TTL, имеют expires_at = NULL и живут вечно.
+    # Проставляем им срок от текущего момента: никого не выкидываем из системы,
+    # но дальше они истекают как положено.
+    try:
+        updated = await conn.execute(
+            "UPDATE user_sessions SET expires_at = NOW() + ($1 || ' days')::interval "
+            "WHERE expires_at IS NULL",
+            str(SESSION_TTL_DAYS),
+        )
+        if updated and updated != "UPDATE 0":
+            print(f"[auth] бессрочным сессиям проставлен TTL: {updated}")
+    except Exception as e:
+        print(f"[auth] не удалось проставить TTL сессиям: {e}")
+
     # Bootstrap: create owner if no users exist
     count = await conn.fetchval("SELECT COUNT(*) FROM users")
     if count == 0:
         owner_email = os.getenv("OWNER_EMAIL", "admin@ekomat.pl")
-        owner_pw = os.getenv("OWNER_PASSWORD", "admin")
+        owner_pw = os.getenv("OWNER_PASSWORD", "")
         owner_name = os.getenv("OWNER_NAME", "Admin")
+        if not owner_pw:
+            # Раньше здесь по умолчанию стоял пароль "admin". Если переменную
+            # забыли задать, панель поднималась с общеизвестным доступом.
+            owner_pw = secrets.token_urlsafe(16)
+            print("[auth] " + "!" * 60)
+            print("[auth] OWNER_PASSWORD не задан. Сгенерирован разовый пароль:")
+            print(f"[auth]     {owner_email} / {owner_pw}")
+            print("[auth] Войди и смени его. Пароль больше нигде не сохранён.")
+            print("[auth] " + "!" * 60)
         await conn.execute(
             """INSERT INTO users (email, name, pw_hash, role, permissions)
                VALUES ($1, $2, $3, 'owner', $4)""",
@@ -134,17 +241,38 @@ async def init_auth_tables(conn):
 
 async def _create_session(user_id: int) -> str:
     token = secrets.token_hex(32)
+    expires_at = datetime.now() + timedelta(days=SESSION_TTL_DAYS)
     pool = await _get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
-            "INSERT INTO user_sessions (token, user_id) VALUES ($1, $2)",
-            token, user_id,
+            "INSERT INTO user_sessions (token, user_id, expires_at) VALUES ($1, $2, $3)",
+            token, user_id, expires_at,
         )
         await conn.execute(
             "UPDATE users SET last_login=$1 WHERE id=$2",
             datetime.now(), user_id,
         )
+        # Попутная уборка: протухшие сессии копятся вечно и ничего не дают.
+        try:
+            await conn.execute(
+                "DELETE FROM user_sessions WHERE expires_at IS NOT NULL AND expires_at < NOW()"
+            )
+        except Exception:
+            pass
     return token
+
+
+def _set_session_cookie(resp, token: str):
+    """Ставит cookie сессии. secure + samesite добавлены в v2."""
+    resp.set_cookie(
+        "session_token",
+        token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=86400 * SESSION_TTL_DAYS,
+        path="/",
+    )
 
 
 async def get_current_user(request: Request) -> dict | None:
@@ -161,6 +289,7 @@ async def get_current_user(request: Request) -> dict | None:
                 FROM user_sessions s
                 JOIN users u ON u.id = s.user_id
                 WHERE s.token = $1 AND u.is_active = TRUE
+                  AND (s.expires_at IS NULL OR s.expires_at > NOW())
             """, token)
         except Exception:
             row = await conn.fetchrow("""
@@ -168,6 +297,7 @@ async def get_current_user(request: Request) -> dict | None:
                 FROM user_sessions s
                 JOIN users u ON u.id = s.user_id
                 WHERE s.token = $1 AND u.is_active = TRUE
+                  AND (s.expires_at IS NULL OR s.expires_at > NOW())
             """, token)
     if not row:
         return None
@@ -207,19 +337,22 @@ async def login_post(request: Request, email: str = Form(...), password: str = F
             "SELECT id, pw_hash, is_active FROM users WHERE email=$1",
             email,
         )
-    if not row or row["pw_hash"] != _hash_pw(password):
-        return templates.TemplateResponse(
-            request=request, name="login.html",
-            context={"error": "Nieprawidłowy email lub hasło"},
-        )
-    if not row["is_active"]:
-        return templates.TemplateResponse(
-            request=request, name="login.html",
-            context={"error": "Konto jest nieaktywne. Skontaktuj się z właścicielem."},
-        )
+        if not row or not _verify_pw(password, row["pw_hash"]):
+            return templates.TemplateResponse(
+                request=request, name="login.html",
+                context={"error": "Nieprawidłowy email lub hasło"},
+            )
+        if not row["is_active"]:
+            return templates.TemplateResponse(
+                request=request, name="login.html",
+                context={"error": "Konto jest nieaktywne. Skontaktuj się z właścicielem."},
+            )
+        # Пароль верный. Если он ещё на старом SHA-256 — переводим на bcrypt.
+        await _upgrade_hash_if_legacy(conn, row["id"], password, row["pw_hash"])
+
     token = await _create_session(row["id"])
     resp = RedirectResponse("/", status_code=302)
-    resp.set_cookie("session_token", token, httponly=True, max_age=86400 * 30)
+    _set_session_cookie(resp, token)
     return resp
 
 
@@ -385,10 +518,17 @@ async def api_change_password(request: Request):
     pool = await _get_pool()
     async with pool.acquire() as conn:
         current_hash = await conn.fetchval("SELECT pw_hash FROM users WHERE id=$1", user["id"])
-        if current_hash != _hash_pw(old_pw):
+        if not _verify_pw(old_pw, current_hash):
             raise HTTPException(400, "Wrong current password")
         await conn.execute(
             "UPDATE users SET pw_hash=$1 WHERE id=$2",
             _hash_pw(new_pw), user["id"],
+        )
+        # Пароль сменился — все прочие сессии этого пользователя закрываем.
+        # Раньше старая сессия с украденной cookie пережила бы смену пароля.
+        current_token = request.cookies.get("session_token")
+        await conn.execute(
+            "DELETE FROM user_sessions WHERE user_id=$1 AND token <> $2",
+            user["id"], current_token or "",
         )
     return JSONResponse({"ok": True})

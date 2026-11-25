@@ -1,434 +1,677 @@
 <!doctype html>
-<html lang="pl">
+<html lang="pl" data-theme="light">
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
-    <title>Zarządzanie użytkownikami — EKOMAT</title>
+    <title>Użytkownicy — EKOMAT Dashboard</title>
+
+    <script>
+      (function(){try{var t=localStorage.getItem('ekomat_theme');
+        if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/theme.css">
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-               background: #f3f4f6; color: #1f2937; }
-
-        .navbar { background: #1a1a2e; color: #fff; padding: 12px 24px;
-                  display: flex; align-items: center; justify-content: space-between; }
-        .navbar h1 { font-size: 16px; font-weight: 600; }
-        .navbar-links { display: flex; gap: 16px; align-items: center; }
-        .navbar a { color: #a5b4fc; font-size: 13px; text-decoration: none; }
-        .navbar a:hover { color: #fff; }
-        .navbar a.active { color: #fff; font-weight: 600; border-bottom: 2px solid #a5b4fc; padding-bottom: 2px; }
-
-        .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
-        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .page-header h2 { font-size: 20px; color: #1a1a2e; }
-
-        .btn { padding: 8px 18px; border: none; border-radius: 8px; font-size: 13px;
-               cursor: pointer; font-weight: 500; }
-        .btn-add { background: #7c3aed; color: #fff; }
-        .btn-add:hover { background: #6d28d9; }
-        .btn-save { background: #059669; color: #fff; }
-        .btn-save:hover { background: #047857; }
-        .btn-cancel { background: #e5e7eb; color: #374151; }
-        .btn-cancel:hover { background: #d1d5db; }
-        .btn-delete { background: #dc2626; color: #fff; font-size: 12px; padding: 5px 12px; }
-        .btn-delete:hover { background: #b91c1c; }
-        .btn-edit { background: #2563eb; color: #fff; font-size: 12px; padding: 5px 12px; }
-        .btn-edit:hover { background: #1d4ed8; }
-        .btn-toggle { font-size: 12px; padding: 5px 12px; border: 1px solid #e5e7eb; background: #fff;
-                      border-radius: 6px; cursor: pointer; }
-
-        .card { background: #fff; border-radius: 10px; padding: 20px;
-                box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { text-align: left; padding: 10px 12px; border-bottom: 2px solid #e5e7eb;
-             color: #6b7280; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
-        td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
-        tr:hover td { background: #f9fafb; }
-
-        .perm-tag { display: inline-block; padding: 2px 8px; border-radius: 10px;
-                    font-size: 10px; font-weight: 500; background: #dbeafe; color: #1e40af;
-                    margin: 1px 2px; }
-        .status-active { color: #059669; }
-        .status-inactive { color: #dc2626; }
-        .actions { display: flex; gap: 6px; }
-        .user-email { color: #6b7280; font-size: 12px; }
-
-        /* Modal */
-        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-                         background: rgba(0,0,0,.4); z-index: 100; align-items: center; justify-content: center; }
-        .modal-overlay.open { display: flex; }
-        .modal { background: #fff; border-radius: 12px; padding: 28px; width: 480px;
-                 max-height: 90vh; overflow-y: auto;
-                 box-shadow: 0 8px 30px rgba(0,0,0,.15); }
-        .modal h3 { font-size: 18px; margin-bottom: 20px; color: #1a1a2e; }
-        .modal label { display: block; font-size: 13px; color: #6b7280; margin-bottom: 4px; font-weight: 500; }
-        .modal input[type="text"], .modal input[type="email"] {
-            width: 100%; padding: 9px 12px; border: 1px solid #e5e7eb;
-            border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
-        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-
-        .perms-section { margin-bottom: 16px; }
-        .perms-section .section-title { font-size: 12px; font-weight: 600; color: #374151;
-                                         margin-bottom: 8px; text-transform: uppercase; letter-spacing: .5px; }
-        .perm-row { display: flex; align-items: center; gap: 8px; padding: 6px 0;
-                    border-bottom: 1px solid #f9fafb; }
-        .perm-row label { margin: 0; font-size: 13px; color: #1f2937; font-weight: 500; cursor: pointer; flex: 1; }
-        .perm-row .perm-desc { font-size: 11px; color: #9ca3af; }
-        .perm-row input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
-
-        .select-all-row { padding: 8px 0; margin-bottom: 4px; border-bottom: 2px solid #e5e7eb; }
-        .select-all-row label { font-weight: 600; color: #1a1a2e; }
+        .bk-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+        .bk-title{font-size:15px;font-weight:600;margin:0 0 3px;color:var(--ink);}
+        .bk-sub{font-size:12.5px;color:var(--muted);margin:0;}
+        .bk-actions{display:flex;gap:8px;flex-shrink:0;}
+        .gd-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 13px;
+                border:1px solid var(--line);border-radius:9px;font-size:12.5px;color:var(--ink-soft);}
+        .gd-ico{font-size:15px;}
+        .gd-text{flex:1;min-width:200px;}
+        .gd-row a{text-decoration:none;}
+        .bk-result{margin-top:12px;padding:10px 13px;border-radius:9px;font-size:12.5px;
+                   background:var(--chip);color:var(--ink-soft);white-space:pre-line;}
+        .bk-result.err{background:var(--danger-bg);color:var(--danger-ink);}
+        .bk-list{list-style:none;margin:14px 0 0;padding:0;max-height:260px;overflow-y:auto;}
+        .bk-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;
+                    padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;}
+        .bk-list li:first-child{border-top:none;}
+        .bk-list .bk-name{font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);
+                          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .bk-list .bk-size{color:var(--faint);flex-shrink:0;}
     </style>
 </head>
 <body>
-    <div class="navbar">
-        <h1>EKOMAT Dashboard</h1>
-        <div class="navbar-links">
-            <a href="/">Dashboard</a>
-            <a href="/orders">Orders</a>
-            <a href="/admin/users" class="active">Users</a>
-            <span style="color:#6b7280;font-size:12px;">{{ user.name }}</span>
-            <a href="/logout">Wyloguj</a>
+
+<nav class="nav">
+    <span class="nav-logo">ekomat<span style="color:var(--accent);">.</span></span>
+    <div class="nav-links">
+        {% if user and 'dashboard' in (user.permissions or '').split(',') %}<a href="/" data-i18n="nav_dash">Pulpit</a>{% endif %}
+        {% if user and 'orders' in (user.permissions or '').split(',') %}<a href="/orders" data-i18n="nav_orders">Zamówienia</a>{% endif %}
+        {% if user and 'products' in (user.permissions or '').split(',') %}<a href="/products" data-i18n="nav_products">Katalog</a>{% endif %}
+        {% if user and ('assistant_kb' in (user.permissions or '').split(',') or 'manage_users' in (user.permissions or '').split(',')) %}<a href="/assistant" data-i18n="nav_assistant">Asystent</a>{% endif %}
+        <a href="/admin/users" class="active" data-i18n="nav_users">Użytkownicy</a>
+    </div>
+    <div class="nav-right">
+        <div class="seg">
+            <button type="button" data-lang="pl">PL</button>
+            <button type="button" data-lang="ru">RU</button>
+        </div>
+        <button type="button" class="theme-toggle" data-theme-toggle data-i18n-title="theme">&#9790;</button>
+        {% if user %}
+        <div class="nav-sep"></div>
+        <span class="nav-user">{{ user.name }}</span>
+        <a href="/logout" class="logout" data-i18n="logout">Wyloguj</a>
+        {% endif %}
+    </div>
+</nav>
+
+<main class="main">
+
+    <div class="page-head">
+        <div>
+            <h1 data-i18n="u_title">Użytkownicy</h1>
+            <p class="sub" data-i18n="u_sub">Dostęp do panelu i uprawnienia</p>
+        </div>
+        <div class="filters">
+            <button class="btn-sm" onclick="openModal()" data-i18n="u_add">+ Dodaj użytkownika</button>
         </div>
     </div>
 
-    <div class="container">
-        <div class="page-header">
-            <h2>Zarządzanie użytkownikami</h2>
-            <button class="btn btn-add" onclick="openModal()">+ Dodaj użytkownika</button>
-        </div>
-
-        <div class="card">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Użytkownik</th>
-                        <th>Uprawnienia</th>
-                        <th>Status</th>
-                        <th>Ostatnie logowanie</th>
-                        <th>Akcje</th>
-                    </tr>
-                </thead>
-                <tbody id="users-table">
-                    <tr><td colspan="5" style="text-align:center;color:#9ca3af;">Ładowanie...</td></tr>
-                </tbody>
-            </table>
-        </div>
+    <div class="section">
+        <table class="tbl">
+            <thead>
+                <tr>
+                    <th data-i18n="th_user">Użytkownik</th>
+                    <th data-i18n="th_perms">Uprawnienia</th>
+                    <th data-i18n="th_status">Status</th>
+                    <th data-i18n="th_login">Ostatnie logowanie</th>
+                    <th class="r" data-i18n="th_actions">Akcje</th>
+                </tr>
+            </thead>
+            <tbody id="users-table">
+                <tr><td colspan="5"><div class="empty" data-i18n="loading">Ładowanie…</div></td></tr>
+            </tbody>
+        </table>
     </div>
 
-    <!-- Add / Edit User Modal -->
-    <div class="modal-overlay" id="user-modal">
-        <div class="modal">
-            <h3 id="modal-title">Dodaj użytkownika</h3>
-            <input type="hidden" id="edit-id" value="">
-
-            <label>Imię i nazwisko</label>
-            <input type="text" id="f-name" placeholder="Jan Kowalski">
-
-            <label>Email</label>
-            <input type="email" id="f-email" placeholder="jan@ekomat.pl">
-
-            <div class="perms-section">
-                <div class="section-title">Uprawnienia</div>
-                <div class="select-all-row perm-row">
-                    <input type="checkbox" id="perm-select-all" onchange="toggleSelectAll(this)">
-                    <label for="perm-select-all">Zaznacz wszystko</label>
-                </div>
-                <div id="perm-checkboxes">
-                    <div class="perm-row">
-                        <input type="checkbox" class="perm-check" value="dashboard" id="p-dashboard">
-                        <label for="p-dashboard">Dashboard<br><span class="perm-desc">Widzi dashboard ze statystykami</span></label>
-                    </div>
-                    <div class="perm-row">
-                        <input type="checkbox" class="perm-check" value="orders" id="p-orders">
-                        <label for="p-orders">Zamówienia<br><span class="perm-desc">Widzi tabelę zamówień</span></label>
-                    </div>
-                    <div class="perm-row">
-                        <input type="checkbox" class="perm-check" value="prices" id="p-prices">
-                        <label for="p-prices">Ceny i przychody<br><span class="perm-desc">Widzi ceny, koszty dostawy, przychody</span></label>
-                    </div>
-                    <div class="perm-row">
-                        <input type="checkbox" class="perm-check" value="phones" id="p-phones">
-                        <label for="p-phones">Telefony klientów<br><span class="perm-desc">Widzi numery telefonów</span></label>
-                    </div>
-                    <div class="perm-row">
-                        <input type="checkbox" class="perm-check" value="export" id="p-export">
-                        <label for="p-export">Eksport XLSX<br><span class="perm-desc">Może eksportować zamówienia</span></label>
-                    </div>
-                    <div class="perm-row">
-                        <input type="checkbox" class="perm-check" value="sync" id="p-sync">
-                        <label for="p-sync">Synchronizacja<br><span class="perm-desc">Może uruchamiać sync</span></label>
-                    </div>
-                    <div class="perm-row">
-                        <input type="checkbox" class="perm-check" value="add_orders" id="p-add_orders">
-                        <label for="p-add_orders">Dodawanie zamówień<br><span class="perm-desc">Może dodawać zamówienia ręcznie</span></label>
-                    </div>
-                    <div class="perm-row">
-                        <input type="checkbox" class="perm-check" value="edit_comments" id="p-edit_comments">
-                        <label for="p-edit_comments">Edycja komentarzy<br><span class="perm-desc">Może edytować komentarze w zamówieniach</span></label>
-                    </div>
-                    <div class="perm-row">
-                        <input type="checkbox" class="perm-check" value="mark_delivery" id="p-mark_delivery">
-                        <label for="p-mark_delivery">Oznaczanie dostawy<br><span class="perm-desc">Może oznaczać zamówienia jako dostarczone</span></label>
-                    </div>
-                    <div class="perm-row">
-                        <input type="checkbox" class="perm-check" value="manage_users" id="p-manage_users">
-                        <label for="p-manage_users">Zarządzanie użytkownikami<br><span class="perm-desc">Może dodawać/edytować/usuwać użytkowników</span></label>
-                    </div>
-                </div>
+    {% if user and 'manage_users' in (user.permissions or '').split(',') %}
+    <div class="section" id="backup-section">
+        <div class="bk-head">
+            <div>
+                <h2 class="bk-title" data-i18n="bk_title">Kopie zapasowe bazy</h2>
+                <p class="bk-sub" id="bk-status" data-i18n="loading">Ładowanie…</p>
             </div>
-
-            <div class="perms-section">
-                <div class="section-title">Dostęp do źródeł</div>
-                <div class="perm-row">
-                    <input type="checkbox" id="src-all" value="all" onchange="toggleSrcAll(this)" checked>
-                    <label for="src-all">Wszystkie sklepy</label>
-                </div>
-                <div id="src-checkboxes">
-                    <div class="perm-row">
-                        <input type="checkbox" class="src-check" value="dobraszklarnia" id="s-dobra">
-                        <label for="s-dobra">dobraszklarnia.pl</label>
-                    </div>
-                    <div class="perm-row">
-                        <input type="checkbox" class="src-check" value="oteko" id="s-oteko">
-                        <label for="s-oteko">oteko.pl</label>
-                    </div>
-                    <div class="perm-row">
-                        <input type="checkbox" class="src-check" value="cieplarnia" id="s-ciep">
-                        <label for="s-ciep">cieplarnia.pl</label>
-                    </div>
-                    <div class="perm-row">
-                        <input type="checkbox" class="src-check" value="allegro" id="s-allegro">
-                        <label for="s-allegro">Allegro (wszystkie konta)</label>
-                    </div>
-                    <div style="margin-left:24px;">
-                        <div class="perm-row">
-                            <input type="checkbox" class="src-check" value="allegro:mantrade" id="s-al-mantrade">
-                            <label for="s-al-mantrade">Allegro: mantrade</label>
-                        </div>
-                        <div class="perm-row">
-                            <input type="checkbox" class="src-check" value="allegro:drogatrade" id="s-al-drogatrade">
-                            <label for="s-al-drogatrade">Allegro: drogatrade</label>
-                        </div>
-                        <div class="perm-row">
-                            <input type="checkbox" class="src-check" value="allegro:mega-agronom" id="s-al-mega">
-                            <label for="s-al-mega">Allegro: mega-agronom</label>
-                        </div>
-                        <div class="perm-row">
-                            <input type="checkbox" class="src-check" value="allegro:oteko_pl" id="s-al-oteko">
-                            <label for="s-al-oteko">Allegro: oteko_pl</label>
-                        </div>
-                        <div class="perm-row">
-                            <input type="checkbox" class="src-check" value="allegro:dobraszklarniapl" id="s-al-dobra">
-                            <label for="s-al-dobra">Allegro: dobraszklarniapl</label>
-                        </div>
-                        <div class="perm-row">
-                            <input type="checkbox" class="src-check" value="allegro:cieplarnia_pl" id="s-al-ciep">
-                            <label for="s-al-ciep">Allegro: cieplarnia_pl</label>
-                        </div>
-                    </div>
-                    <div class="perm-row">
-                        <input type="checkbox" class="src-check" value="manual" id="s-manual">
-                        <label for="s-manual">Zamówienia ręczne</label>
-                    </div>
-                </div>
-            </div>
-
-            <label>Hasło</label>
-            <input type="text" id="f-password" placeholder="min. 4 znaki">
-            <div id="pw-hint" style="font-size:11px;color:#9ca3af;margin-top:-10px;margin-bottom:14px;display:none;">
-                Pozostaw puste, aby nie zmieniać hasła
-            </div>
-
-            <div class="modal-actions">
-                <button class="btn btn-cancel" onclick="closeModal()">Anuluj</button>
-                <button class="btn btn-save" onclick="saveUser()">Zapisz</button>
+            <div class="bk-actions">
+                <button class="btn-quiet" onclick="backupDownload()" data-i18n="bk_download">Pobierz teraz</button>
+                <button class="btn-sm" id="bk-run" onclick="backupRun()" data-i18n="bk_run">Zrób kopię</button>
             </div>
         </div>
+        <div class="gd-row" id="gd-row" style="display:none;" data-help="Druga kopia każdej nocnej kopii trafia do folderu na Google Drive. Aplikacja widzi tylko pliki, które sama utworzyła.">
+            <span class="gd-ico">☁</span>
+            <span class="gd-text" id="gd-text"></span>
+            <a class="btn-quiet" id="gd-folder" target="_blank" rel="noopener" style="display:none;" data-i18n="gd_open">Otwórz folder</a>
+            <a class="btn-sm" id="gd-connect" href="/admin/gdrive/connect" style="display:none;" data-i18n="gd_connect">Połącz Google Drive</a>
+            <button class="btn-quiet" id="gd-disconnect" onclick="gdDisconnect()" style="display:none;" data-i18n="gd_disconnect">Odłącz</button>
+        </div>
+        <div id="bk-result" class="bk-result" style="display:none;"></div>
+        <ul class="bk-list" id="bk-list"></ul>
     </div>
+    {% endif %}
 
-    <script>
-    var permLabels = {
-        dashboard:'Dashboard', orders:'Zamówienia', prices:'Ceny', phones:'Telefony',
-        export:'Eksport', sync:'Sync', add_orders:'Dodawanie', edit_comments:'Komentarze',
-        mark_delivery:'Dostawa', manage_users:'Użytkownicy'
-    };
+</main>
 
-    function loadUsers() {
-        fetch('/api/users').then(function(r){return r.json()}).then(function(d){
-            var tb = document.getElementById('users-table');
-            if (!d.users || d.users.length === 0) {
-                tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#9ca3af;">Brak użytkowników</td></tr>';
-                return;
-            }
-            var html = '';
-            d.users.forEach(function(u){
-                var lastLogin = u.last_login ? new Date(u.last_login).toLocaleString('pl-PL') : '—';
-                var statusClass = u.is_active ? 'status-active' : 'status-inactive';
-                var statusText = u.is_active ? 'Aktywny' : 'Nieaktywny';
+<!-- Добавить / изменить пользователя -->
+<div class="modal-overlay" id="user-modal">
+    <div class="modal">
+        <h3 id="modal-title" data-i18n="m_add">Dodaj użytkownika</h3>
+        <input type="hidden" id="edit-id" value="">
 
-                // Permission tags
-                var perms = (u.permissions || '').split(',').filter(function(p){return p.trim();});
-                var permHtml = '';
-                perms.forEach(function(p) {
-                    permHtml += '<span class="perm-tag">' + (permLabels[p.trim()] || p.trim()) + '</span>';
-                });
-                if (!permHtml) permHtml = '<span style="color:#9ca3af;font-size:11px;">Brak</span>';
+        <label class="field-label" data-i18n="f_name">Imię i nazwisko</label>
+        <input type="text" class="field" id="f-name" placeholder="Jan Kowalski">
 
-                html += '<tr>'
-                    + '<td><strong>' + u.name + '</strong><br><span class="user-email">' + u.email + '</span></td>'
-                    + '<td style="max-width:280px;">' + permHtml + '</td>'
-                    + '<td class="' + statusClass + '">' + statusText + '</td>'
-                    + '<td style="font-size:12px;">' + lastLogin + '</td>'
-                    + '<td class="actions">'
-                    + '<button class="btn-edit" onclick=\'editUser(' + JSON.stringify({id:u.id,name:u.name,email:u.email,permissions:u.permissions||"",allowed_sources:u.allowed_sources||"all",is_active:u.is_active}) + ')\'>Edytuj</button>'
-                    + ' <button class="btn-toggle" onclick="toggleActive(' + u.id + ',' + u.is_active + ')">' + (u.is_active ? 'Wyłącz' : 'Włącz') + '</button>'
-                    + ' <button class="btn-delete" onclick="deleteUser(' + u.id + ',\'' + u.name.replace(/'/g,"\\'") + '\')">Usuń</button>'
-                    + '</td>'
-                    + '</tr>';
-            });
-            tb.innerHTML = html;
+        <label class="field-label" data-i18n="f_email">Email</label>
+        <input type="email" class="field" id="f-email" placeholder="jan@ekomat.pl">
+
+        <div class="fieldset">
+            <div class="fieldset-title" data-i18n="fs_perms">Uprawnienia</div>
+            <div class="check-row master">
+                <input type="checkbox" id="perm-select-all" onchange="toggleSelectAll(this)">
+                <label for="perm-select-all" data-i18n="select_all">Zaznacz wszystko</label>
+            </div>
+            <div id="perm-checkboxes">
+                <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="dashboard" id="p-dashboard">
+                    <label for="p-dashboard"><span data-i18n="p_dashboard">Dashboard</span><span class="hint" data-i18n="p_dashboard_d">Widzi dashboard ze statystykami</span></label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="orders" id="p-orders">
+                    <label for="p-orders"><span data-i18n="p_orders">Zamówienia</span><span class="hint" data-i18n="p_orders_d">Widzi tabelę zamówień</span></label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="view_stats" id="p-view_stats">
+                    <label for="p-view_stats"><span data-i18n="p_view_stats">Statystyki (karty)</span><span class="hint" data-i18n="p_view_stats_d">Widzi karty statystyk na stronie zamówień</span></label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="prices" id="p-prices">
+                    <label for="p-prices"><span data-i18n="p_prices">Ceny i przychody</span><span class="hint" data-i18n="p_prices_d">Widzi ceny, koszty dostawy, przychody</span></label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="phones" id="p-phones">
+                    <label for="p-phones"><span data-i18n="p_phones">Telefony klientów</span><span class="hint" data-i18n="p_phones_d">Widzi numery telefonów</span></label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="export" id="p-export">
+                    <label for="p-export"><span data-i18n="p_export">Eksport XLSX</span><span class="hint" data-i18n="p_export_d">Może eksportować zamówienia</span></label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="sync" id="p-sync">
+                    <label for="p-sync"><span data-i18n="p_sync">Synchronizacja</span><span class="hint" data-i18n="p_sync_d">Może uruchamiać sync</span></label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="add_orders" id="p-add_orders">
+                    <label for="p-add_orders"><span data-i18n="p_add_orders">Dodawanie zamówień</span><span class="hint" data-i18n="p_add_orders_d">Może dodawać zamówienia ręcznie</span></label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="edit_comments" id="p-edit_comments">
+                    <label for="p-edit_comments"><span data-i18n="p_edit_comments">Edycja komentarzy</span><span class="hint" data-i18n="p_edit_comments_d">Może edytować komentarze w zamówieniach</span></label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="mark_delivery" id="p-mark_delivery">
+                    <label for="p-mark_delivery"><span data-i18n="p_mark_delivery">Oznaczanie dostawy</span><span class="hint" data-i18n="p_mark_delivery_d">Może oznaczać zamówienia jako dostarczone</span></label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="products" id="p-products">
+                    <label for="p-products"><span data-i18n="p_products">Katalog produktów</span><span class="hint" data-i18n="p_products_d">Może edytować katalog: nazwy, kody EAN, wagę</span></label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="assistant_kb" id="p-assistant_kb">
+                    <label for="p-assistant_kb"><span data-i18n="p_assistant_kb">Baza wiedzy asystenta</span><span class="hint" data-i18n="p_assistant_kb_d">Może edytować odpowiedzi asystenta i widzi pytania bez odpowiedzi</span></label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="manage_users" id="p-manage_users">
+                    <label for="p-manage_users"><span data-i18n="p_manage_users">Zarządzanie użytkownikami</span><span class="hint" data-i18n="p_manage_users_d">Może dodawać/edytować/usuwać użytkowników</span></label>
+                </div>
+            </div>
+        </div>
+
+        <div class="fieldset">
+            <div class="fieldset-title" data-i18n="fs_src">Dostęp do źródeł</div>
+            <div class="check-row master">
+                <input type="checkbox" id="src-all" value="all" onchange="toggleSrcAll(this)" checked>
+                <label for="src-all" data-i18n="all_shops">Wszystkie sklepy</label>
+            </div>
+            <div id="src-checkboxes">
+                <div class="check-row">
+                    <input type="checkbox" class="src-check" value="dobraszklarnia" id="s-dobra">
+                    <label for="s-dobra">dobraszklarnia.pl</label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="src-check" value="oteko" id="s-oteko">
+                    <label for="s-oteko">oteko.pl</label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="src-check" value="cieplarnia" id="s-ciep">
+                    <label for="s-ciep">cieplarnia.pl</label>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="src-check" value="allegro" id="s-allegro">
+                    <label for="s-allegro"><span data-i18n="allegro_all">Allegro (wszystkie konta)</span></label>
+                </div>
+                <div class="check-sub">
+                    <div class="check-row">
+                        <input type="checkbox" class="src-check" value="allegro:mantrade" id="s-al-mantrade">
+                        <label for="s-al-mantrade">Allegro: mantrade</label>
+                    </div>
+                    <div class="check-row">
+                        <input type="checkbox" class="src-check" value="allegro:drogatrade" id="s-al-drogatrade">
+                        <label for="s-al-drogatrade">Allegro: drogatrade</label>
+                    </div>
+                    <div class="check-row">
+                        <input type="checkbox" class="src-check" value="allegro:mega-agronom" id="s-al-mega">
+                        <label for="s-al-mega">Allegro: mega-agronom</label>
+                    </div>
+                    <div class="check-row">
+                        <input type="checkbox" class="src-check" value="allegro:oteko_pl" id="s-al-oteko">
+                        <label for="s-al-oteko">Allegro: oteko_pl</label>
+                    </div>
+                    <div class="check-row">
+                        <input type="checkbox" class="src-check" value="allegro:dobraszklarniapl" id="s-al-dobra">
+                        <label for="s-al-dobra">Allegro: dobraszklarniapl</label>
+                    </div>
+                    <div class="check-row">
+                        <input type="checkbox" class="src-check" value="allegro:cieplarnia_pl" id="s-al-ciep">
+                        <label for="s-al-ciep">Allegro: cieplarnia_pl</label>
+                    </div>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="src-check" value="erli" id="s-erli">
+                    <label for="s-erli"><span data-i18n="erli_all">Erli (wszystkie konta)</span></label>
+                </div>
+                <div class="check-sub">
+                    <div class="check-row">
+                        <input type="checkbox" class="src-check" value="erli:erli_cieplarnia" id="s-er-ciep">
+                        <label for="s-er-ciep">Erli: erli_cieplarnia</label>
+                    </div>
+                    <div class="check-row">
+                        <input type="checkbox" class="src-check" value="erli:erli_oteko" id="s-er-oteko">
+                        <label for="s-er-oteko">Erli: erli_oteko</label>
+                    </div>
+                </div>
+                <div class="check-row">
+                    <input type="checkbox" class="src-check" value="manual" id="s-manual">
+                    <label for="s-manual"><span data-i18n="src_manual_lbl">Zamówienia ręczne</span></label>
+                </div>
+            </div>
+        </div>
+
+        <label class="field-label" data-i18n="f_password">Hasło</label>
+        <input type="text" class="field" id="f-password" placeholder="min. 4 znaki" data-i18n-ph="ph_pw_new">
+        <div id="pw-hint" class="pw-hint" style="display:none;" data-i18n="pw_hint">Pozostaw puste, aby nie zmieniać hasła</div>
+
+        <div class="modal-actions">
+            <button class="btn-quiet" onclick="closeModal()" data-i18n="cancel">Anuluj</button>
+            <button class="btn-sm" onclick="saveUser()" data-i18n="save">Zapisz</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/i18n.js"></script>
+<script>
+EKOMAT.extend({
+  pl:{
+    nav_dash:'Pulpit', nav_orders:'Zamówienia', nav_users:'Użytkownicy', logout:'Wyloguj',
+    u_title:'Użytkownicy', u_sub:'Dostęp do panelu i uprawnienia', u_add:'+ Dodaj użytkownika',
+    th_user:'Użytkownik', th_perms:'Uprawnienia', th_status:'Status',
+    th_login:'Ostatnie logowanie', th_actions:'Akcje',
+    loading:'Ładowanie…', no_users:'Brak użytkowników',
+    st_active:'Aktywny', st_inactive:'Nieaktywny', no_perms:'Brak',
+    act_edit:'Edytuj', act_off:'Wyłącz', act_on:'Włącz', act_del:'Usuń',
+    m_add:'Dodaj użytkownika', m_edit:'Edytuj użytkownika',
+    f_name:'Imię i nazwisko', f_email:'Email', f_password:'Hasło',
+    fs_perms:'Uprawnienia', fs_src:'Dostęp do źródeł',
+    select_all:'Zaznacz wszystko', all_shops:'Wszystkie sklepy',
+    allegro_all:'Allegro (wszystkie konta)', src_manual_lbl:'Zamówienia ręczne',
+    ph_pw_new:'nowe hasło (opcjonalnie)',
+    pw_hint:'Pozostaw puste, aby nie zmieniać hasła',
+    cancel:'Anuluj', save:'Zapisz',
+    p_dashboard:'Dashboard', p_dashboard_d:'Widzi dashboard ze statystykami',
+    p_orders:'Zamówienia', p_orders_d:'Widzi tabelę zamówień',
+    p_prices:'Ceny i przychody', p_prices_d:'Widzi ceny, koszty dostawy, przychody',
+    p_phones:'Telefony klientów', p_phones_d:'Widzi numery telefonów',
+    p_export:'Eksport XLSX', p_export_d:'Może eksportować zamówienia',
+    p_sync:'Synchronizacja', p_sync_d:'Może uruchamiać sync',
+    p_add_orders:'Dodawanie zamówień', p_add_orders_d:'Może dodawać zamówienia ręcznie',
+    p_edit_comments:'Edycja komentarzy', p_edit_comments_d:'Może edytować komentarze w zamówieniach',
+    p_mark_delivery:'Oznaczanie dostawy', p_mark_delivery_d:'Może oznaczać zamówienia jako dostarczone',
+    p_products:'Katalog produktów', p_products_d:'Może edytować katalog: nazwy, kody EAN, wagę', t_products:'Katalog', nav_products:'Katalog',nav_assistant:'Asystent',
+    p_assistant_kb:'Baza wiedzy asystenta', p_assistant_kb_d:'Może edytować odpowiedzi asystenta i widzi pytania bez odpowiedzi', t_assistant_kb:'Asystent', nav_assistant:'Asystent',
+    p_manage_users:'Zarządzanie użytkownikami', p_manage_users_d:'Może dodawać/edytować/usuwać użytkowników',
+    t_dashboard:'Dashboard', t_orders:'Zamówienia', t_prices:'Ceny', t_phones:'Telefony',
+    t_export:'Eksport', t_sync:'Sync', t_add_orders:'Dodawanie', t_edit_comments:'Komentarze',
+    t_mark_delivery:'Dostawa', t_manage_users:'Użytkownicy', t_view_stats:'Statystyki',
+    p_view_stats:'Statystyki (karty)', p_view_stats_d:'Widzi karty statystyk na stronie zamówień',
+    q_fill:'Wypełnij imię i email', q_pw:'Hasło musi mieć min. 4 znaki', q_err:'Błąd',
+    q_off:'Dezaktywować tego użytkownika?', q_on:'Aktywować tego użytkownika?',
+    q_del:'Na pewno usunąć użytkownika',
+    bk_title:'Kopie zapasowe bazy', bk_download:'Pobierz teraz', bk_run:'Zrób kopię',
+    bk_working:'Robię kopię…', bk_off:'Kopie nocne wyłączone — brak ustawień GitHub.',
+    bk_on:'Kopia codziennie o', bk_repo:'do repozytorium', bk_keep:'przechowywane kopie:',
+    bk_none:'Jeszcze nie ma żadnej kopii.', bk_done:'Gotowe. Zapisano',
+    bk_err:'Nie udało się zrobić kopii',
+    gd_open:'Otwórz folder', gd_connect:'Połącz Google Drive', gd_disconnect:'Odłącz',
+    gd_off:'Google Drive: połącz, a każda kopia trafi też na Twój Dysk.',
+    gd_on:'Google Drive: połączony · plików:', gd_last:'ostatnia kopia:',
+    gd_keep:'trzymamy ostatnie {n} + pierwszą z każdego miesiąca',
+    gd_ok:'Google Drive połączony.', gd_denied:'Nie udzielono dostępu do Google Drive.',
+    gd_ask:'Odłączyć Google Drive? Kopie na Dysku zostaną.'
+  },
+  ru:{
+    nav_dash:'Сводка', nav_orders:'Заказы', nav_users:'Пользователи', logout:'Выйти',
+    u_title:'Пользователи', u_sub:'Доступ к панели и права', u_add:'+ Добавить пользователя',
+    th_user:'Пользователь', th_perms:'Права', th_status:'Статус',
+    th_login:'Последний вход', th_actions:'Действия',
+    loading:'Загрузка…', no_users:'Пользователей нет',
+    st_active:'Активен', st_inactive:'Отключён', no_perms:'Нет',
+    act_edit:'Изменить', act_off:'Отключить', act_on:'Включить', act_del:'Удалить',
+    m_add:'Добавить пользователя', m_edit:'Изменить пользователя',
+    f_name:'Имя и фамилия', f_email:'Email', f_password:'Пароль',
+    fs_perms:'Права', fs_src:'Доступ к источникам',
+    select_all:'Выбрать всё', all_shops:'Все магазины',
+    allegro_all:'Allegro (все аккаунты)', src_manual_lbl:'Ручные заказы',
+    ph_pw_new:'новый пароль (необязательно)',
+    pw_hint:'Оставьте пустым, чтобы не менять пароль',
+    cancel:'Отмена', save:'Сохранить',
+    p_dashboard:'Сводка', p_dashboard_d:'Видит сводку со статистикой',
+    p_orders:'Заказы', p_orders_d:'Видит таблицу заказов',
+    p_prices:'Цены и выручка', p_prices_d:'Видит цены, доставку, выручку',
+    p_phones:'Телефоны клиентов', p_phones_d:'Видит номера телефонов',
+    p_export:'Экспорт XLSX', p_export_d:'Может выгружать заказы',
+    p_sync:'Синхронизация', p_sync_d:'Может запускать синхронизацию',
+    p_add_orders:'Добавление заказов', p_add_orders_d:'Может добавлять заказы вручную',
+    p_edit_comments:'Правка комментариев', p_edit_comments_d:'Может править комментарии в заказах',
+    p_mark_delivery:'Отметка доставки', p_mark_delivery_d:'Может отмечать заказы доставленными',
+    p_products:'Каталог товаров', p_products_d:'Может править каталог: названия, коды EAN, вес', t_products:'Каталог', nav_products:'Каталог',nav_assistant:'Помощник',
+    p_assistant_kb:'База знаний помощника', p_assistant_kb_d:'Может править ответы помощника и видит вопросы без ответа', t_assistant_kb:'Помощник', nav_assistant:'Помощник',
+    p_manage_users:'Управление пользователями', p_manage_users_d:'Может добавлять, менять и удалять пользователей',
+    t_dashboard:'Сводка', t_orders:'Заказы', t_prices:'Цены', t_phones:'Телефоны',
+    t_export:'Экспорт', t_sync:'Синх', t_add_orders:'Добавление', t_edit_comments:'Комментарии',
+    t_mark_delivery:'Доставка', t_manage_users:'Пользователи', t_view_stats:'Статистика',
+    p_view_stats:'Статистика (карточки)', p_view_stats_d:'Видит карточки статистики на странице заказов',
+    q_fill:'Заполните имя и email', q_pw:'Пароль минимум 4 символа', q_err:'Ошибка',
+    q_off:'Отключить этого пользователя?', q_on:'Включить этого пользователя?',
+    q_del:'Точно удалить пользователя',
+    bk_title:'Резервные копии базы', bk_download:'Скачать сейчас', bk_run:'Сделать копию',
+    bk_working:'Делаю копию…', bk_off:'Ночные копии выключены — не заданы настройки GitHub.',
+    bk_on:'Копия каждый день в', bk_repo:'в репозиторий', bk_keep:'хранится копий:',
+    bk_none:'Пока ни одной копии нет.', bk_done:'Готово. Сохранено',
+    bk_err:'Не удалось сделать копию',
+    gd_open:'Открыть папку', gd_connect:'Подключить Google Диск', gd_disconnect:'Отключить',
+    gd_off:'Google Диск: подключи, и каждая копия будет уходить ещё и на твой Диск.',
+    gd_on:'Google Диск: подключён · файлов:', gd_last:'последняя копия:',
+    gd_keep:'храним последние {n} + первую копию каждого месяца',
+    gd_ok:'Google Диск подключён.', gd_denied:'Доступ к Google Диску не выдан.',
+    gd_ask:'Отключить Google Диск? Копии на Диске останутся.'
+  }
+});
+
+var T = function(k){ return EKOMAT.t(k); };
+var lastUsers = null;
+
+function permLabel(p){
+    var v = EKOMAT.t('t_' + p);
+    return (v === 't_' + p) ? p : v;
+}
+
+function renderUsers(list){
+    var tb = document.getElementById('users-table');
+    if (!list || list.length === 0){
+        tb.innerHTML = '<tr><td colspan="5"><div class="empty">' + T('no_users') + '</div></td></tr>';
+        return;
+    }
+    var locale = EKOMAT.lang === 'ru' ? 'ru-RU' : 'pl-PL';
+    var html = '';
+    list.forEach(function(u){
+        var lastLogin = u.last_login ? new Date(u.last_login).toLocaleString(locale) : '—';
+        var badgeCls  = u.is_active ? 'badge badge-ok' : 'badge badge-err';
+        var statusTxt = u.is_active ? T('st_active') : T('st_inactive');
+
+        var perms = (u.permissions || '').split(',').filter(function(p){ return p.trim(); });
+        var permHtml = '';
+        perms.forEach(function(p){
+            permHtml += '<span class="badge" style="margin:1px 3px 1px 0;">' + permLabel(p.trim()) + '</span>';
         });
-    }
+        if (!permHtml) permHtml = '<span style="color:var(--faint);font-size:12px;">' + T('no_perms') + '</span>';
 
-    function setPerms(permsStr) {
-        var perms = (permsStr || '').split(',').map(function(p){return p.trim();});
-        document.querySelectorAll('.perm-check').forEach(function(cb) {
-            cb.checked = perms.indexOf(cb.value) >= 0;
+        var payload = JSON.stringify({
+            id:u.id, name:u.name, email:u.email,
+            permissions:u.permissions || '', allowed_sources:u.allowed_sources || 'all',
+            is_active:u.is_active
         });
-        updateSelectAll();
-    }
-    function getPerms() {
-        var selected = [];
-        document.querySelectorAll('.perm-check:checked').forEach(function(cb) {
-            selected.push(cb.value);
-        });
-        return selected.join(',');
-    }
-    function toggleSelectAll(master) {
-        document.querySelectorAll('.perm-check').forEach(function(cb) { cb.checked = master.checked; });
-    }
-    function updateSelectAll() {
-        var all = document.querySelectorAll('.perm-check');
-        var checked = document.querySelectorAll('.perm-check:checked');
-        document.getElementById('perm-select-all').checked = all.length === checked.length;
-    }
-    document.querySelectorAll('.perm-check').forEach(function(cb) {
-        cb.addEventListener('change', updateSelectAll);
+
+        html += '<tr>'
+            + '<td><strong>' + u.name + '</strong><br><span style="color:var(--muted);font-size:12px;">' + u.email + '</span></td>'
+            + '<td style="max-width:300px;">' + permHtml + '</td>'
+            + '<td><span class="' + badgeCls + '">' + statusTxt + '</span></td>'
+            + '<td class="num" style="font-size:12.5px;color:var(--muted);white-space:nowrap;">' + lastLogin + '</td>'
+            + '<td class="r" style="white-space:nowrap;">'
+            + '<button class="btn-xs btn-ghost" onclick=\'editUser(' + payload + ')\'>' + T('act_edit') + '</button> '
+            + '<button class="btn-xs btn-ghost" onclick="toggleActive(' + u.id + ',' + u.is_active + ')">' + (u.is_active ? T('act_off') : T('act_on')) + '</button> '
+            + '<button class="btn-xs btn-danger" onclick="deleteUser(' + u.id + ',\'' + u.name.replace(/'/g,"\\'") + '\')">' + T('act_del') + '</button>'
+            + '</td>'
+            + '</tr>';
     });
+    tb.innerHTML = html;
+}
 
-    // --- Source access ---
-    function toggleSrcAll(cb) {
-        var srcChecks = document.querySelectorAll('.src-check');
-        if (cb.checked) {
-            srcChecks.forEach(function(s) { s.checked = false; s.disabled = true; });
+function loadUsers(){
+    fetch('/api/users').then(function(r){ return r.json(); }).then(function(d){
+        lastUsers = d.users || [];
+        renderUsers(lastUsers);
+    });
+}
+
+window.onEkomatLangChange = function(){ if (lastUsers) renderUsers(lastUsers); };
+
+/* ——— права ——— */
+function setPerms(permsStr){
+    var perms = (permsStr || '').split(',').map(function(p){ return p.trim(); });
+    document.querySelectorAll('.perm-check').forEach(function(cb){
+        cb.checked = perms.indexOf(cb.value) >= 0;
+    });
+    updateSelectAll();
+}
+function getPerms(){
+    var selected = [];
+    document.querySelectorAll('.perm-check:checked').forEach(function(cb){ selected.push(cb.value); });
+    return selected.join(',');
+}
+function toggleSelectAll(master){
+    document.querySelectorAll('.perm-check').forEach(function(cb){ cb.checked = master.checked; });
+}
+function updateSelectAll(){
+    var all = document.querySelectorAll('.perm-check');
+    var checked = document.querySelectorAll('.perm-check:checked');
+    document.getElementById('perm-select-all').checked = all.length === checked.length;
+}
+document.querySelectorAll('.perm-check').forEach(function(cb){
+    cb.addEventListener('change', updateSelectAll);
+});
+
+/* ——— источники ——— */
+function toggleSrcAll(cb){
+    var srcChecks = document.querySelectorAll('.src-check');
+    if (cb.checked){
+        srcChecks.forEach(function(s){ s.checked = false; s.disabled = true; });
+    } else {
+        srcChecks.forEach(function(s){ s.disabled = false; });
+    }
+}
+function setSources(srcStr){
+    var srcAll = document.getElementById('src-all');
+    var srcChecks = document.querySelectorAll('.src-check');
+    if (!srcStr || srcStr === 'all'){
+        srcAll.checked = true;
+        srcChecks.forEach(function(s){ s.checked = false; s.disabled = true; });
+    } else {
+        srcAll.checked = false;
+        var selected = srcStr.split(',').map(function(s){ return s.trim(); });
+        srcChecks.forEach(function(s){
+            s.disabled = false;
+            s.checked = selected.indexOf(s.value) >= 0;
+        });
+    }
+}
+function getSources(){
+    if (document.getElementById('src-all').checked) return 'all';
+    var selected = [];
+    document.querySelectorAll('.src-check:checked').forEach(function(cb){ selected.push(cb.value); });
+    return selected.join(',') || 'all';
+}
+
+/* ——— модалка ——— */
+function openModal(){
+    document.getElementById('edit-id').value = '';
+    document.getElementById('modal-title').textContent = T('m_add');
+    document.getElementById('modal-title').setAttribute('data-i18n', 'm_add');
+    document.getElementById('f-name').value = '';
+    document.getElementById('f-email').value = '';
+    document.getElementById('f-email').disabled = false;
+    document.getElementById('f-password').value = '';
+    document.getElementById('f-password').placeholder = 'min. 4 znaki';
+    document.getElementById('f-password').removeAttribute('data-i18n-ph');
+    document.getElementById('pw-hint').style.display = 'none';
+    setPerms('dashboard,orders');
+    setSources('all');
+    document.getElementById('user-modal').classList.add('open');
+}
+
+function editUser(u){
+    document.getElementById('edit-id').value = u.id;
+    document.getElementById('modal-title').textContent = T('m_edit');
+    document.getElementById('modal-title').setAttribute('data-i18n', 'm_edit');
+    document.getElementById('f-name').value = u.name;
+    document.getElementById('f-email').value = u.email;
+    document.getElementById('f-email').disabled = true;
+    document.getElementById('f-password').value = '';
+    document.getElementById('f-password').placeholder = T('ph_pw_new');
+    document.getElementById('f-password').setAttribute('data-i18n-ph', 'ph_pw_new');
+    document.getElementById('pw-hint').style.display = 'block';
+    setPerms(u.permissions);
+    setSources(u.allowed_sources || 'all');
+    document.getElementById('user-modal').classList.add('open');
+}
+
+function closeModal(){
+    document.getElementById('user-modal').classList.remove('open');
+}
+
+function saveUser(){
+    var editId = document.getElementById('edit-id').value;
+    var data = {
+        name: document.getElementById('f-name').value.trim(),
+        email: document.getElementById('f-email').value.trim(),
+        password: document.getElementById('f-password').value,
+        permissions: getPerms(),
+        allowed_sources: getSources()
+    };
+    if (!data.name || !data.email){ alert(T('q_fill')); return; }
+
+    if (editId){
+        fetch('/api/users/' + editId, {
+            method:'PUT',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(data)
+        }).then(function(r){
+            if (!r.ok) return r.json().then(function(d){ alert(d.detail || T('q_err')); throw 'err'; });
+            closeModal(); loadUsers();
+        }).catch(function(){});
+    } else {
+        if (!data.password || data.password.length < 4){ alert(T('q_pw')); return; }
+        fetch('/api/users', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(data)
+        }).then(function(r){
+            if (!r.ok) return r.json().then(function(d){ alert(d.detail || T('q_err')); throw 'err'; });
+            closeModal(); loadUsers();
+        }).catch(function(){});
+    }
+}
+
+function toggleActive(id, currentlyActive){
+    var msg = currentlyActive ? T('q_off') : T('q_on');
+    if (!confirm(msg)) return;
+    fetch('/api/users/' + id, {
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({is_active: !currentlyActive})
+    }).then(function(){ loadUsers(); });
+}
+
+function deleteUser(id, name){
+    if (!confirm(T('q_del') + ' "' + name + '"?')) return;
+    fetch('/api/users/' + id, { method:'DELETE' }).then(function(){ loadUsers(); });
+}
+
+/* ——— резервные копии базы ——— */
+function bkSay(msg, isErr){
+    var box = document.getElementById('bk-result');
+    if (!box) return;
+    box.textContent = msg;
+    box.className = 'bk-result' + (isErr ? ' err' : '');
+    box.style.display = 'block';
+}
+
+function backupStatus(){
+    var line = document.getElementById('bk-status');
+    var list = document.getElementById('bk-list');
+    if (!line || !list) return;
+    fetch('/admin/backup/status').then(function(r){
+        if (!r.ok) throw 'err';
+        return r.json();
+    }).then(function(d){
+        if (!d.enabled){
+            line.textContent = T('bk_off');
         } else {
-            srcChecks.forEach(function(s) { s.disabled = false; });
+            line.textContent = T('bk_on') + ' ' + d.schedule
+                + (d.repo ? ' ' + T('bk_repo') + ' ' + d.repo + ' · ' + T('bk_keep') + ' ' + d.keep : '');
         }
-    }
-    function setSources(srcStr) {
-        var srcAll = document.getElementById('src-all');
-        var srcChecks = document.querySelectorAll('.src-check');
-        if (!srcStr || srcStr === 'all') {
-            srcAll.checked = true;
-            srcChecks.forEach(function(s) { s.checked = false; s.disabled = true; });
+        var files = d.files || [];
+        if (!files.length){
+            list.innerHTML = '<li><span class="bk-name">' + T('bk_none') + '</span></li>';
+            return;
+        }
+        var html = '';
+        files.forEach(function(f){
+            var name = f.url
+                ? '<a class="bk-name" href="' + f.url + '" target="_blank" rel="noopener">' + f.name + '</a>'
+                : '<span class="bk-name">' + f.name + '</span>';
+            html += '<li>' + name + '<span class="bk-size">' + f.size_mb + ' MB</span></li>';
+        });
+        list.innerHTML = html;
+    }).catch(function(){
+        line.textContent = T('bk_off');
+    });
+}
+
+function gdStatus(){
+    var row = document.getElementById('gd-row');
+    if (!row) return;
+    fetch('/admin/gdrive/status').then(function(r){ if(!r.ok) throw 'err'; return r.json(); }).then(function(d){
+        if (!d.configured){ row.style.display = 'none'; return; }
+        row.style.display = '';
+        var txt = document.getElementById('gd-text');
+        var con = document.getElementById('gd-connect'), dis = document.getElementById('gd-disconnect'),
+            fol = document.getElementById('gd-folder');
+        if (d.connected){
+            var s = T('gd_on') + ' ' + (d.files || []).length;
+            if (d.last && d.last.file) s += ' · ' + T('gd_last') + ' ' + d.last.file;
+            s += ' · ' + T('gd_keep').replace('{n}', d.keep);
+            if (d.error) s += ' · ⚠ ' + d.error;
+            txt.textContent = s;
+            con.style.display = 'none'; dis.style.display = '';
+            if (d.folder_url){ fol.href = d.folder_url; fol.style.display = ''; }
         } else {
-            srcAll.checked = false;
-            var selected = srcStr.split(',').map(function(s){return s.trim();});
-            srcChecks.forEach(function(s) {
-                s.disabled = false;
-                s.checked = selected.indexOf(s.value) >= 0;
-            });
+            txt.textContent = T('gd_off') + (d.error ? ' ⚠ ' + d.error : '');
+            con.style.display = ''; dis.style.display = 'none'; fol.style.display = 'none';
         }
-    }
-    function getSources() {
-        if (document.getElementById('src-all').checked) return 'all';
-        var selected = [];
-        document.querySelectorAll('.src-check:checked').forEach(function(cb) { selected.push(cb.value); });
-        return selected.join(',') || 'all';
-    }
+    }).catch(function(){ row.style.display = 'none'; });
+}
 
-    function openModal() {
-        document.getElementById('edit-id').value = '';
-        document.getElementById('modal-title').textContent = 'Dodaj użytkownika';
-        document.getElementById('f-name').value = '';
-        document.getElementById('f-email').value = '';
-        document.getElementById('f-email').disabled = false;
-        document.getElementById('f-password').value = '';
-        document.getElementById('f-password').placeholder = 'min. 4 znaki';
-        document.getElementById('pw-hint').style.display = 'none';
-        setPerms('dashboard,orders');
-        setSources('all');
-        document.getElementById('user-modal').classList.add('open');
-    }
+function gdDisconnect(){
+    if (!confirm(T('gd_ask'))) return;
+    fetch('/admin/gdrive/disconnect', { method:'POST' }).then(function(){ gdStatus(); });
+}
 
-    function editUser(u) {
-        document.getElementById('edit-id').value = u.id;
-        document.getElementById('modal-title').textContent = 'Edytuj użytkownika';
-        document.getElementById('f-name').value = u.name;
-        document.getElementById('f-email').value = u.email;
-        document.getElementById('f-email').disabled = true;
-        document.getElementById('f-password').value = '';
-        document.getElementById('f-password').placeholder = 'nowe hasło (opcjonalnie)';
-        document.getElementById('pw-hint').style.display = 'block';
-        setPerms(u.permissions);
-        setSources(u.allowed_sources || 'all');
-        document.getElementById('user-modal').classList.add('open');
-    }
-
-    function closeModal() {
-        document.getElementById('user-modal').classList.remove('open');
-    }
-
-    function saveUser() {
-        var editId = document.getElementById('edit-id').value;
-        var data = {
-            name: document.getElementById('f-name').value.trim(),
-            email: document.getElementById('f-email').value.trim(),
-            password: document.getElementById('f-password').value,
-            permissions: getPerms(),
-            allowed_sources: getSources()
-        };
-        if (!data.name || !data.email) { alert('Wypełnij imię i email'); return; }
-
-        if (editId) {
-            fetch('/api/users/' + editId, {
-                method: 'PUT',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
-            }).then(function(r){
-                if (!r.ok) return r.json().then(function(d){ alert(d.detail || 'Błąd'); throw 'err'; });
-                closeModal(); loadUsers();
-            }).catch(function(){});
+function backupRun(){
+    var btn = document.getElementById('bk-run');
+    if (btn) btn.disabled = true;
+    bkSay(T('bk_working'), false);
+    fetch('/admin/backup/run', { method:'POST' }).then(function(r){
+        return r.json().then(function(d){ return { ok:r.ok, d:d }; });
+    }).then(function(res){
+        if (!res.ok || res.d.ok === false){
+            bkSay(T('bk_err') + ': ' + (res.d.detail || res.d.error || ''), true);
         } else {
-            if (!data.password || data.password.length < 4) { alert('Hasło musi mieć min. 4 znaki'); return; }
-            fetch('/api/users', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
-            }).then(function(r){
-                if (!r.ok) return r.json().then(function(d){ alert(d.detail || 'Błąd'); throw 'err'; });
-                closeModal(); loadUsers();
-            }).catch(function(){});
+            bkSay(T('bk_done') + ' ' + (res.d.file || '') + ' (' + (res.d.size_mb || 0) + ' MB)', false);
         }
-    }
+        backupStatus(); gdStatus();
+    }).catch(function(){
+        bkSay(T('bk_err'), true);
+    }).then(function(){
+        if (btn) btn.disabled = false;
+    });
+}
 
-    function toggleActive(id, currentlyActive) {
-        var msg = currentlyActive ? 'Dezaktywować tego użytkownika?' : 'Aktywować tego użytkownika?';
-        if (!confirm(msg)) return;
-        fetch('/api/users/' + id, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({is_active: !currentlyActive})
-        }).then(function(){ loadUsers(); });
-    }
+function backupDownload(){
+    window.location.href = '/admin/backup/download';
+}
 
-    function deleteUser(id, name) {
-        if (!confirm('Na pewno usunąć użytkownika "' + name + '"?')) return;
-        fetch('/api/users/' + id, { method: 'DELETE' }).then(function(){ loadUsers(); });
-    }
-
-    loadUsers();
-    </script>
+loadUsers();
+backupStatus();
+gdStatus();
+(function(){
+    var m = /[?&]gdrive=(ok|denied)/.exec(location.search);
+    if (m && typeof bkSay === 'function') bkSay(T(m[1] === 'ok' ? 'gd_ok' : 'gd_denied'), m[1] !== 'ok');
+})();
+</script>
+<script src="/static/help.js" defer></script>
+<script src="/static/assistant.js" defer></script>
 </body>
 </html>

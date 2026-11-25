@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;}
+  *{box-sizing:border-box;}
+  body{font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;transition:background-color .2s ease,color .2s ease;}
+  a{text-decoration:none;transition:color .15s ease,background-color .15s ease;}
+  button{font-family:inherit;letter-spacing:-.01em;}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:{{ L.outerPad }};background:{{ p.bg }};color:{{ p.ink }};position:relative;">
+  <div style="position:absolute;top:20px;right:24px;display:flex;align-items:center;gap:10px;">
+    <div style="display:flex;background:{{ p.chip }};border-radius:9px;padding:2px;">
+      <button onClick="{{ setPl }}" style="border:none;cursor:pointer;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:7px;background:{{ p.plBg }};color:{{ p.plColor }};box-shadow:{{ p.plShadow }};transition:all .15s ease;">PL</button>
+      <button onClick="{{ setRu }}" style="border:none;cursor:pointer;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:7px;background:{{ p.ruBg }};color:{{ p.ruColor }};box-shadow:{{ p.ruShadow }};transition:all .15s ease;">RU</button>
+    </div>
+    <button onClick="{{ toggleTheme }}" title="{{ t.theme }}" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid {{ p.line }};border-radius:9px;background:{{ p.cardBg }};cursor:pointer;font-size:14px;color:{{ p.muted }};transition:all .15s ease;" style-hover="color:{{ p.ink }};border-color:{{ p.lineStrong }};">{{ themeIcon }}</button>
+  </div>
+
+  <div style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:18px;padding:{{ L.noPad }};width:440px;max-width:100%;text-align:center;transition:background-color .2s ease,border-color .2s ease;">
+    <div style="width:52px;height:52px;border-radius:14px;background:{{ p.iconBg }};display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:23px;">🔒</div>
+    <h1 style="font-size:20px;font-weight:600;letter-spacing:-.04em;margin:0 0 10px;">{{ t.title }}</h1>
+    <p style="font-size:14px;color:{{ p.muted }};line-height:1.6;margin:0 0 24px;">{{ t.body }}</p>
+    <a href="Login.dc.html" style="display:inline-block;padding:10px 22px;background:{{ p.btnBg }};color:{{ p.btnInk }};border-radius:10px;font-size:13.5px;font-weight:600;" style-hover="background:{{ p.btnHover }};">{{ t.logout }}</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(props){
+    super(props);
+    let lang='pl', theme='light';
+    try{ lang=localStorage.getItem('ekomat_lang')||'pl'; theme=localStorage.getItem('ekomat_theme')||'light'; }catch(e){}
+    const w=typeof window!=='undefined'?window.innerWidth:1200;
+    this.state={lang,theme,isMobile:w<=760};
+    this.T={
+      pl:{theme:'Motyw',title:'Brak dostępu',logout:'Wyloguj się',
+        body:'Twoje konto nie ma przypisanych uprawnień do tej strony. Skontaktuj się z administratorem, aby uzyskać dostęp.'},
+      ru:{theme:'Тема',title:'Нет доступа',logout:'Выйти',
+        body:'У вашего аккаунта нет прав на эту страницу. Свяжитесь с администратором, чтобы получить доступ.'}
+    };
+  }
+  componentDidMount(){
+    this._onResize=()=>{
+      const m=window.innerWidth<=760;
+      if(m!==this.state.isMobile) this.setState({isMobile:m});
+    };
+    window.addEventListener('resize',this._onResize);
+    this._onResize();
+  }
+  componentWillUnmount(){ if(this._onResize) window.removeEventListener('resize',this._onResize); }
+
+  setLang(l){ this.setState({lang:l}); try{ localStorage.setItem('ekomat_lang',l); }catch(e){} }
+  toggleTheme(){
+    const next=this.state.theme==='dark'?'light':'dark';
+    this.setState({theme:next});
+    try{ localStorage.setItem('ekomat_theme',next); }catch(e){}
+  }
+  palette(){
+    const dark=this.state.theme==='dark', st=this.state;
+    const base = dark ? {
+      bg:'#0e0f11', cardBg:'#16181c', chip:'#22252b', iconBg:'rgba(232,163,61,.14)',
+      ink:'#f2f3f5', muted:'#9aa0a8', line:'#282c33', lineStrong:'#3a3f47',
+      btnBg:'#f2f3f5', btnInk:'#111214', btnHover:'#d8dade'
+    } : {
+      bg:'#f6f6f5', cardBg:'#ffffff', chip:'#f0f0ef', iconBg:'#fbf0dd',
+      ink:'#111214', muted:'#6f747b', line:'#e4e4e2', lineStrong:'#cfcfcc',
+      btnBg:'#111214', btnInk:'#ffffff', btnHover:'#2a2c31'
+    };
+    const activeBg=dark?'#31353d':'#ffffff';
+    const shadow=dark?'none':'0 1px 2px rgba(0,0,0,.07)';
+    return {...base,
+      plBg:st.lang==='pl'?activeBg:'transparent', plColor:st.lang==='pl'?base.ink:base.muted, plShadow:st.lang==='pl'?shadow:'none',
+      ruBg:st.lang==='ru'?activeBg:'transparent', ruColor:st.lang==='ru'?base.ink:base.muted, ruShadow:st.lang==='ru'?shadow:'none'
+    };
+  }
+  renderVals(){
+    const dark=this.state.theme==='dark';
+    const mob=this.state.isMobile;
+    const L={ cardPad: mob?'26px 20px':'30px', noPad: mob?'34px 22px':'44px 40px', outerPad: mob?'64px 16px 24px':'24px' };
+    return {p:this.palette(), t:this.T[this.state.lang], L,
+      setPl:()=>this.setLang('pl'), setRu:()=>this.setLang('ru'),
+      toggleTheme:()=>this.toggleTheme(), themeIcon:dark?'☀':'☾'};
+  }
+}
+</script>
+</body>
+</html>

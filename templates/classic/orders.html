@@ -1,0 +1,1548 @@
+<!doctype html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Zamówienia — EKOMAT Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+               background: #f3f4f6; color: #1f2937; }
+
+        .navbar { background: #1a1a2e; color: #fff; padding: 12px 24px;
+                  display: flex; align-items: center; justify-content: space-between; }
+        .navbar h1 { font-size: 16px; font-weight: 600; }
+        .navbar-links { display: flex; gap: 16px; align-items: center; }
+        .navbar a { color: #a5b4fc; font-size: 13px; text-decoration: none; }
+        .navbar a:hover { color: #fff; }
+        .navbar a.active { color: #fff; font-weight: 600; border-bottom: 2px solid #a5b4fc; padding-bottom: 2px; }
+
+        .container { max-width: 1900px; margin: 0 auto; padding: 24px; }
+
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+                 gap: 12px; margin-bottom: 20px; }
+        .stat-card { background: #fff; border-radius: 10px; padding: 16px;
+                     box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+        .stat-card .label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; }
+        .stat-card .value { font-size: 24px; font-weight: 700; color: #1a1a2e; margin-top: 4px; }
+        .stat-card .sub { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+
+        .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;
+                   background: #fff; padding: 12px 16px; border-radius: 10px;
+                   box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+        .toolbar input, .toolbar select {
+            padding: 7px 10px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px; }
+        .toolbar input[type="text"] { width: 200px; }
+        .toolbar button { padding: 7px 16px; border: none; border-radius: 6px; font-size: 13px;
+                          cursor: pointer; font-weight: 500; }
+        .btn-primary { background: #1a1a2e; color: #fff; }
+        .btn-primary:hover { background: #2d2d5e; }
+        .btn-export { background: #059669; color: #fff; }
+        .btn-export:hover { background: #047857; }
+        .btn-sync { background: #f59e0b; color: #fff; }
+        .btn-sync:hover { background: #d97706; }
+        .btn-add { background: #7c3aed; color: #fff; }
+        .btn-add:hover { background: #6d28d9; }
+        .btn-export-sel { background: #2563eb; color: #fff; }
+        .btn-export-sel:hover { background: #1d4ed8; }
+        .btn-sync.spinning { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        .card { background: #fff; border-radius: 10px; padding: 0;
+                box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 16px; overflow: hidden; }
+        .card-header { padding: 16px 20px; border-bottom: 1px solid #f3f4f6;
+                       display: flex; justify-content: space-between; align-items: center; }
+        .card-header h3 { font-size: 15px; font-weight: 600; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; padding: 10px 8px; background: #f9fafb; border-bottom: 2px solid #e5e7eb;
+             font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase;
+             letter-spacing: .3px; position: sticky; top: 0; white-space: nowrap; }
+        td { padding: 10px 8px; border-bottom: 1px solid #f3f4f6; vertical-align: top;
+             overflow: hidden; overflow-wrap: break-word; word-wrap: break-word; }
+        tr:hover td { background: #f9fafb; }
+
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px;
+                 font-weight: 600; text-transform: uppercase; }
+        .badge-dobraszklarnia { background: #dbeafe; color: #1d4ed8; }
+        .badge-oteko { background: #fef3c7; color: #92400e; }
+        .badge-cieplarnia { background: #d1fae5; color: #065f46; }
+        .badge-allegro { background: #fff0e6; color: #cc4800; }
+        .badge-manual { background: #f3e8ff; color: #7c3aed; }
+
+        .status-processing, .status-payment_accepted { color: #2563eb; font-weight: 600; }
+        .status-completed, .status-delivered { color: #059669; font-weight: 600; }
+        .status-cancelled, .status-refunded { color: #dc2626; font-weight: 600; }
+        .status-pending, .status-pending_payment { color: #d97706; font-weight: 600; }
+        .status-shipped { color: #7c3aed; font-weight: 600; }
+        .status-on-hold { color: #6b7280; font-weight: 600; }
+
+        .pagination { display: flex; justify-content: center; gap: 8px; padding: 16px; }
+        .pagination button { padding: 6px 14px; border: 1px solid #e5e7eb; border-radius: 6px;
+                             background: #fff; cursor: pointer; font-size: 13px; }
+        .pagination button:hover { background: #f3f4f6; }
+        .pagination button.active { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
+        .pagination .info { padding: 6px 0; font-size: 13px; color: #6b7280; }
+
+        .empty { text-align: center; padding: 60px 20px; color: #9ca3af; }
+        .empty h4 { font-size: 16px; margin-bottom: 8px; color: #6b7280; }
+
+        .items-list { font-size: 11px; color: #6b7280; }
+        .items-list span { display: block; word-wrap: break-word; overflow-wrap: break-word; }
+
+        .price-breakdown { font-size: 12px; }
+        .price-breakdown .ship { font-size: 10px; color: #6b7280; }
+        .comment-cell { font-size: 13px; color: #dc2626; font-weight: 600;
+                         white-space: pre-wrap; word-break: break-word; }
+        .editable-comment { cursor: pointer; border-bottom: 1px dashed #d1d5db; padding-bottom: 1px; }
+        .editable-comment:hover { background: #fef9c3; }
+        .address-cell { font-size: 11px; color: #4b5563; word-wrap: break-word; overflow-wrap: break-word; }
+        .phone-cell { font-size: 12px; white-space: nowrap; }
+        .config-cell { font-size: 11px; color: #9ca3af; font-style: italic; }
+        .seller-cell { font-size: 11px; color: #6b7280; }
+
+        tr.order-row { cursor: pointer; }
+        tr.order-row:hover td { background: #f0f4ff; }
+        tr.order-row.exported td { background: #ecfdf5; }
+        tr.order-row.exported:hover td { background: #d1fae5; }
+        tr.detail-row { display: none; }
+        tr.detail-row.open { display: table-row; }
+        tr.detail-row td { background: #f9fafb; padding: 0; border-bottom: 2px solid #e5e7eb; }
+        .detail-panel { padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px 24px; }
+        .detail-panel .d-group { }
+        .detail-panel .d-label { font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; }
+        .detail-panel .d-value { font-size: 13px; color: #1f2937; word-break: break-word; }
+        .detail-panel .d-items { grid-column: 1 / -1; }
+        .detail-panel .d-items table { width: 100%; font-size: 12px; margin-top: 6px; }
+        .detail-panel .d-items table th { background: #f3f4f6; font-size: 10px; padding: 6px 10px; }
+        .detail-panel .d-items table td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; }
+
+        .sync-status { font-size: 11px; color: #6b7280; }
+        .sync-ok { color: #059669; }
+        .sync-error { color: #dc2626; }
+        .sync-running { color: #f59e0b; }
+
+        /* Modal */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                         background: rgba(0,0,0,.45); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-overlay.open { display: flex; }
+        .modal { background: #fff; border-radius: 12px; padding: 28px 32px; width: 600px; max-width: 95vw;
+                 max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 30px rgba(0,0,0,.15); }
+        .modal h3 { font-size: 18px; margin-bottom: 16px; color: #1a1a2e; }
+        .modal .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+        .modal .form-group { display: flex; flex-direction: column; }
+        .modal .form-group.full { grid-column: 1 / -1; }
+        .modal label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .3px; margin-bottom: 3px; }
+        .modal input, .modal select, .modal textarea { padding: 8px 10px; border: 1px solid #e5e7eb;
+                 border-radius: 6px; font-size: 13px; font-family: inherit; }
+        .modal textarea { resize: vertical; min-height: 50px; }
+        .modal .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+        .modal .btn-cancel { background: #f3f4f6; color: #374151; padding: 8px 20px; border: none;
+                 border-radius: 6px; cursor: pointer; font-size: 13px; }
+        .modal .btn-save { background: #7c3aed; color: #fff; padding: 8px 20px; border: none;
+                 border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+        .modal .btn-save:hover { background: #6d28d9; }
+
+        .star-btn { background: none; border: none; cursor: pointer; font-size: 18px; color: #d1d5db; line-height: 1; padding: 2px; }
+        .star-btn:hover { color: #fbbf24; }
+        .star-btn.active { color: #ff6600; text-shadow: 0 0 6px rgba(255,0,0,.4); }
+        .order-extid { font-size: 10px; color: #9ca3af; margin-top: 2px; }
+
+        /* Column resizer */
+        th { position: relative; }
+        th .col-resize {
+            position: absolute; right: -3px; top: 0; bottom: 0; width: 7px;
+            cursor: col-resize; background: transparent; z-index: 10;
+            transition: background .15s;
+        }
+        th .col-resize::after {
+            content: ''; position: absolute; right: 3px; top: 4px; bottom: 4px;
+            width: 2px; background: #d1d5db; border-radius: 1px; opacity: 0; transition: opacity .15s;
+        }
+        th:hover .col-resize::after, th .col-resize.active::after { opacity: 1; }
+        th .col-resize.active::after { background: #6366f1; }
+
+        /* Language switcher */
+        .lang-switch { display: inline-flex; gap: 4px; margin-left: 12px; }
+        .lang-switch button { background: none; border: none; cursor: pointer; font-size: 18px;
+            padding: 2px 4px; border-radius: 4px; opacity: .5; transition: opacity .15s, box-shadow .15s; line-height: 1; }
+        .lang-switch button:hover { opacity: .8; }
+        .lang-switch button.active-lang { opacity: 1; box-shadow: 0 2px 0 0 #a5b4fc; }
+
+        @media (max-width: 768px) {
+            .toolbar { flex-direction: column; }
+            .toolbar input[type="text"] { width: 100%; }
+            table { font-size: 12px; }
+            th, td { padding: 6px 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h1>EKOMAT Dashboard</h1>
+        <div class="navbar-links">
+            {% if user and 'dashboard' in (user.permissions or '').split(',') %}<a href="/classic">Dashboard</a>{% endif %}
+            <a href="/classic/orders" class="active">Orders</a>
+            {% if user and 'manage_users' in (user.permissions or '').split(',') %}<a href="/admin/users">Users</a>{% endif %}
+            <a href="/ui/new?next=/orders" class="ui-switch" title="Nowa wersja panelu" style="background:#111;color:#fff;padding:5px 11px;border-radius:8px;font-weight:600;text-decoration:none;">✨ Nowa wersja</a>
+            {% if user %}<span style="color:#6b7280;font-size:12px;">{{ user.name }}</span><a href="/logout" data-i18n="logout">Wyloguj</a>{% else %}<a href="/login">Login</a>{% endif %}
+            <span class="lang-switch">
+                <button onclick="setLang('pl')" id="lang-pl" title="Polski">&#127477;&#127473;</button>
+                <button onclick="setLang('ru')" id="lang-ru" title="&#1056;&#1091;&#1089;&#1089;&#1082;&#1080;&#1081;">&#127479;&#127482;</button>
+            </span>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Статистика (только для пользователей с правом view_stats) -->
+        {% if user and 'view_stats' in (user.permissions or '').split(',') %}
+        <div class="stats" id="stats-row">
+            <div class="stat-card">
+                <div class="label" data-i18n="stat_all_orders">All orders</div>
+                <div class="value" id="s-total">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label" data-i18n="stat_revenue">Revenue (PLN)</div>
+                <div class="value" id="s-revenue">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">dobraszklarnia.pl</div>
+                <div class="value" id="s-woo">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">oteko.pl</div>
+                <div class="value" id="s-oteko">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">cieplarnia.pl</div>
+                <div class="value" id="s-ciep">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Allegro</div>
+                <div class="value" id="s-allegro">—</div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Фильтры -->
+        <div class="toolbar">
+            <input type="text" id="f-search" data-i18n-placeholder="search_customer" placeholder="Search customer...">
+            <div style="position:relative;display:inline-block;" id="f-source-wrap">
+                <button type="button" id="f-source-btn" data-i18n="all_stores" onclick="toggleSourceDropdown()" style="padding:7px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;background:#fff;cursor:pointer;min-width:150px;text-align:left;">All stores &#9662;</button>
+                <div id="f-source-dropdown" style="display:none;position:absolute;top:100%;left:0;z-index:100;background:#fff;border:1px solid #e5e7eb;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.1);padding:6px 0;min-width:220px;max-height:300px;overflow-y:auto;">
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="dobraszklarnia"> dobraszklarnia.pl</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="oteko"> oteko.pl</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="cieplarnia"> cieplarnia.pl</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="allegro"> Allegro (все)</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:mantrade"> mantrade</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:drogatrade"> drogatrade</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:mega-agronom"> mega-agronom</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:oteko_pl"> oteko_pl</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:dobraszklarniapl"> dobraszklarniapl</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;padding-left:28px;"><input type="checkbox" class="source-check" value="allegro:cieplarnia_pl"> cieplarnia_pl</label>
+                    <label style="display:block;padding:4px 12px;font-size:12px;cursor:pointer;"><input type="checkbox" class="source-check" value="manual"> Ręczne</label>
+                </div>
+            </div>
+            <select id="f-status">
+                <option value="" data-i18n="all_statuses">All statuses</option>
+                <option value="processing" data-i18n="status_processing">Processing</option>
+                <option value="completed" data-i18n="status_completed">Completed</option>
+                <option value="pending" data-i18n="status_pending">Pending</option>
+                <option value="cancelled" data-i18n="status_cancelled">Cancelled</option>
+                <option value="payment_accepted" data-i18n="status_payment_accepted">Payment accepted</option>
+                <option value="shipped" data-i18n="status_shipped">Shipped</option>
+                <option value="delivered" data-i18n="status_delivered">Delivered</option>
+                <option value="on-hold" data-i18n="status_on-hold">On hold</option>
+                <option value="awaiting_cod" data-i18n="status_awaiting_cod">Awaiting COD</option>
+                <option value="awaiting_proforma" data-i18n="status_awaiting_proforma">Awaiting proforma</option>
+            </select>
+            <select id="f-exported">
+                <option value="" data-i18n="export_all">Eksport: wszystkie</option>
+                <option value="yes" data-i18n="exported_yes">Wyeksportowane</option>
+                <option value="no" data-i18n="exported_no">Niewyeksportowane</option>
+            </select>
+            <select id="f-priority">
+                <option value="" data-i18n="priority_all">Priorytet: wszystkie</option>
+                <option value="yes" data-i18n="priority_important">Ważne ★</option>
+            </select>
+            <select id="f-product-type">
+                <option value="" data-i18n="type_all">Typ: wszystkie</option>
+                <option value="Теплица" data-i18n="type_greenhouse">Теплица</option>
+                <option value="Поликарбонат" data-i18n="type_polycarbonate">Поликарбонат</option>
+                <option value="Теплица + Поликарбонат" data-i18n="type_greenhouse_poly">Теплица + Поликарбонат</option>
+            </select>
+            <input type="date" id="f-from">
+            <span style="color:#9ca3af;">—</span>
+            <input type="date" id="f-to">
+            <button class="btn-primary" onclick="loadOrders(1)" data-i18n="btn_filter">Filter</button>
+            {% if user and 'export' in (user.permissions or '').split(',') %}
+            <button class="btn-export-sel" onclick="exportSelected()" id="btn-export-sel" style="display:none;"><span data-i18n="btn_export_selected">Eksport zaznaczonych</span> (<span id="sel-count">0</span>)</button>
+            {% endif %}
+            {% if user and 'sync' in (user.permissions or '').split(',') %}
+            <button class="btn-sync" onclick="syncAll()" id="btn-sync" title="Sync now" data-i18n="btn_sync">Sync</button>
+            <button class="btn-sync" onclick="fullResync()" id="btn-full-sync" data-i18n="btn_full_sync" title="Pełna resynchronizacja (odświeża NIP, dane)" style="background:#dc2626;">Full Sync</button>
+            {% endif %}
+            {% if user and 'add_orders' in (user.permissions or '').split(',') %}
+            <button class="btn-add" onclick="openAddModal()" title="Dodaj zamówienie" data-i18n="btn_add">+ Dodaj</button>
+            {% endif %}
+        </div>
+
+        <!-- Export history (admin only) -->
+        {% if user and 'manage_users' in (user.permissions or '').split(',') %}
+        <div id="export-history-panel" style="display:none;background:#fff;border-radius:10px;padding:12px 16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <h4 style="font-size:14px;font-weight:600;color:#1a1a2e;">Historia eksportów</h4>
+                <div>
+                    <button onclick="recoverExported()" style="background:#059669;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;margin-right:8px;">🔄 Восстановить пометки</button>
+                    <button onclick="resetAllExported()" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;margin-right:8px;">Resetuj wszystkie ✓</button>
+                    <button onclick="toggleExportHistory()" style="background:#f3f4f6;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;">Zamknij</button>
+                </div>
+            </div>
+
+            <!-- Bulk export detection — finds mass-exports by timestamp -->
+            <div style="margin-bottom:12px;padding:10px;background:#fef3c7;border-radius:8px;">
+                <div style="font-size:12px;font-weight:600;color:#92400e;margin-bottom:6px;">Masowe eksporty (wg sygnatury czasowej)</div>
+                <div style="font-size:11px;color:#78716c;margin-bottom:6px;">Jeśli widzisz eksport z dużą liczbą zamówień — możesz cofnąć TYLKO ten moment, zachowując ręczne oznaczenia.</div>
+                <table style="width:100%;font-size:12px;"><thead><tr>
+                    <th style="text-align:left;padding:4px 8px;">Czas</th>
+                    <th style="text-align:right;padding:4px 8px;">Zamówień</th>
+                    <th style="text-align:center;padding:4px 8px;">Akcja</th>
+                </tr></thead><tbody id="bulk-export-body"><tr><td colspan="3" style="text-align:center;padding:8px;color:#9ca3af;">Ładowanie...</td></tr></tbody></table>
+            </div>
+
+            <h4 style="font-size:13px;font-weight:600;color:#1a1a2e;margin-bottom:6px;">Log eksportów (nowe)</h4>
+            <table style="width:100%;font-size:12px;"><thead><tr>
+                <th style="text-align:left;padding:6px 8px;">Data</th>
+                <th style="text-align:left;padding:6px 8px;">Użytkownik</th>
+                <th style="text-align:right;padding:6px 8px;">Zamówień</th>
+                <th style="text-align:center;padding:6px 8px;">Status</th>
+                <th style="text-align:center;padding:6px 8px;">Akcja</th>
+            </tr></thead><tbody id="export-log-body"></tbody></table>
+        </div>
+        {% endif %}
+
+        <!-- Таблица заказов -->
+        <div class="card">
+            <div class="card-header">
+                <h3 data-i18n="orders_list">Orders list</h3>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    {% if user and 'manage_users' in (user.permissions or '').split(',') %}
+                    <button onclick="toggleExportHistory()" style="background:none;border:1px solid #e5e7eb;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:#6b7280;">📋 Historia eksportów</button>
+                    {% endif %}
+                    <span class="sync-status" id="sync-info"></span>
+                </div>
+            </div>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:30px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
+                            <th style="width:30px;" title="Priorytet">★</th>
+                            <th style="width:30px;" title="Wyeksportowano">&#10003;</th>
+                            <th><span data-i18n="col_date">Data</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_product_type">Typ towaru</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_config">Konfiguracja</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_invoice">Faktura</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_price">Cena + dostawa</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_product">Produkt</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_status">Status</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_payment">Płatność</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_phone">Telefon</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_address">Adres</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_comment">Komentarz</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_source">Źródło</span><span class="col-resize"></span></th>
+                            <th><span data-i18n="col_account">Konto</span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-body">
+                        <tr><td colspan="16" class="empty">
+                            <h4 data-i18n="loading">Loading...</h4>
+                        </td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination" id="pagination"></div>
+        </div>
+    </div>
+
+    <script>
+    // ===== MULTILINGUAL SUPPORT =====
+    var LANG = {
+        pl: {
+            // Stat cards
+            stat_all_orders: 'Wszystkie zamówienia',
+            stat_revenue: 'Przychód (PLN)',
+            // Toolbar buttons
+            btn_filter: 'Filtruj',
+            btn_sync: 'Sync',
+            btn_full_sync: 'Pełna sync.',
+            btn_add: '+ Dodaj',
+            btn_export_all: 'Eksport XLSX',
+            btn_export_selected: 'Eksport zaznaczonych',
+            // Filters
+            all_stores: 'Wszystkie sklepy \u25BE',
+            all_statuses: 'Wszystkie statusy',
+            search_customer: 'Szukaj klienta...',
+            export_all: 'Eksport: wszystkie',
+            exported_yes: 'Wyeksportowane',
+            exported_no: 'Niewyeksportowane',
+            priority_all: 'Priorytet: wszystkie',
+            priority_important: 'Ważne \u2605',
+            type_all: 'Typ: wszystkie',
+            type_greenhouse: 'Szklarnia',
+            type_polycarbonate: 'Poliwęglan',
+            type_greenhouse_poly: 'Szklarnia + Poliwęglan',
+            // Column headers
+            col_date: 'Data',
+            col_product_type: 'Typ towaru',
+            col_config: 'Konfiguracja',
+            col_invoice: 'Faktura',
+            col_price: 'Cena + dostawa',
+            col_product: 'Produkt',
+            col_status: 'Status',
+            col_payment: 'Płatność',
+            col_phone: 'Telefon',
+            col_address: 'Adres',
+            col_comment: 'Komentarz',
+            col_source: 'Źródło',
+            col_account: 'Konto',
+            // Orders list
+            orders_list: 'Lista zamówień',
+            // Statuses
+            status_processing: 'W realizacji',
+            status_payment_accepted: 'Płatność zaakceptowana',
+            status_completed: 'Zrealizowane',
+            status_cancelled: 'Anulowane',
+            status_pending: 'Oczekujące',
+            status_shipped: 'Wysłane',
+            'status_on-hold': 'Wstrzymane',
+            status_on_hold: 'Wstrzymane',
+            status_refunded: 'Zwrócone',
+            status_pending_payment: 'Oczekiwanie na płatność',
+            status_delivered: 'Dostarczone',
+            status_failed: 'Nieudane',
+            status_trash: 'Usunięte',
+            status_payment_error: 'Błąd płatności',
+            status_payment_received: 'Płatność przyjęta',
+            status_awaiting_bankwire: 'Oczekiwanie na przelew',
+            status_awaiting_check: 'Oczekiwanie na płatność czekiem',
+            status_awaiting_cod: 'Płatność przy odbiorze',
+            status_awaiting_payment: 'Oczekiwanie na płatność',
+            status_order_pending_paid: 'Zamówienie oczekujące (opłacone)',
+            status_order_pending_unpaid: 'Zamówienie oczekujące (nieopłacone)',
+            status_partial_refund: 'Częściowy zwrot',
+            status_partial_payment: 'Częściowa płatność',
+            status_authorized_transfer: 'Autoryzacja — transfer przez sklep',
+            status_awaiting_przelewy24: 'Oczekiwanie na Przelewy24',
+            status_przelewy24_accepted: 'Płatność Przelewy24 przyjęta',
+            status_payu_started: 'Płatność PayU rozpoczęta',
+            status_payu_awaiting: 'PayU oczekuje na odbiór',
+            status_payu_cancelled: 'PayU anulowana',
+            status_awaiting_proforma: 'Oczekujemy na opłacenie Proformy',
+            // Modal
+            modal_add_order: 'Dodaj zamówienie ręcznie',
+            modal_edit_order: 'Edytuj zamówienie',
+            modal_date: 'Data',
+            modal_product_name: 'Nazwa produktu',
+            modal_product_type: 'Typ towaru',
+            modal_config: 'Konfiguracja',
+            modal_price: 'Cena towaru (PLN)',
+            modal_shipping: 'Dostawa (PLN)',
+            modal_status: 'Status',
+            modal_payment: 'Płatność',
+            modal_customer_name: 'Imię i nazwisko klienta',
+            modal_phone: 'Telefon',
+            modal_city: 'Miasto',
+            modal_address: 'Adres',
+            modal_seller_account: 'Konto sprzedawcy',
+            modal_comment: 'Komentarz',
+            modal_cancel: 'Anuluj',
+            modal_save: 'Zapisz zamówienie',
+            // Detail panel
+            detail_client: 'Klient',
+            detail_email: 'Email',
+            detail_phone: 'Telefon',
+            detail_address: 'Adres',
+            detail_shipping_method: 'Metoda wysyłki',
+            detail_payment: 'Płatność',
+            detail_status: 'Status',
+            detail_order_id: 'ID zamówienia',
+            detail_nip: 'NIP (Faktura)',
+            detail_invoice_data: 'Dane do faktury',
+            detail_comment: 'Komentarz',
+            detail_items: 'Pozycje zamówienia',
+            detail_product: 'Produkt',
+            detail_sku: 'SKU',
+            detail_qty: 'Ilość',
+            detail_price_gross: 'Cena brutto',
+            // Pagination
+            pag_total: 'Razem',
+            pag_page: 'Strona',
+            pag_of: 'z',
+            pag_prev: '\u2190 Poprz.',
+            pag_next: 'Nast. \u2192',
+            // Empty state
+            empty_title: 'Brak zamówień',
+            empty_sub: 'Sprawdź filtry lub uruchom synchronizację',
+            // Dynamic text
+            more_items: 'jeszcze...',
+            no_sync: 'Brak synchronizacji',
+            syncing: 'Synchronizacja...',
+            stores_label: 'sklepy',
+            // Other
+            loading: 'Ładowanie...',
+            logout: 'Wyloguj',
+            click_to_edit: 'Kliknij, aby edytować',
+            comment_prompt: 'Komentarz:',
+            confirm_full_sync: 'Pełna resynchronizacja wszystkich zamówień?\nTo może potrwać kilka minut.\nNIP i inne dane zostaną zaktualizowane.',
+            confirm_delete: 'Na pewno usunąć zamówienie',
+            btn_edit: 'Edytuj',
+            btn_delete: 'Usuń',
+            error_prefix: 'Błąd',
+            order_not_found: 'Nie znaleziono zamówienia',
+            delivery_short: 'dost.',
+        },
+        ru: {
+            // Stat cards
+            stat_all_orders: 'Все заказы',
+            stat_revenue: 'Выручка (PLN)',
+            // Toolbar buttons
+            btn_filter: 'Фильтр',
+            btn_sync: 'Синхр.',
+            btn_full_sync: 'Полная синхр.',
+            btn_add: '+ Добавить',
+            btn_export_all: 'Экспорт XLSX',
+            btn_export_selected: 'Экспорт выбранных',
+            // Filters
+            all_stores: 'Все магазины \u25BE',
+            all_statuses: 'Все статусы',
+            search_customer: 'Поиск клиента...',
+            export_all: 'Экспорт: все',
+            exported_yes: 'Экспортированные',
+            exported_no: 'Неэкспортированные',
+            priority_all: 'Приоритет: все',
+            priority_important: 'Важные \u2605',
+            type_all: 'Тип: все',
+            type_greenhouse: 'Теплица',
+            type_polycarbonate: 'Поликарбонат',
+            type_greenhouse_poly: 'Теплица + Поликарбонат',
+            // Column headers
+            col_date: 'Дата',
+            col_product_type: 'Тип товара',
+            col_config: 'Комплектация',
+            col_invoice: 'Фактура',
+            col_price: 'Цена + доставка',
+            col_product: 'Продукт',
+            col_status: 'Статус',
+            col_payment: 'Оплата',
+            col_phone: 'Телефон',
+            col_address: 'Адрес',
+            col_comment: 'Комментарий',
+            col_source: 'Источник',
+            col_account: 'Аккаунт',
+            // Orders list
+            orders_list: 'Список заказов',
+            // Statuses
+            status_processing: 'В обработке',
+            status_payment_accepted: 'Оплата принята',
+            status_completed: 'Выполнен',
+            status_cancelled: 'Отменён',
+            status_pending: 'Ожидание',
+            status_shipped: 'Отправлен',
+            'status_on-hold': 'На удержании',
+            status_on_hold: 'На удержании',
+            status_refunded: 'Возврат',
+            status_pending_payment: 'Ожидание оплаты',
+            status_delivered: 'Доставлен',
+            status_failed: 'Ошибка',
+            status_trash: 'Удалён',
+            status_payment_error: 'Ошибка оплаты',
+            status_payment_received: 'Оплата получена',
+            status_awaiting_bankwire: 'Ожидание перевода',
+            status_awaiting_check: 'Ожидание оплаты чеком',
+            status_awaiting_cod: 'Оплата при получении',
+            status_awaiting_payment: 'Ожидание оплаты',
+            status_order_pending_paid: 'Заказ ожидает (оплачен)',
+            status_order_pending_unpaid: 'Заказ ожидает (не оплачен)',
+            status_partial_refund: 'Частичный возврат',
+            status_partial_payment: 'Частичная оплата',
+            status_authorized_transfer: 'Авторизация — перевод через магазин',
+            status_awaiting_przelewy24: 'Ожидание Przelewy24',
+            status_przelewy24_accepted: 'Оплата Przelewy24 принята',
+            status_payu_started: 'Оплата PayU начата',
+            status_payu_awaiting: 'PayU ожидает получения',
+            status_payu_cancelled: 'PayU отменена',
+            status_awaiting_proforma: 'Ожидание оплаты проформы',
+            // Modal
+            modal_add_order: 'Добавить заказ вручную',
+            modal_edit_order: 'Редактировать заказ',
+            modal_date: 'Дата',
+            modal_product_name: 'Название продукта',
+            modal_product_type: 'Тип товара',
+            modal_config: 'Комплектация',
+            modal_price: 'Цена товара (PLN)',
+            modal_shipping: 'Доставка (PLN)',
+            modal_status: 'Статус',
+            modal_payment: 'Оплата',
+            modal_customer_name: 'Имя и фамилия клиента',
+            modal_phone: 'Телефон',
+            modal_city: 'Город',
+            modal_address: 'Адрес',
+            modal_seller_account: 'Аккаунт продавца',
+            modal_comment: 'Комментарий',
+            modal_cancel: 'Отмена',
+            modal_save: 'Сохранить заказ',
+            // Detail panel
+            detail_client: 'Клиент',
+            detail_email: 'Email',
+            detail_phone: 'Телефон',
+            detail_address: 'Адрес',
+            detail_shipping_method: 'Способ доставки',
+            detail_payment: 'Оплата',
+            detail_status: 'Статус',
+            detail_order_id: 'ID заказа',
+            detail_nip: 'NIP (Фактура)',
+            detail_invoice_data: 'Данные для фактуры',
+            detail_comment: 'Комментарий',
+            detail_items: 'Позиции заказа',
+            detail_product: 'Продукт',
+            detail_sku: 'SKU',
+            detail_qty: 'Кол-во',
+            detail_price_gross: 'Цена брутто',
+            // Pagination
+            pag_total: 'Всего',
+            pag_page: 'Страница',
+            pag_of: 'из',
+            pag_prev: '\u2190 Назад',
+            pag_next: 'Далее \u2192',
+            // Empty state
+            empty_title: 'Нет заказов',
+            empty_sub: 'Проверьте фильтры или запустите синхронизацию',
+            // Dynamic text
+            more_items: 'ещё...',
+            no_sync: 'Нет синхронизации',
+            syncing: 'Синхронизация...',
+            stores_label: 'магазины',
+            // Other
+            loading: 'Загрузка...',
+            logout: 'Выход',
+            click_to_edit: 'Нажмите для редактирования',
+            comment_prompt: 'Комментарий:',
+            confirm_full_sync: 'Полная синхронизация всех заказов?\nЭто может занять несколько минут.\nNIP и другие данные будут обновлены.',
+            confirm_delete: 'Удалить заказ',
+            btn_edit: 'Редактировать',
+            btn_delete: 'Удалить',
+            error_prefix: 'Ошибка',
+            order_not_found: 'Заказ не найден',
+            delivery_short: 'дост.',
+        }
+    };
+
+    var currentLang = localStorage.getItem('ekomat_lang') || 'pl';
+
+    function t(key) {
+        return (LANG[currentLang] || LANG.pl)[key] || (LANG.pl)[key] || key;
+    }
+
+    function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('ekomat_lang', lang);
+        applyLang();
+    }
+
+    function applyLang() {
+        currentLang = localStorage.getItem('ekomat_lang') || 'pl';
+        // Update all elements with data-i18n
+        document.querySelectorAll('[data-i18n]').forEach(function(el) {
+            var key = el.getAttribute('data-i18n');
+            var val = t(key);
+            if (val !== key) el.textContent = val;
+        });
+        // Update placeholder attributes
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el) {
+            var key = el.getAttribute('data-i18n-placeholder');
+            var val = t(key);
+            if (val !== key) el.placeholder = val;
+        });
+        // Highlight active language button
+        var plBtn = document.getElementById('lang-pl');
+        var ruBtn = document.getElementById('lang-ru');
+        if (plBtn) plBtn.classList.toggle('active-lang', currentLang === 'pl');
+        if (ruBtn) ruBtn.classList.toggle('active-lang', currentLang === 'ru');
+    }
+
+    function getStatus(status) {
+        return t('status_' + status) || status || '\u2014';
+    }
+
+    // ===== END MULTILINGUAL SUPPORT =====
+
+    var userPerms = '{{ user.permissions if user else "" }}'.split(',');
+    var userEmail = '{{ user.email if user else "" }}';
+    function hasPerm(p) { return userPerms.indexOf(p) !== -1; }
+    var isSuperAdmin = hasPerm('manage_users');
+    var currentPage = 1;
+    var perPage = 50;
+    var totalOrders = 0;
+
+    // Инициализация
+    (function() {
+        applyLang();
+        var to = new Date();
+        var from = new Date();
+        from.setDate(from.getDate() - 90);
+        document.getElementById('f-from').value = from.toISOString().slice(0,10);
+        document.getElementById('f-to').value = to.toISOString().slice(0,10);
+        loadOrders(1);
+        loadStats();
+        loadSyncInfo();
+    })();
+
+    function fmt(n) {
+        return parseFloat(n || 0).toLocaleString('pl-PL');
+    }
+
+    function fmtMoney(n) {
+        return parseFloat(n || 0).toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    function toggleSourceDropdown() {
+        var dd = document.getElementById('f-source-dropdown');
+        dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+    }
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+        var wrap = document.getElementById('f-source-wrap');
+        if (wrap && !wrap.contains(e.target)) {
+            document.getElementById('f-source-dropdown').style.display = 'none';
+        }
+    });
+    // Update button label when checkboxes change
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('source-check')) {
+            var checks = document.querySelectorAll('.source-check:checked');
+            var btn = document.getElementById('f-source-btn');
+            if (checks.length === 0) {
+                btn.textContent = t('all_stores');
+            } else if (checks.length === 1) {
+                btn.textContent = checks[0].parentElement.textContent.trim() + ' \u25BE';
+            } else {
+                btn.textContent = checks.length + ' ' + t('stores_label') + ' \u25BE';
+            }
+        }
+    });
+
+    function getFilters() {
+        // Multi-select sources: collect checked values
+        var checks = document.querySelectorAll('.source-check:checked');
+        var sources = [];
+        var sellers = [];
+        checks.forEach(function(cb) {
+            var val = cb.value;
+            if (val.indexOf(':') !== -1) {
+                var parts = val.split(':');
+                sources.push(parts[0]);
+                sellers.push(parts[1]);
+            } else {
+                sources.push(val);
+            }
+        });
+        // Deduplicate sources
+        var uniqueSources = sources.filter(function(v, i, a) { return a.indexOf(v) === i; });
+        return {
+            source: uniqueSources.join(','),
+            seller: sellers.join(','),
+            status: document.getElementById('f-status').value,
+            search: document.getElementById('f-search').value,
+            date_from: document.getElementById('f-from').value,
+            date_to: document.getElementById('f-to').value,
+            exported: document.getElementById('f-exported').value,
+            priority: document.getElementById('f-priority').value,
+            product_type: document.getElementById('f-product-type').value,
+        };
+    }
+
+    function loadStats() {
+        // Skip if stats row is not rendered (no view_stats permission)
+        if (!document.getElementById('stats-row')) return;
+        var f = getFilters();
+        var url = '/api/stats?date_from=' + f.date_from + '&date_to=' + f.date_to;
+        if (f.source) url += '&source=' + encodeURIComponent(f.source);
+        if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
+        fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+            var o = d.orders;
+            document.getElementById('s-total').textContent = fmt(o.total);
+            document.getElementById('s-revenue').textContent = fmtMoney(o.revenue);
+            document.getElementById('s-woo').textContent = fmt(o.woo_count);
+            document.getElementById('s-oteko').textContent = fmt(o.oteko_count);
+            document.getElementById('s-ciep').textContent = fmt(o.ciep_count);
+            document.getElementById('s-allegro').textContent = fmt(o.allegro_count);
+        });
+    }
+
+    function loadOrders(page) {
+        currentPage = page;
+        var f = getFilters();
+        var offset = (page - 1) * perPage;
+        var url = '/api/orders?limit=' + perPage + '&offset=' + offset;
+        if (f.source) url += '&source=' + encodeURIComponent(f.source);
+        if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
+        if (f.status) url += '&status=' + encodeURIComponent(f.status);
+        if (f.search) url += '&search=' + encodeURIComponent(f.search);
+        if (f.date_from) url += '&date_from=' + f.date_from;
+        if (f.date_to) url += '&date_to=' + f.date_to;
+        if (f.exported) url += '&exported=' + f.exported;
+        if (f.priority) url += '&priority=' + f.priority;
+        if (f.product_type) url += '&product_type=' + encodeURIComponent(f.product_type);
+
+        fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+            totalOrders = d.total;
+            renderOrders(d.orders);
+            renderPagination();
+        });
+
+        loadStats();
+    }
+
+    function renderOrders(orders) {
+        var tbody = document.getElementById('orders-body');
+        if (!orders || orders.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="16" class="empty"><h4>' + t('empty_title') + '</h4><p>' + t('empty_sub') + '</p></td></tr>';
+            return;
+        }
+
+        function shortenProduct(name, sku) {
+            if (!name) return sku || '';
+            // Only shorten greenhouse names (szklarnia/cieplarnia) — strip prefix
+            // E.g. "Szklarnia z poliwęglanu Mocna 3x8 4mm" → "Mocna 3x8 4mm"
+            var cleaned = name
+                .replace(/^(?:eko\s+)?szklarni[ae]?\s+(?:z\s+poliw[eę]glanu?\s*)?/i, '')
+                .replace(/^(?:eko\s+)?cieplarni[ae]?\s+(?:z\s+poliw[eę]glanu?\s*)?/i, '')
+                .trim();
+            if (cleaned && cleaned.length < name.length) return cleaned;
+            // For all other products (Poliwęglan, Profile, etc.) — keep full name
+            // so they are findable via Ctrl+F page search
+            return name;
+        }
+
+        var html = '';
+        orders.forEach(function(o) {
+            var items = [];
+            try { items = JSON.parse(o.items_json || '[]'); } catch(e) {}
+
+            // Product names — shortened to dimensions
+            var productHtml = '<div class="items-list">';
+            items.slice(0, 2).forEach(function(it) {
+                var shortName = shortenProduct(it.full_name || it.name || '', it.sku || '');
+                productHtml += '<span>' + it.qty + 'x ' + shortName + '</span>';
+            });
+            if (items.length > 2) productHtml += '<span>+ ' + (items.length - 2) + ' ' + t('more_items') + '</span>';
+            productHtml += '</div>';
+
+            // Date
+            var dt = o.external_created || o.created_at || '';
+            if (dt) {
+                var d = new Date(dt);
+                dt = d.toLocaleDateString('pl-PL') + ' ' + d.toLocaleTimeString('pl-PL', {hour:'2-digit',minute:'2-digit'});
+            }
+
+            // Price breakdown: product_price + shipping
+            var shipCost = parseFloat(o.shipping_cost || 0);
+            var totalVal = parseFloat(o.total || 0);
+            var productPrice = totalVal - shipCost;
+            if (productPrice < 0) productPrice = totalVal;
+            var priceHtml = '<div class="price-breakdown"><b>' + fmtMoney(productPrice) + '</b>';
+            if (shipCost > 0) {
+                priceHtml += ' <span class="ship">+ ' + fmtMoney(shipCost) + ' ' + t('delivery_short') + '</span>';
+            }
+            priceHtml += '<br><span style="font-size:10px;color:#374151;">= ' + fmtMoney(totalVal) + ' PLN</span></div>';
+
+            // Address: city + full address
+            var addrParts = [];
+            if (o.customer_city) addrParts.push(o.customer_city);
+            if (o.customer_address) addrParts.push(o.customer_address);
+            if (o.customer_zip) addrParts.push(o.customer_zip);
+            var addrHtml = addrParts.join(', ') || '—';
+
+            // Comment (messageToSeller + NIP)
+            var commentHtml = (o.customer_comment || o.note || '—');
+
+            // Status in Polish
+            var statusLabel = getStatus(o.status);
+
+            var rowId = 'detail-' + (o.id || o.external_id);
+            var orderId = o.id || '';
+
+            var isExported = o.exported ? true : false;
+            var exportedClass = isExported ? ' exported' : '';
+
+            var starActive = o.is_priority ? ' active' : '';
+            html += '<tr class="order-row' + exportedClass + '" id="row-' + orderId + '">'
+                + '<td onclick="event.stopPropagation()"><input type="checkbox" class="order-check" data-id="' + orderId + '" onchange="updateSelCount()"></td>'
+                + '<td onclick="event.stopPropagation()"><button class="star-btn' + starActive + '" data-id="' + orderId + '" onclick="togglePriority(this)">★</button></td>'
+                + '<td onclick="event.stopPropagation()"><input type="checkbox" class="exported-check" data-id="' + orderId + '"' + (isExported ? ' checked' : '') + ' onchange="toggleExported(this)"></td>'
+                + '<td style="white-space:nowrap;" onclick="toggleDetail(\'' + rowId + '\')">' + dt + '</td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')">' + (o.product_type || '') + '</td>'
+                + '<td class="config-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.configuration || '') + '</td>'
+                + '<td style="font-size:11px;" onclick="toggleDetail(\'' + rowId + '\')">' + (o.invoice_nip || '') + '</td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')">' + priceHtml + '</td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')">' + productHtml + '</td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span></td>'
+                + '<td style="font-size:11px;" onclick="toggleDetail(\'' + rowId + '\')">' + (o.payment_method || '—') + '</td>'
+                + '<td class="phone-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.customer_phone || '—') + '</td>'
+                + '<td class="address-cell" onclick="toggleDetail(\'' + rowId + '\')">' + addrHtml + '</td>'
+                + '<td class="comment-cell" onclick="event.stopPropagation()"><span class="editable-comment" data-id="' + orderId + '" onclick="editComment(this)" title="' + t('click_to_edit') + '">' + commentHtml + '</span></td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="badge badge-' + o.source + '">' + (o.source || '').toUpperCase() + '</span>'
+                + '<div class="order-extid">' + ((o.external_id || '').replace(/[^0-9]/g, '') || '') + '</div>'
+                + (o.created_by_email ? '<div class="order-extid">' + o.created_by_email + '</div>' : '')
+                + '</td>'
+                + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.seller_account || '') + '</td>'
+                + '</tr>';
+
+            // --- Detail row (expandable) ---
+            var itemsTable = '<table><thead><tr><th>' + t('detail_product') + '</th><th>' + t('detail_sku') + '</th><th>' + t('detail_qty') + '</th><th>' + t('detail_price_gross') + '</th></tr></thead><tbody>';
+            items.forEach(function(it) {
+                var fullName = it.full_name || it.name || '';
+                var itemPrice = parseFloat(it.price) || 0;
+                // Allegro, manual, and WooCommerce (dobraszklarnia) prices are already brutto
+                // PrestaShop (oteko, cieplarnia) prices are netto — multiply by 1.23
+                var srcLower = (o.source || '').toLowerCase();
+                var isBrutto = (srcLower === 'allegro' || srcLower === 'manual' || srcLower === 'dobraszklarnia') || it.gross === true; // oteko из WooCommerce (с 12.11.2026) — уже брутто
+                var bruttoPrice = isBrutto ? itemPrice : itemPrice * 1.23;
+                itemsTable += '<tr><td>' + fullName + '</td><td>' + (it.sku || '—') + '</td><td>' + it.qty + '</td><td>' + fmtMoney(bruttoPrice) + ' PLN</td></tr>';
+            });
+            itemsTable += '</tbody></table>';
+
+            // Manual order actions — edit: creator or superadmin, delete: only superadmin
+            var isManual = (o.external_id || '').indexOf('manual') === 0;
+            var manualActions = '';
+            if (isManual) {
+                var canEdit = isSuperAdmin || (hasPerm('add_orders') && o.created_by_email === userEmail);
+                var canDelete = isSuperAdmin;
+                if (canEdit || canDelete) {
+                    manualActions = '<div class="d-group" style="grid-column:1/-1;margin-top:8px;">';
+                    if (canEdit) manualActions += '<button class="btn-primary" style="margin-right:8px;font-size:12px;padding:4px 12px;" onclick="editManualOrder(' + orderId + ')">' + t('btn_edit') + '</button>';
+                    if (canDelete) manualActions += '<button style="background:#ef4444;color:#fff;border:none;border-radius:4px;font-size:12px;padding:4px 12px;cursor:pointer;" onclick="deleteManualOrder(' + orderId + ')">' + t('btn_delete') + '</button>';
+                    manualActions += '</div>';
+                }
+            }
+
+            html += '<tr class="detail-row" id="' + rowId + '"><td colspan="16"><div class="detail-panel">'
+                + '<div class="d-group"><div class="d-label">' + t('detail_client') + '</div><div class="d-value">' + (o.customer_name || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_email') + '</div><div class="d-value">' + (o.customer_email || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_phone') + '</div><div class="d-value">' + (o.customer_phone || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_address') + '</div><div class="d-value">' + addrHtml + '</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_shipping_method') + '</div><div class="d-value">' + (o.shipping_method || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_payment') + '</div><div class="d-value">' + (o.payment_method || '—') + '</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_status') + '</div><div class="d-value"><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span> (' + (o.status || '') + ')</div></div>'
+                + '<div class="d-group"><div class="d-label">' + t('detail_order_id') + '</div><div class="d-value">#' + (o.external_id || o.id) + '</div></div>'
+                + (o.invoice_nip ? '<div class="d-group"><div class="d-label">' + t('detail_nip') + '</div><div class="d-value">' + o.invoice_nip + '</div></div>' : '')
+                + (o.invoice_data ? '<div class="d-group"><div class="d-label">' + t('detail_invoice_data') + '</div><div class="d-value" style="white-space:pre-line;">' + o.invoice_data + '</div></div>' : '')
+                + '<div class="d-group"><div class="d-label">' + t('detail_comment') + '</div><div class="d-value">' + (o.customer_comment || o.note || '—') + '</div></div>'
+                + '<div class="d-items"><div class="d-label">' + t('detail_items') + '</div>' + itemsTable + '</div>'
+                + manualActions
+                + '</div></td></tr>';
+        });
+        tbody.innerHTML = html;
+    }
+
+    function toggleDetail(id) {
+        var row = document.getElementById(id);
+        if (row) row.classList.toggle('open');
+    }
+
+    function renderPagination() {
+        var totalPages = Math.ceil(totalOrders / perPage);
+        var el = document.getElementById('pagination');
+        if (totalPages <= 1) { el.innerHTML = '<span class="info">' + t('pag_total') + ': ' + totalOrders + '</span>'; return; }
+
+        var html = '<span class="info">' + t('pag_total') + ': ' + fmt(totalOrders) + ' | ' + t('pag_page') + ' ' + currentPage + ' ' + t('pag_of') + ' ' + totalPages + '</span>';
+        if (currentPage > 1) html += '<button onclick="loadOrders(' + (currentPage-1) + ')">' + t('pag_prev') + '</button>';
+        if (currentPage < totalPages) html += '<button onclick="loadOrders(' + (currentPage+1) + ')">' + t('pag_next') + '</button>';
+        el.innerHTML = html;
+    }
+
+    function exportCSV() {
+        var f = getFilters();
+        var url = '/api/orders/export?fmt=xlsx';
+        if (f.source) url += '&source=' + encodeURIComponent(f.source);
+        if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
+        if (f.status) url += '&status=' + encodeURIComponent(f.status);
+        if (f.date_from) url += '&date_from=' + f.date_from;
+        if (f.date_to) url += '&date_to=' + f.date_to;
+        window.location.href = url;
+        // Backend auto-marks exported — reload table after short delay to show green rows
+        setTimeout(function() { loadOrders(currentPage); }, 2000);
+    }
+
+    function syncAll() {
+        var btn = document.getElementById('btn-sync');
+        btn.textContent = t('syncing');
+        btn.disabled = true;
+        fetch('/admin/sync', {method:'POST'}).then(function(r) { return r.json(); }).then(function(d) {
+            btn.textContent = t('btn_sync');
+            btn.disabled = false;
+            // Перезагружаем через 5 сек (время на синк)
+            setTimeout(function() { loadOrders(currentPage); loadSyncInfo(); }, 5000);
+        });
+    }
+
+    function fullResync() {
+        if (!confirm(t('confirm_full_sync'))) return;
+        var btn = document.getElementById('btn-full-sync');
+        btn.textContent = t('syncing');
+        btn.disabled = true;
+        var sources = ['dobraszklarnia', 'oteko', 'cieplarnia', 'allegro'];
+        var done = 0;
+        sources.forEach(function(src) {
+            fetch('/admin/sync?source=' + src + '&full=true', {method:'POST'}).then(function(r) { return r.json(); }).then(function() {
+                done++;
+                btn.textContent = t('btn_full_sync') + ' (' + done + '/' + sources.length + ')';
+                if (done === sources.length) {
+                    btn.textContent = t('btn_full_sync');
+                    btn.disabled = false;
+                    setTimeout(function() { loadOrders(currentPage); loadSyncInfo(); }, 10000);
+                }
+            });
+        });
+    }
+
+    function loadSyncInfo() {
+        fetch('/api/sync-log?limit=5').then(function(r) { return r.json(); }).then(function(d) {
+            var el = document.getElementById('sync-info');
+            if (!d.log || d.log.length === 0) {
+                el.innerHTML = t('no_sync');
+                return;
+            }
+            var html = '';
+            d.log.slice(0, 3).forEach(function(s) {
+                var cls = s.status === 'ok' ? 'sync-ok' : (s.status === 'error' ? 'sync-error' : 'sync-running');
+                var dt = s.finished_at ? new Date(s.finished_at).toLocaleTimeString('pl-PL', {hour:'2-digit',minute:'2-digit'}) : '...';
+                html += '<span class="' + cls + '">' + s.source + ': ' + s.status;
+                if (s.orders_new) html += ' (+' + s.orders_new + ')';
+                html += ' ' + dt + '</span>  ';
+            });
+            el.innerHTML = html;
+        });
+    }
+
+    // --- Selection logic ---
+    function updateSelCount() {
+        var checks = document.querySelectorAll('.order-check:checked');
+        var cnt = checks.length;
+        var btn = document.getElementById('btn-export-sel');
+        document.getElementById('sel-count').textContent = cnt;
+        btn.style.display = cnt > 0 ? 'inline-block' : 'none';
+    }
+
+    function toggleSelectAll(master) {
+        var checks = document.querySelectorAll('.order-check');
+        checks.forEach(function(cb) { cb.checked = master.checked; });
+        updateSelCount();
+    }
+
+    function exportSelected() {
+        var checks = document.querySelectorAll('.order-check:checked');
+        var ids = [];
+        checks.forEach(function(cb) { ids.push(cb.getAttribute('data-id')); });
+        if (ids.length === 0) return;
+        // Download XLSX — backend auto-marks as exported
+        window.location.href = '/api/orders/export?ids=' + ids.join(',');
+        // Reload table after short delay to show green rows + checked right-side boxes
+        setTimeout(function() { loadOrders(currentPage); }, 2000);
+    }
+
+    function toggleExported(cb) {
+        var id = cb.getAttribute('data-id');
+        var exported = cb.checked;
+        var row = document.getElementById('row-' + id);
+        if (row) {
+            if (exported) { row.classList.add('exported'); }
+            else { row.classList.remove('exported'); }
+        }
+        fetch('/api/orders/toggle-exported', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: id, exported: exported})
+        });
+    }
+
+    // --- Toggle priority star ---
+    function togglePriority(btn) {
+        var id = btn.getAttribute('data-id');
+        var isActive = btn.classList.contains('active');
+        var newVal = !isActive;
+        if (newVal) { btn.classList.add('active'); }
+        else { btn.classList.remove('active'); }
+        fetch('/api/orders/toggle-priority', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: parseInt(id), is_priority: newVal})
+        });
+    }
+
+    // --- Editable comment ---
+    function editComment(span) {
+        if (!hasPerm('edit_comments')) return;
+        var id = span.getAttribute('data-id');
+        var currentText = span.textContent === '—' ? '' : span.textContent;
+        var newText = prompt(t('comment_prompt'), currentText);
+        if (newText === null) return; // cancelled
+        fetch('/api/orders/update-comment', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: id, comment: newText})
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d.ok) span.textContent = newText || '—';
+        });
+    }
+
+    // Enter в поиске
+    document.getElementById('f-search').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') loadOrders(1);
+    });
+
+    // --- Add/Edit order modal ---
+    var editingOrderId = null;
+
+    function openAddModal() {
+        editingOrderId = null;
+        document.getElementById('modal-order-title').textContent = t('modal_add_order');
+        document.getElementById('add-modal').classList.add('open');
+        var now = new Date();
+        var dtStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-'
+            + String(now.getDate()).padStart(2,'0') + 'T' + String(now.getHours()).padStart(2,'0')
+            + ':' + String(now.getMinutes()).padStart(2,'0');
+        document.getElementById('m-date').value = dtStr;
+        document.getElementById('m-source').value = 'manual';
+        document.getElementById('m-product').value = '';
+        document.getElementById('m-type').value = '';
+        document.getElementById('m-config').value = '';
+        document.getElementById('m-price').value = '';
+        document.getElementById('m-shipping').value = '0';
+        document.getElementById('m-status').value = 'awaiting_cod';
+        document.getElementById('m-payment').value = '';
+        document.getElementById('m-name').value = '';
+        document.getElementById('m-phone').value = '';
+        document.getElementById('m-city').value = '';
+        document.getElementById('m-address').value = '';
+        document.getElementById('m-email').value = '';
+        document.getElementById('m-comment').value = '';
+        document.getElementById('m-seller').value = '';
+    }
+    function closeAddModal() {
+        document.getElementById('add-modal').classList.remove('open');
+        editingOrderId = null;
+    }
+    function editManualOrder(orderId) {
+        // Find order data from loaded orders
+        fetch('/api/orders?limit=1&offset=0&search=&source=&status=').then(function(r){return r.json();}).then(function(){
+            // Easier: fetch single order by iterating rendered data
+        });
+        // Use data from DOM — fetch order by id
+        fetch('/api/orders?limit=1000&offset=0').then(function(r){return r.json();}).then(function(d) {
+            var order = null;
+            d.orders.forEach(function(o) { if (o.id == orderId) order = o; });
+            if (!order) { alert(t('order_not_found')); return; }
+            editingOrderId = orderId;
+            document.getElementById('modal-order-title').textContent = t('modal_edit_order') + ' #' + orderId;
+            document.getElementById('add-modal').classList.add('open');
+            // Fill form
+            var dt = order.external_created || order.created_at || '';
+            if (dt) {
+                var d2 = new Date(dt);
+                var dtStr = d2.getFullYear() + '-' + String(d2.getMonth()+1).padStart(2,'0') + '-'
+                    + String(d2.getDate()).padStart(2,'0') + 'T' + String(d2.getHours()).padStart(2,'0')
+                    + ':' + String(d2.getMinutes()).padStart(2,'0');
+                document.getElementById('m-date').value = dtStr;
+            }
+            document.getElementById('m-source').value = order.source || 'manual';
+            var items = [];
+            try { items = JSON.parse(order.items_json || '[]'); } catch(e) {}
+            document.getElementById('m-product').value = items.length > 0 ? (items[0].full_name || items[0].name || '') : '';
+            document.getElementById('m-type').value = order.product_type || '';
+            document.getElementById('m-config').value = order.configuration || '';
+            var shipCost = parseFloat(order.shipping_cost || 0);
+            var totalVal = parseFloat(order.total || 0);
+            document.getElementById('m-price').value = (totalVal - shipCost).toFixed(2);
+            document.getElementById('m-shipping').value = shipCost.toFixed(2);
+            document.getElementById('m-status').value = order.status || 'awaiting_cod';
+            document.getElementById('m-payment').value = order.payment_method || '';
+            document.getElementById('m-name').value = order.customer_name || '';
+            document.getElementById('m-phone').value = order.customer_phone || '';
+            document.getElementById('m-city').value = order.customer_city || '';
+            document.getElementById('m-address').value = order.customer_address || '';
+            document.getElementById('m-email').value = order.customer_email || '';
+            document.getElementById('m-comment').value = order.customer_comment || order.note || '';
+            document.getElementById('m-seller').value = order.seller_account || '';
+        });
+    }
+    function deleteManualOrder(orderId) {
+        if (!confirm(t('confirm_delete') + ' #' + orderId + '?')) return;
+        fetch('/api/orders/manual/' + orderId, { method: 'DELETE' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.ok) loadOrders(currentPage);
+                else alert(t('error_prefix') + ': ' + (d.error || 'unknown'));
+            });
+    }
+    function saveManualOrder() {
+        var data = {
+            date: document.getElementById('m-date').value,
+            source: document.getElementById('m-source').value,
+            product_name: document.getElementById('m-product').value,
+            product_type: document.getElementById('m-type').value,
+            configuration: document.getElementById('m-config').value,
+            price: parseFloat(document.getElementById('m-price').value) || 0,
+            shipping_cost: parseFloat(document.getElementById('m-shipping').value) || 0,
+            status: document.getElementById('m-status').value,
+            payment_method: document.getElementById('m-payment').value,
+            customer_name: document.getElementById('m-name').value,
+            customer_phone: document.getElementById('m-phone').value,
+            customer_city: document.getElementById('m-city').value,
+            customer_address: document.getElementById('m-address').value,
+            customer_email: document.getElementById('m-email').value,
+            comment: document.getElementById('m-comment').value,
+            seller_account: document.getElementById('m-seller').value,
+        };
+        var url = editingOrderId ? '/api/orders/manual/' + editingOrderId : '/api/orders/manual';
+        var method = editingOrderId ? 'PUT' : 'POST';
+        fetch(url, {
+            method: method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d.ok) {
+                closeAddModal();
+                loadOrders(currentPage);
+            } else {
+                alert(t('error_prefix') + ': ' + (d.error || 'unknown'));
+            }
+        });
+    }
+
+    // --- Column resizer — fixed layout on first drag, text wraps when narrowed ---
+    (function() {
+        // Clear old broken storage keys
+        try { localStorage.removeItem('ekomat_col_widths'); } catch(e) {}
+        try { localStorage.removeItem('ekomat_col_minwidths_v2'); } catch(e) {}
+
+        var STORAGE_KEY = 'ekomat_col_w_v3';
+        var startX, startW, activeTh, tableStartW;
+        var locked = false;
+
+        function getTable() { return document.querySelector('.card table'); }
+
+        function lockLayout() {
+            if (locked) return;
+            var table = getTable();
+            if (!table) return;
+            var ths = table.querySelectorAll('thead th');
+            if (ths.length === 0) return;
+            // Capture current auto-layout widths
+            var widths = [];
+            ths.forEach(function(th) { widths.push(th.offsetWidth); });
+            var totalW = 0;
+            ths.forEach(function(th, i) {
+                th.style.width = widths[i] + 'px';
+                th.style.whiteSpace = 'normal';
+                totalW += widths[i];
+            });
+            table.style.width = totalW + 'px';
+            table.style.tableLayout = 'fixed';
+            locked = true;
+        }
+
+        function saveWidths() {
+            var table = getTable();
+            if (!table) return;
+            var ths = table.querySelectorAll('thead th');
+            var widths = {};
+            ths.forEach(function(th, idx) {
+                if (th.style.width) widths[idx] = th.style.width;
+            });
+            widths._tw = table.style.width || '';
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(widths)); } catch(e) {}
+        }
+
+        function restoreWidths() {
+            try {
+                var saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+                if (!saved._tw) return false;
+                var table = getTable();
+                if (!table) return false;
+                var ths = table.querySelectorAll('thead th');
+                var any = false;
+                Object.keys(saved).forEach(function(key) {
+                    if (key === '_tw') return;
+                    var idx = parseInt(key);
+                    if (ths[idx]) { ths[idx].style.width = saved[key]; ths[idx].style.whiteSpace = 'normal'; any = true; }
+                });
+                if (any) {
+                    table.style.width = saved._tw;
+                    table.style.tableLayout = 'fixed';
+                    locked = true;
+                }
+                return any;
+            } catch(e) { return false; }
+        }
+
+        function onMove(e) {
+            if (!activeTh) return;
+            var delta = e.pageX - startX;
+            var newW = startW + delta;
+            if (newW < 30) newW = 30;
+            activeTh.style.width = newW + 'px';
+            var table = getTable();
+            if (table) table.style.width = Math.max(tableStartW + delta, 400) + 'px';
+        }
+
+        function onUp() {
+            if (activeTh) {
+                var grip = activeTh.querySelector('.col-resize');
+                if (grip) grip.classList.remove('active');
+                saveWidths();
+            }
+            activeTh = null;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        }
+
+        setTimeout(function() {
+            restoreWidths();
+            var grips = document.querySelectorAll('.col-resize');
+            grips.forEach(function(grip) {
+                grip.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    lockLayout();
+                    activeTh = grip.parentElement;
+                    startX = e.pageX;
+                    startW = activeTh.offsetWidth;
+                    var table = getTable();
+                    tableStartW = table ? table.offsetWidth : 0;
+                    grip.classList.add('active');
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
+                });
+            });
+        }, 500);
+    })();
+
+    // --- Export history & undo ---
+    function toggleExportHistory() {
+        var panel = document.getElementById('export-history-panel');
+        if (!panel) return;
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+            loadExportHistory();
+        } else {
+            panel.style.display = 'none';
+        }
+    }
+
+    function loadExportHistory() {
+        // Load bulk export timestamps
+        fetch('/api/orders/exported-timestamps').then(function(r){return r.json();}).then(function(d) {
+            var tbody = document.getElementById('bulk-export-body');
+            if (!tbody) return;
+            if (!d.timestamps || d.timestamps.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:8px;color:#9ca3af;">Brak masowych eksportów</td></tr>';
+                return;
+            }
+            var html = '';
+            d.timestamps.forEach(function(entry) {
+                var dt = entry.timestamp ? new Date(entry.timestamp).toLocaleString('pl-PL') : '—';
+                var isBulk = entry.count > 10;
+                var rowStyle = isBulk ? 'background:#fef2f2;' : '';
+                html += '<tr style="' + rowStyle + '">'
+                    + '<td style="padding:4px 8px;">' + dt + '</td>'
+                    + '<td style="padding:4px 8px;text-align:right;font-weight:' + (isBulk ? '700' : '400') + ';">' + entry.count + '</td>'
+                    + '<td style="padding:4px 8px;text-align:center;">'
+                    + (isBulk ? '<button onclick="revertBulkExport(\'' + entry.timestamp + '\', ' + entry.count + ')" style="background:#f59e0b;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;">Cofnij ten eksport</button>' : '<span style="color:#9ca3af;font-size:11px;">mały</span>')
+                    + '</td></tr>';
+            });
+            tbody.innerHTML = html;
+        });
+
+        // Load export log
+        fetch('/api/export-log?limit=20').then(function(r){return r.json();}).then(function(d) {
+            var tbody = document.getElementById('export-log-body');
+            if (!tbody) return;
+            if (!d.log || d.log.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:12px;color:#9ca3af;">Brak eksportów</td></tr>';
+                return;
+            }
+            var html = '';
+            d.log.forEach(function(entry) {
+                var dt = entry.created_at ? new Date(entry.created_at).toLocaleString('pl-PL') : '—';
+                var statusHtml = entry.undone
+                    ? '<span style="color:#dc2626;">Cofnięty</span>'
+                    : '<span style="color:#059669;">Aktywny</span>';
+                var actionHtml = entry.undone
+                    ? '—'
+                    : '<button onclick="undoExport(' + entry.id + ')" style="background:#f59e0b;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;">Cofnij</button>';
+                html += '<tr>'
+                    + '<td style="padding:6px 8px;">' + dt + '</td>'
+                    + '<td style="padding:6px 8px;">' + (entry.user_email || '—') + '</td>'
+                    + '<td style="padding:6px 8px;text-align:right;">' + entry.orders_count + '</td>'
+                    + '<td style="padding:6px 8px;text-align:center;">' + statusHtml + '</td>'
+                    + '<td style="padding:6px 8px;text-align:center;">' + actionHtml + '</td>'
+                    + '</tr>';
+            });
+            tbody.innerHTML = html;
+        });
+    }
+
+    function undoExport(logId) {
+        if (!confirm('Cofnąć ten eksport? Wszystkie zamówienia z tego eksportu stracą oznaczenie ✓')) return;
+        fetch('/api/export-log/' + logId + '/undo', { method: 'POST' })
+            .then(function(r){return r.json();})
+            .then(function(d) {
+                if (d.ok) {
+                    loadExportHistory();
+                    loadOrders(currentPage);
+                } else {
+                    alert('Błąd: ' + (d.error || 'unknown'));
+                }
+            });
+    }
+
+    function revertBulkExport(timestamp, count) {
+        if (!confirm('Cofnąć masowy eksport z ' + new Date(timestamp).toLocaleString('pl-PL') + '?\nTo zresetuje ' + count + ' zamówień, ale zachowa ręczne oznaczenia z innych momentów.')) return;
+        fetch('/api/orders/revert-bulk-export', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({timestamp: timestamp})
+        }).then(function(r){return r.json();}).then(function(d) {
+            if (d.ok) {
+                alert('Cofnięto ' + d.reverted + ' zamówień');
+                loadExportHistory();
+                loadOrders(currentPage);
+            } else {
+                alert('Błąd: ' + (d.error || 'unknown'));
+            }
+        });
+    }
+
+    function recoverExported() {
+        if (!confirm('Восстановить пометки exported для:\n• 82 заказа из штучных экспортов (Май 28 + Июнь 1)\n• Все заказы dobraszklarnia (Фев 20 — Май 21)\n\nПродолжить?')) return;
+        fetch('/api/orders/recover-all', { method: 'POST' })
+            .then(function(r){return r.json();})
+            .then(function(d) {
+                if (d.ok) {
+                    var msg = 'Восстановлено ' + d.total_restored + ' заказов:\n';
+                    d.steps.forEach(function(s) {
+                        msg += '• ' + s.name + ': ' + s.updated + ' шт.\n';
+                    });
+                    alert(msg);
+                    loadExportHistory();
+                    loadOrders(currentPage);
+                } else {
+                    alert('Ошибка: ' + (d.error || 'unknown'));
+                }
+            })
+            .catch(function(e) { alert('Сетевая ошибка: ' + e); });
+    }
+
+    function resetAllExported() {
+        if (!confirm('UWAGA: To usunie WSZYSTKIE oznaczenia eksportu (✓) ze wszystkich zamówień!\nCzy na pewno?')) return;
+        fetch('/api/orders/reset-all-exported', { method: 'POST' })
+            .then(function(r){return r.json();})
+            .then(function(d) {
+                if (d.ok) {
+                    alert('Zresetowano ' + d.reset_count + ' zamówień');
+                    loadExportHistory();
+                    loadOrders(currentPage);
+                } else {
+                    alert('Błąd: ' + (d.error || 'unknown'));
+                }
+            });
+    }
+
+    </script>
+
+    <!-- Modal: add manual order -->
+    <div class="modal-overlay" id="add-modal" onclick="if(event.target===this)closeAddModal()">
+        <div class="modal">
+            <h3 id="modal-order-title" data-i18n="modal_add_order">Dodaj zamówienie ręcznie</h3>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label data-i18n="modal_date">Data</label>
+                    <input type="datetime-local" id="m-date">
+                </div>
+                <div class="form-group" style="display:none;">
+                    <input type="hidden" id="m-source" value="manual">
+                </div>
+                <div class="form-group full">
+                    <label data-i18n="modal_product_name">Nazwa produktu</label>
+                    <input type="text" id="m-product" placeholder="np. Szklarnia Mocna 3x6m 6mm">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="modal_product_type">Typ towaru</label>
+                    <input type="text" id="m-type" placeholder="Szklarnia / Poliwęglan">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="modal_config">Konfiguracja</label>
+                    <input type="text" id="m-config" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="modal_price">Cena towaru (PLN)</label>
+                    <input type="number" step="0.01" id="m-price" placeholder="0.00">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="modal_shipping">Dostawa (PLN)</label>
+                    <input type="number" step="0.01" id="m-shipping" value="0" placeholder="0.00">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="modal_status">Status</label>
+                    <select id="m-status">
+                        <option value="awaiting_cod" data-i18n="status_awaiting_cod">Płatność przy odbiorze</option>
+                        <option value="awaiting_proforma" data-i18n="status_awaiting_proforma">Oczekujemy na opłacenie Proformy</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="modal_payment">Płatność</label>
+                    <input type="text" id="m-payment" placeholder="Gotówka / Przelew / Blik">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="modal_customer_name">Imię i nazwisko klienta</label>
+                    <input type="text" id="m-name" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="modal_phone">Telefon</label>
+                    <input type="text" id="m-phone" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="m-email" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="modal_city">Miasto</label>
+                    <input type="text" id="m-city" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="modal_address">Adres</label>
+                    <input type="text" id="m-address" placeholder="">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="modal_seller_account">Konto sprzedawcy</label>
+                    <input type="text" id="m-seller" placeholder="np. mantrade">
+                </div>
+                <div class="form-group full">
+                    <label data-i18n="modal_comment">Komentarz</label>
+                    <textarea id="m-comment" placeholder=""></textarea>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button class="btn-cancel" onclick="closeAddModal()" data-i18n="modal_cancel">Anuluj</button>
+                <button class="btn-save" onclick="saveManualOrder()" data-i18n="modal_save">Zapisz zamówienie</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

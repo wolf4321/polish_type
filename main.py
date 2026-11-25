@@ -6,6 +6,7 @@ FastAPI + asyncpg + Jinja2 + WooCommerce + PrestaShop + Allegro.
   - dobraszklarnia.pl  (WooCommerce)  — webhook + API sync
   - oteko.pl           (WooCommerce с 12.11.2026, ранее PrestaShop) — webhook + API sync
   - cieplarnia.pl      (PrestaShop)   — API pull каждые 15 мин
+  - Erli.pl            (маркетплейс)  — API pull каждые 15 мин
   - Allegro (drogatrade) — OAuth2 + API pull каждые 15 мин
 
 Railway deploy: добавь DB_CONNECT + API-ключи в env vars.
@@ -36,6 +37,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from auth import auth_router, get_current_user, require_user, has_perm, set_db_pool, init_auth_tables
+from backup import (backup_router, configure_backup, scheduled_backup,
+                    _enabled as backup_enabled)
+from mcp_server import mcp_router, configure_mcp
+import catalog
+import assistant
 
 
 # ============================================================
@@ -43,6 +49,106 @@ from auth import auth_router, get_current_user, require_user, has_perm, set_db_p
 # ============================================================
 TZ = ZoneInfo("Europe/Warsaw")
 DSN = lambda: os.getenv("DB_CONNECT") or os.getenv("DATABASE_URL") or os.getenv("DATABASE_PRIVATE_URL")
+
+
+def _envflag(name: str, default: bool) -> bool:
+    """Читает булев флаг из env: 1/true/yes/on -> True, остальное -> False."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+# --- Режим инстанса ------------------------------------------------
+# SYNC_ENABLED=false: планировщик не стартует, ручной синк отвечает 503,
+# вебхуки отклоняются. Нужно второму (v2/staging) инстансу, который живёт
+# на клоне базы и НЕ ДОЛЖЕН трогать внешние API.
+#
+# Критично для Allegro: refresh_token ротируется при каждом обращении.
+# Два инстанса с одним токеном инвалидируют токены друг друга -> прод
+# теряет доступ к Allegro.
+SYNC_ENABLED = _envflag("SYNC_ENABLED", True)
+
+# Приём вебхуков. По умолчанию повторяет SYNC_ENABLED.
+WEBHOOKS_ENABLED = _envflag("WEBHOOKS_ENABLED", SYNC_ENABLED)
+
+# Подпись в интерфейсе, чтобы визуально не спутать копию с продом.
+INSTANCE_NAME = os.getenv("INSTANCE_NAME", "")
+
+# CORS: по умолчанию только свой домен. Список доменов через запятую.
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+
+# Идентификатор инстанса. Им префиксуются ключи секретов в app_settings,
+# поэтому копия базы физически не содержит токенов, которые копия умеет
+# прочитать. Боевой инстанс работает со старыми ключами без префикса —
+# на проде ничего менять не нужно.
+INSTANCE_ID = (os.getenv("INSTANCE_ID") or ("prod" if SYNC_ENABLED else "v2")).strip().lower()
+IS_PROD_INSTANCE = INSTANCE_ID == "prod"
+
+
+# ============================================================
+# Блокировка исходящих запросов на не-боевом инстансе
+# ============================================================
+# Самый нижний уровень защиты. Флаги SYNC_ENABLED в планировщике и
+# эндпоинтах можно обойти новым кодом или недосмотром; этот барьер
+# срабатывает на КАЖДОМ исходящем HTTP-запросе, до открытия сокета.
+#
+# Зачем: Allegro выдаёт одноразовый refresh_token и ротирует его при
+# каждом обращении. Один запрос с копии — и боевой токен мёртв.
+
+class ExternalCallBlocked(RuntimeError):
+    """Исходящий запрос запрещён: инстанс работает в режиме SYNC_ENABLED=false."""
+
+
+# Хосты, разрешённые даже на копии. Сюда попадает только то, что физически
+# не может навредить проду: GitHub нужен для выгрузки бэкапов, токенов
+# магазинов там нет и ротировать ему нечего.
+ALWAYS_ALLOWED_HOSTS = {"api.github.com", "uploads.github.com",
+                        # Google Диск для бэкапов (доступ только drive.file)
+                        "oauth2.googleapis.com", "www.googleapis.com"}
+
+# Erli.pl разрешён и на копии — но только на чтение. Ключ Erli не
+# ротируется, так что копия не может отобрать доступ у прода. А вот
+# PATCH менял бы статус реального заказа на маркетплейсе, поэтому
+# всё, кроме чтения и поиска, режем.
+ERLI_READONLY_HOST = "erli.pl"
+
+
+async def _block_external_request(session, ctx, params):
+    """on_request_start: роняет запрос, если инстанс не боевой."""
+    if SYNC_ENABLED:
+        return
+    host = (params.url.host or "?")
+    if host in ALWAYS_ALLOWED_HOSTS:
+        return
+    if host == ERLI_READONLY_HOST:
+        path = params.url.path or ""
+        method = (params.method or "").upper()
+        if path.startswith("/svc/shop-api/") and (
+            method == "GET" or (method == "POST" and path.endswith("/_search"))
+        ):
+            return
+    msg = (
+        "[ЗАБЛОКИРОВАНО] %s %s — SYNC_ENABLED=false. "
+        "Это копия для разработки, ей запрещено обращаться к внешним API: "
+        "запрос к Allegro сломал бы refresh_token боевого инстанса."
+        % (params.method, host)
+    )
+    print(msg)
+    raise ExternalCallBlocked(msg)
+
+
+def _http_session(**kwargs) -> aiohttp.ClientSession:
+    """Единственная точка создания HTTP-сессии в проекте.
+
+    Не вызывай aiohttp.ClientSession напрямую: сессия без этого барьера
+    может уйти в Allegro с боевым токеном.
+    """
+    trace = aiohttp.TraceConfig()
+    trace.on_request_start.append(_block_external_request)
+    traces = list(kwargs.pop("trace_configs", None) or [])
+    traces.append(trace)
+    return aiohttp.ClientSession(trace_configs=traces, **kwargs)
 
 # WooCommerce — dobraszklarnia.pl
 WOO_URL     = os.getenv("WOO_URL", "https://dobraszklarnia.pl")
@@ -95,6 +201,38 @@ def _load_allegro_accounts():
 
 ALLEGRO_ACCOUNTS = _load_allegro_accounts()
 
+
+# ============================================================
+# Erli.pl — маркетплейс, несколько магазинов
+# ============================================================
+# Ключ берётся в панели продавца: Metoda integracji -> Twoje klucze API.
+# В отличие от Allegro ключ Erli НЕ ротируется: один и тот же ключ может
+# спокойно стоять и на проде, и на копии — прод от этого не сломается.
+#   Магазин 1: ERLI_KEY  / ERLI_SELLER_NAME  / ERLI_MARKET
+#   Магазин 2: ERLI2_KEY / ERLI2_SELLER_NAME / ERLI2_MARKET  ... до ERLI10_*
+ERLI_API_URL = "https://erli.pl/svc/shop-api"
+
+
+def _load_erli_accounts():
+    """Собрать магазины Erli из переменных окружения."""
+    accounts = []
+    prefixes = [("ERLI", "")] + [(f"ERLI{i}", str(i)) for i in range(2, 11)]
+    for prefix, suffix in prefixes:
+        key = os.getenv(f"{prefix}_KEY", "").strip()
+        if not key:
+            continue
+        name = os.getenv(f"{prefix}_SELLER_NAME", "").strip() or (f"erli{suffix}" if suffix else "erli")
+        accounts.append({
+            "name": name,
+            "key": key,
+            "market": (os.getenv(f"{prefix}_MARKET", "pl") or "pl").strip().lower(),
+            "prefix": prefix,
+        })
+    return accounts
+
+
+ERLI_ACCOUNTS = _load_erli_accounts()
+
 # In-memory token cache per account: { "account_name": {"access_token": ..., "expires_at": ..., "refresh_token": ...} }
 _allegro_tokens = {}
 
@@ -117,6 +255,129 @@ async def get_db_pool():
             command_timeout=30,
         )
     return _pool
+
+
+# ============================================================
+# Индексы
+# ============================================================
+# В v1 индексов не было вообще, кроме UNIQUE(source, external_id): любой
+# запрос к /api/orders с сортировкой по дате означал полный скан таблицы.
+INDEX_DEFS = [
+    # Сортировка по умолчанию: is_priority DESC, COALESCE(external_created, created_at) DESC
+    ("idx_orders_sort",
+     "CREATE INDEX IF NOT EXISTS idx_orders_sort ON orders "
+     "(is_priority DESC NULLS LAST, (COALESCE(external_created, created_at)) DESC)"),
+    # Фильтры
+    ("idx_orders_source",       "CREATE INDEX IF NOT EXISTS idx_orders_source ON orders (source)"),
+    ("idx_orders_seller",       "CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders (seller_account)"),
+    ("idx_orders_status",       "CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status)"),
+    ("idx_orders_product_type", "CREATE INDEX IF NOT EXISTS idx_orders_product_type ON orders (product_type)"),
+    ("idx_orders_created",      "CREATE INDEX IF NOT EXISTS idx_orders_created ON orders "
+                                "((COALESCE(external_created, created_at)))"),
+    # Частичные: экспортированных и приоритетных всегда мало
+    ("idx_orders_exported",     "CREATE INDEX IF NOT EXISTS idx_orders_exported ON orders (exported) "
+                                "WHERE exported = TRUE"),
+    ("idx_orders_priority",     "CREATE INDEX IF NOT EXISTS idx_orders_priority ON orders (is_priority) "
+                                "WHERE is_priority = TRUE"),
+    # Смежные таблицы
+    ("idx_sessions_user",       "CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions (user_id)"),
+    ("idx_sessions_expires",    "CREATE INDEX IF NOT EXISTS idx_sessions_expires ON user_sessions (expires_at)"),
+    ("idx_synclog_started",     "CREATE INDEX IF NOT EXISTS idx_synclog_started ON sync_log (started_at DESC)"),
+    ("idx_customers_email",     "CREATE INDEX IF NOT EXISTS idx_customers_email ON customers (email)"),
+    ("idx_customers_phone",     "CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers (phone)"),
+    ("idx_leads_created",       "CREATE INDEX IF NOT EXISTS idx_leads_created ON leads (created_at DESC)"),
+]
+
+# Триграммные индексы под поиск ILIKE '%...%'. Обычный btree такому запросу
+# не помогает вообще, нужен GIN по pg_trgm.
+TRGM_INDEX_DEFS = [
+    ("idx_orders_trgm_name",    "CREATE INDEX IF NOT EXISTS idx_orders_trgm_name ON orders "
+                                "USING gin (customer_name gin_trgm_ops)"),
+    ("idx_orders_trgm_phone",   "CREATE INDEX IF NOT EXISTS idx_orders_trgm_phone ON orders "
+                                "USING gin (customer_phone gin_trgm_ops)"),
+    ("idx_orders_trgm_email",   "CREATE INDEX IF NOT EXISTS idx_orders_trgm_email ON orders "
+                                "USING gin (customer_email gin_trgm_ops)"),
+    ("idx_orders_trgm_extid",   "CREATE INDEX IF NOT EXISTS idx_orders_trgm_extid ON orders "
+                                "USING gin (external_id gin_trgm_ops)"),
+    ("idx_orders_trgm_items",   "CREATE INDEX IF NOT EXISTS idx_orders_trgm_items ON orders "
+                                "USING gin (items_json gin_trgm_ops)"),
+    ("idx_orders_trgm_addr",    "CREATE INDEX IF NOT EXISTS idx_orders_trgm_addr ON orders "
+                                "USING gin (customer_address gin_trgm_ops)"),
+    ("idx_orders_trgm_comment", "CREATE INDEX IF NOT EXISTS idx_orders_trgm_comment ON orders "
+                                "USING gin (customer_comment gin_trgm_ops)"),
+    ("idx_orders_trgm_city",    "CREATE INDEX IF NOT EXISTS idx_orders_trgm_city ON orders "
+                                "USING gin (customer_city gin_trgm_ops)"),
+]
+
+# Ставится при старте: доступно ли расширение pg_trgm.
+TRGM_AVAILABLE = False
+
+
+async def _drop_invalid_indexes(conn):
+    """Убирает индексы, недостроенные из-за прерванного CONCURRENTLY.
+
+    Такой индекс остаётся в каталоге как невалидный: планировщик им не
+    пользуется, а IF NOT EXISTS считает его существующим. То есть он молча
+    занимает место и никогда не чинится. Сносим, чтобы пересоздать.
+    """
+    try:
+        rows = await conn.fetch("""
+            SELECT c.relname
+            FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE NOT i.indisvalid
+              AND n.nspname = current_schema()
+              AND c.relname LIKE 'idx_%'
+        """)
+        for r in rows:
+            name = r["relname"]
+            await conn.execute('DROP INDEX IF EXISTS "%s"' % name)
+            print("[indexes] удалён невалидный индекс %s, будет пересоздан" % name)
+    except Exception as e:
+        print("[indexes] проверка невалидных индексов не удалась: %s" % e)
+
+
+async def _ensure_indexes(conn):
+    """Создаёт индексы. Каждый отдельно: ошибка одного не рушит остальные.
+
+    CONCURRENTLY не блокирует запись, поэтому безопасно и на живой базе
+    с работающими людьми. Цена — дольше строится и нельзя внутри транзакции
+    (здесь её и нет).
+    """
+    global TRGM_AVAILABLE
+
+    await _drop_invalid_indexes(conn)
+
+    def _conc(sql):
+        return sql.replace("CREATE INDEX IF NOT EXISTS",
+                           "CREATE INDEX CONCURRENTLY IF NOT EXISTS", 1)
+
+    created = 0
+    for name, sql in INDEX_DEFS:
+        try:
+            await conn.execute(_conc(sql))
+            created += 1
+        except Exception as e:
+            print("[indexes] %s пропущен: %s" % (name, e))
+
+    try:
+        await conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        TRGM_AVAILABLE = True
+    except Exception as e:
+        print("[indexes] pg_trgm недоступен (%s) — поиск по подстроке будет "
+              "медленнее на больших объёмах" % e)
+        TRGM_AVAILABLE = False
+
+    if TRGM_AVAILABLE:
+        for name, sql in TRGM_INDEX_DEFS:
+            try:
+                await conn.execute(_conc(sql))
+                created += 1
+            except Exception as e:
+                print("[indexes] %s пропущен: %s" % (name, e))
+
+    print("[indexes] готово: %d индексов, pg_trgm=%s" % (created, TRGM_AVAILABLE))
 
 
 # ============================================================
@@ -242,6 +503,28 @@ async def lifespan(app: FastAPI):
             )
         """)
 
+        # Журнал действий: кто, что и когда сделал руками. Нужен, чтобы
+        # видеть историю и откатывать ошибки, не лазая в базу.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS action_log (
+                id         SERIAL PRIMARY KEY,
+                user_email VARCHAR(200),
+                action     VARCHAR(40),
+                order_ids  INTEGER[],
+                old_value  TEXT,
+                new_value  TEXT,
+                label      TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                undone     BOOLEAN DEFAULT FALSE,
+                undone_at  TIMESTAMP,
+                undone_by  VARCHAR(200)
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_action_log_created "
+            "ON action_log (created_at DESC)"
+        )
+
         # App settings — key-value store (для Allegro refresh token и др.)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -271,6 +554,10 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS traffic_source_type VARCHAR(50) DEFAULT ''",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS device_type VARCHAR(50) DEFAULT ''",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_data TEXT DEFAULT ''",
+            # Тип документа для покупателя: receipt (чек) / company (фактура
+            # на фирму, есть NIP) / person (именная фактура, NIP нет).
+            # Пусто = источник ещё не умеет это отдавать (сайты).
+            "ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_type VARCHAR(20) DEFAULT ''",
         ]
         for m in auto_migrations:
             try:
@@ -279,30 +566,116 @@ async def lifespan(app: FastAPI):
                 pass
         print("[startup] auto-migrations applied")
 
+        # Разовая выдача новых прав при переезде со старой версии:
+        # всем, кто работает с заказами, — каталог и обучение помощника.
+        # Флаг в app_settings, чтобы потом админ мог эти права снять.
+        try:
+            done = await conn.fetchval(
+                "SELECT value FROM app_settings WHERE key='migration:perms_catalog_kb_v1'")
+            if not done:
+                n = 0
+                for u in await conn.fetch("SELECT id, permissions FROM users"):
+                    perms = [p for p in (u["permissions"] or "").split(",") if p]
+                    if "orders" not in perms:
+                        continue
+                    add = [p for p in ("products", "assistant_kb") if p not in perms]
+                    if add:
+                        await conn.execute("UPDATE users SET permissions=$1 WHERE id=$2",
+                                           ",".join(perms + add), u["id"])
+                        n += 1
+                await conn.execute(
+                    "INSERT INTO app_settings (key, value, updated_at) VALUES "
+                    "('migration:perms_catalog_kb_v1', $1, NOW()) ON CONFLICT (key) DO NOTHING",
+                    "users=%d" % n)
+                print("[startup] права «Каталог» и «База знаний» выданы: %d польз." % n)
+        except Exception as e:
+            print(f"[startup] выдача новых прав не удалась: {e}")
+
+        # Каталог товаров (products, product_codes, orders.weight_kg) + сид из data/products_seed.json
+        try:
+            await catalog.init_catalog_tables(conn)
+        except Exception as e:
+            print(f"[startup] catalog init failed: {e}")
+        try:
+            await assistant.init_tables(conn)
+        except Exception as e:
+            print(f"[startup] assistant init failed: {e}")
+
+    # Индексы создаются вне общего блока: CONCURRENTLY нельзя в транзакции.
+    async with pool.acquire() as conn:
+        await _ensure_indexes(conn)
+
     print("[startup] DB connected, all tables ready")
 
     # Фоновые задачи — синк магазинов
-    scheduler.add_job(sync_woocommerce, CronTrigger(minute="*/15"), id="sync_woo", replace_existing=True)
-    scheduler.add_job(sync_presta_oteko, CronTrigger(minute="*/15"), id="sync_oteko", replace_existing=True)
-    scheduler.add_job(sync_presta_ciep, CronTrigger(minute="*/15"), id="sync_ciep", replace_existing=True)
-    scheduler.add_job(sync_allegro, CronTrigger(minute="*/15"), id="sync_allegro", replace_existing=True)
-    # Daily full sync at 3:00 AM to catch cancellations, status changes, etc.
-    async def daily_full_sync():
-        print("[daily-full-sync] Starting daily full resync of all sources...")
-        await sync_woocommerce(full=True)
-        await sync_presta_oteko(full=True)
-        await sync_presta_ciep(full=True)
-        await sync_allegro(full=True)
-        print("[daily-full-sync] Daily full resync complete.")
-    scheduler.add_job(daily_full_sync, CronTrigger(hour=3, minute=0), id="daily_full_sync", replace_existing=True)
-    scheduler.start()
-    allegro_names = [a["name"] for a in ALLEGRO_ACCOUNTS]
-    print(f"[startup] scheduler started — syncing every 15 min + daily full sync at 03:00 (woo + oteko + ciep + allegro x{len(ALLEGRO_ACCOUNTS)}: {allegro_names})")
+    if SYNC_ENABLED:
+        scheduler.add_job(sync_woocommerce, CronTrigger(minute="*/15"), id="sync_woo", replace_existing=True)
+        scheduler.add_job(sync_presta_oteko, CronTrigger(minute="*/15"), id="sync_oteko", replace_existing=True)
+        scheduler.add_job(sync_presta_ciep, CronTrigger(minute="*/15"), id="sync_ciep", replace_existing=True)
+        scheduler.add_job(sync_allegro, CronTrigger(minute="*/15"), id="sync_allegro", replace_existing=True)
+        if ERLI_ACCOUNTS:
+            scheduler.add_job(sync_erli, CronTrigger(minute="*/15"), id="sync_erli", replace_existing=True)
+        # Daily full sync at 3:00 AM to catch cancellations, status changes, etc.
+        async def daily_full_sync():
+            print("[daily-full-sync] Starting daily full resync of all sources...")
+            await sync_woocommerce(full=True)
+            await sync_presta_oteko(full=True)
+            await sync_presta_ciep(full=True)
+            await sync_allegro(full=True)
+            if ERLI_ACCOUNTS:
+                await sync_erli(full=True)
+            print("[daily-full-sync] Daily full resync complete.")
+        scheduler.add_job(daily_full_sync, CronTrigger(hour=3, minute=0), id="daily_full_sync", replace_existing=True)
+        scheduler.start()
+        allegro_names = [a["name"] for a in ALLEGRO_ACCOUNTS]
+        erli_names = [a["name"] for a in ERLI_ACCOUNTS]
+        print(f"[startup] Erli: {len(ERLI_ACCOUNTS)} магазинов {erli_names}")
+        print(f"[startup] scheduler started — syncing every 15 min + daily full sync at 03:00 (woo + oteko + ciep + allegro x{len(ALLEGRO_ACCOUNTS)}: {allegro_names})")
+    else:
+        print("[startup] " + "#" * 58)
+        print("[startup] SYNC_ENABLED=false — ПЛАНИРОВЩИК НЕ ЗАПУЩЕН.")
+        print("[startup] Внешние API (Allegro/WooCommerce/PrestaShop) не вызываются.")
+        print("[startup] Allegro refresh_token не ротируется — прод в безопасности.")
+        print(f"[startup] Исходящие HTTP-запросы заблокированы на уровне сокета.")
+        print(f"[startup] INSTANCE_ID={INSTANCE_ID} — секреты читаются по своим ключам,")
+        print("[startup] боевые ключи из клона базы недоступны.")
+        print("[startup] Вебхуки: %s" % ("принимаются" if WEBHOOKS_ENABLED else "отклоняются (503)"))
+        print("[startup] " + "#" * 58)
+
+    # Erli разрешён и на копии. Ключ Erli не ротируется, значит копия
+    # не может отобрать доступ у прода, а на уровне сокета для erli.pl
+    # открыты только чтение и поиск — менять заказы на маркетплейсе нечем.
+    if ERLI_ACCOUNTS and not SYNC_ENABLED:
+        scheduler.add_job(sync_erli, CronTrigger(minute="*/15"), id="sync_erli", replace_existing=True)
+        if not scheduler.running:
+            scheduler.start()
+        print("[startup] Erli РАЗРЕШЁН на копии (только чтение): %s"
+              % [a["name"] for a in ERLI_ACCOUNTS])
+
+    # Ночной бэкап базы. Работает на любом инстансе, в том числе на копии,
+    # поэтому планировщик поднимаем отдельно от синхронизации магазинов.
+    if backup_enabled():
+        try:
+            b_hour = int(os.getenv("BACKUP_HOUR", "3") or 3)
+            b_min = int(os.getenv("BACKUP_MINUTE", "30") or 30)
+        except ValueError:
+            b_hour, b_min = 3, 30
+        scheduler.add_job(scheduled_backup, CronTrigger(hour=b_hour, minute=b_min),
+                          id="db_backup", replace_existing=True)
+        if not scheduler.running:
+            scheduler.start()
+        print("[startup] бэкап базы: каждый день в %02d:%02d -> github=%s, gdrive=%s"
+              % (b_hour, b_min, os.getenv("BACKUP_GITHUB_REPO") or "—",
+                 "настроен" if os.getenv("GDRIVE_CLIENT_ID") else "—"))
+    else:
+        print("[startup] бэкап базы: выключен "
+              "(нет BACKUP_GITHUB_* и GDRIVE_CLIENT_*)")
 
     yield
 
     # --- Shutdown ---
-    scheduler.shutdown(wait=False)
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
     if _pool and not _pool._closed:
         await _pool.close()
     print("[shutdown] cleanup done")
@@ -313,12 +686,18 @@ async def lifespan(app: FastAPI):
 # ============================================================
 app = FastAPI(lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Было allow_origins=["*"] — при cookie-авторизации это лишний риск.
+# Панель и API живут на одном домене, поэтому CORS по умолчанию не нужен.
+# Внешнему потребителю добавь домен в CORS_ORIGINS через запятую.
+if CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    print("[startup] CORS разрешён для: %s" % CORS_ORIGINS)
 
 def _safe_val(v):
     """Конвертирует Decimal/datetime в JSON-совместимые типы."""
@@ -340,6 +719,9 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
 app.include_router(auth_router)
+catalog.configure(get_db_pool)
+app.include_router(catalog.router)
+app.include_router(assistant.router)
 
 
 # ============================================================
@@ -364,6 +746,14 @@ async def _woo_fetch_orders(session: aiohttp.ClientSession, page=1, per_page=50,
             text = await resp.text()
             raise Exception(f"WooCommerce API error {resp.status}: {text[:300]}")
         return await resp.json()
+
+
+async def _catalog_after_save(conn, source: str, ext_id: str):
+    """Подставить названия/вес из каталога по кодам позиций. Ошибка тут не должна ломать синк."""
+    try:
+        await catalog.apply_catalog_to_order(conn, source, ext_id)
+    except Exception as e:
+        print(f"[catalog] apply failed for {source}/{ext_id}: {e}")
 
 
 async def _save_order(conn, source: str, order_data: dict):
@@ -395,6 +785,7 @@ async def _save_order(conn, source: str, order_data: dict):
                 traffic_source_type=CASE WHEN $28 != '' THEN $28 ELSE traffic_source_type END,
                 device_type=CASE WHEN $29 != '' THEN $29 ELSE device_type END,
                 invoice_data=CASE WHEN $30 != '' THEN $30 ELSE invoice_data END,
+                invoice_type=CASE WHEN $31 != '' THEN $31 ELSE invoice_type END,
                 updated_at=NOW()
             WHERE source=$16 AND external_id=$17
         """,
@@ -427,7 +818,9 @@ async def _save_order(conn, source: str, order_data: dict):
             order_data.get("traffic_source_type", ""),
             order_data.get("device_type", ""),
             order_data.get("invoice_data", ""),
+            order_data.get("invoice_type", ""),
         )
+        await _catalog_after_save(conn, source, ext_id)
         return "updated"
     else:
         await conn.execute("""
@@ -439,8 +832,8 @@ async def _save_order(conn, source: str, order_data: dict):
                 shipping_cost, seller_account, customer_comment, invoice_nip,
                 product_type, utm_source, utm_medium, utm_campaign,
                 utm_content, utm_term, traffic_source_type, device_type,
-                invoice_data
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
+                invoice_data, invoice_type
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
         """,
             ext_id, source,
             order_data.get("status", ""),
@@ -471,7 +864,9 @@ async def _save_order(conn, source: str, order_data: dict):
             order_data.get("traffic_source_type", ""),
             order_data.get("device_type", ""),
             order_data.get("invoice_data", ""),
+            order_data.get("invoice_type", ""),
         )
+        await _catalog_after_save(conn, source, ext_id)
         return "new"
 
 
@@ -596,21 +991,38 @@ def _parse_woo_order(woo: dict, unit_price: bool = False) -> dict:
     items = []
     for item in woo.get("line_items", []):
         product_name = item.get("name", "")
-        # Append product attributes (Długość, Grubość, etc.) if not already in the name
+        # Атрибуты товара (Grubość, Szerokość, Długość и т.д.).
+        #
+        # Раньше в скобки попадали только значения — выходило
+        # "Poliwęglan komorowy bezbarwny (10mm, 2.5)", и понять, где
+        # толщина, где ширина, а где длина, было нельзя. Хуже того,
+        # атрибут молча выбрасывался, если его значение встречалось
+        # где-то в названии, поэтому короткий размер "2" терялся почти
+        # всегда. Теперь пишем пару целиком: "Grubość: 10mm".
         meta_parts = []
+        seen = set()
         for m in item.get("meta_data", []):
-            key = m.get("display_key") or m.get("key", "")
-            val = m.get("display_value") or m.get("value", "")
+            key = str(m.get("display_key") or m.get("key") or "").strip()
+            val = m.get("display_value")
+            if val is None or val == "":
+                val = m.get("value")
+            if isinstance(val, (dict, list)):
+                continue
+            val = "" if val is None else str(val).strip()
             if not key or not val:
                 continue
-            # Skip internal WooCommerce meta keys (start with _)
+            # Служебные поля WooCommerce.
             if key.startswith("_"):
                 continue
-            # Only add if the value isn't already in the product name
-            if str(val).lower() not in product_name.lower():
-                meta_parts.append(f"{val}")
+            piece = "%s: %s" % (key, val)
+            low = piece.lower()
+            # Пропускаем только точный повтор пары, а не совпадение числа.
+            if low in seen or low in product_name.lower():
+                continue
+            seen.add(low)
+            meta_parts.append(piece)
         if meta_parts:
-            product_name = f"{product_name} ({', '.join(meta_parts)})"
+            product_name = "%s (%s)" % (product_name, ", ".join(meta_parts))
         qty = item.get("quantity", 1) or 1
         price = item.get("total", "0")
         if unit_price:
@@ -805,7 +1217,7 @@ async def _sync_woo(source, base_url, key, secret, full=False, since_floor=None,
     upd_count = 0
 
     try:
-        async with aiohttp.ClientSession() as session:
+        async with _http_session() as session:
             page = 1
             while True:
                 orders = await _woo_fetch_orders(session, page=page, per_page=50, after=after,
@@ -1152,7 +1564,7 @@ async def _sync_prestashop(source: str, base_url: str, api_key: str, full=False)
     upd_count = 0
 
     try:
-        async with aiohttp.ClientSession() as session:
+        async with _http_session() as session:
             page = 0
             while True:
                 orders = await _presta_fetch_orders(
@@ -1227,17 +1639,28 @@ async def sync_presta_ciep(full=False):
 
 import time as _time
 
+def _allegro_key(account_name: str) -> str:
+    """Ключ токена в app_settings, привязанный к инстансу.
+
+    Прод: allegro_refresh_token_mantrade (как было, ничего не ломается).
+    Копия: v2:allegro_refresh_token_mantrade — в клоне базы такого ключа
+    нет, поэтому копия не может взять боевой токен и сломать его.
+    """
+    base = f"allegro_refresh_token_{account_name}"
+    return base if IS_PROD_INSTANCE else f"{INSTANCE_ID}:{base}"
+
+
 async def _allegro_db_get_refresh_token(account_name: str):
     """Read the latest refresh token for a specific account from DB."""
     try:
         pool = await get_db_pool()
-        db_key = f"allegro_refresh_token_{account_name}"
+        db_key = _allegro_key(account_name)
         async with pool.acquire() as conn:
-            # Try new key format first, fallback to old format for backward compat
             row = await conn.fetchval(
                 "SELECT value FROM app_settings WHERE key=$1", db_key
             )
-            if not row and account_name == "mantrade":
+            # Старый формат ключа — только на боевом инстансе.
+            if not row and IS_PROD_INSTANCE and account_name == "mantrade":
                 row = await conn.fetchval(
                     "SELECT value FROM app_settings WHERE key='allegro_refresh_token'"
                 )
@@ -1250,7 +1673,7 @@ async def _allegro_db_save_refresh_token(account_name: str, token: str):
     """Save new refresh token for a specific account to DB."""
     try:
         pool = await get_db_pool()
-        db_key = f"allegro_refresh_token_{account_name}"
+        db_key = _allegro_key(account_name)
         async with pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO app_settings (key, value, updated_at)
@@ -1259,6 +1682,26 @@ async def _allegro_db_save_refresh_token(account_name: str, token: str):
             """, db_key, token)
     except Exception as e:
         print(f"[allegro:{account_name}] WARNING: could not save refresh_token to DB: {e}")
+
+
+async def _allegro_note(account_name: str, status: str, detail: str):
+    """Пишет в app_settings, чем закончилось последнее обращение за токеном.
+
+    Нужно, чтобы отвалившийся токен было видно сразу, а не через сутки
+    по отсутствию заказов.
+    """
+    try:
+        pool = await get_db_pool()
+        key = f"{_allegro_key(account_name)}__last"
+        value = f"{datetime.now(TZ).isoformat(timespec='seconds')}|{status}|{detail}"
+        async with pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES ($1, $2, NOW())
+                ON CONFLICT (key) DO UPDATE SET value=$2, updated_at=NOW()
+            """, key, value)
+    except Exception:
+        pass
 
 
 async def _allegro_get_token(session: aiohttp.ClientSession, account: dict) -> str:
@@ -1292,6 +1735,14 @@ async def _allegro_get_token(session: aiohttp.ClientSession, account: dict) -> s
     async with session.post(ALLEGRO_AUTH_URL, data=data, auth=auth) as resp:
         if resp.status != 200:
             text = await resp.text()
+            # Старый токен НЕ затираем: если сбой временный, следующая
+            # попытка пройдёт по нему же.
+            await _allegro_note(name, "error", f"{resp.status}: {text[:200]}")
+            if "invalid_grant" in text:
+                print("[allegro:%s] !!! ТОКЕН ОТВЕРГНУТ (invalid_grant). "
+                      "Обычно это значит, что тем же refresh_token "
+                      "воспользовался другой инстанс. Нужна переавторизация: "
+                      "POST /admin/allegro/set-refresh-token" % name)
             raise Exception(f"Allegro token refresh failed for '{name}' {resp.status}: {text[:300]}")
         body = await resp.json()
 
@@ -1305,6 +1756,7 @@ async def _allegro_get_token(session: aiohttp.ClientSession, account: dict) -> s
     if new_rt:
         _allegro_tokens[name]["refresh_token"] = new_rt
         await _allegro_db_save_refresh_token(name, new_rt)
+        await _allegro_note(name, "ok", "")
         if new_rt != current_rt:
             print(f"[allegro:{name}] refresh_token rotated and saved to DB")
 
@@ -1529,6 +1981,23 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
         invoice_data_parts.append(f"NIP: {invoice_nip}")
     invoice_data = "\n".join(invoice_data_parts)
 
+    # --- Тип документа. Покупатель на Allegro ставит галочку «chcę fakturę».
+    #     Без галочки ему нужен обычный чек (paragon) — выписывать фактуру не надо.
+    #     С галочкой и NIP — фактура на фирму, данные тянутся по NIP.
+    #     С галочкой, но без NIP — именная фактура (люди берут в рассрочку,
+    #     банку нужен документ на конкретного человека).
+    inv_required = invoice.get("required")
+    has_inv_data = bool(
+        inv_company.get("name") or inv_person.get("firstName")
+        or inv_person.get("lastName") or inv_addr.get("street")
+    )
+    if inv_required is False:
+        invoice_type = "receipt"
+    elif inv_required is True or has_inv_data:
+        invoice_type = "company" if invoice_nip else "person"
+    else:
+        invoice_type = "receipt"
+
     return {
         "external_id": str(form.get("id", "")),
         "status": status,
@@ -1559,6 +2028,7 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
         "traffic_source_type": "marketplace",
         "device_type": "",
         "invoice_data": invoice_data,
+        "invoice_type": invoice_type,
     }
 
 
@@ -1599,7 +2069,7 @@ async def _sync_allegro_account(account: dict, full=False):
     skip_count = 0
 
     try:
-        async with aiohttp.ClientSession() as session:
+        async with _http_session() as session:
             token = await _allegro_get_token(session, account)
 
             if full:
@@ -1686,14 +2156,440 @@ async def sync_allegro(full=False):
 
 
 # ============================================================
+# === ИНТЕГРАЦИЯ: Erli.pl (маркетплейс) ===
+# ============================================================
+# Документация: https://erli.pl/svc/shop-api/doc/
+#
+# Отличия от Allegro, важные для нас:
+#   * авторизация — один статичный ключ (Authorization: Bearer),
+#     он НЕ ротируется, поэтому копия не может сломать доступ проду;
+#   * все деньги приходят целыми числами в ГРОШАХ — делим на 100;
+#   * у заказа два статуса: status (оплата) и sellerStatus (что с ним
+#     делает продавец) — сводим их в один наш;
+#   * данные для фактуры (NIP, название фирмы) лежат в user.invoiceAddress
+#     сразу, отдельно выковыривать ничего не нужно;
+#   * e-mail покупателя — прокси-адрес вида xxx@mail.erli.pl, он
+#     появляется чуть позже создания заказа, так что может быть пустым.
+
+# status (оплата) → наш статус
+ERLI_STATUS_MAP = {
+    "pending":   "pending_payment",
+    "purchased": "payment_accepted",
+    "cancelled": "cancelled",
+    "returned":  "refunded",
+}
+
+# sellerStatus (что делает продавец) → наш статус.
+# Применяется поверх ERLI_STATUS_MAP, но НИКОГДА не перебивает
+# отменённый/возвращённый заказ — иначе отмена потеряется.
+ERLI_SELLER_STATUS_MAP = {
+    "created":            "",
+    "readyToProcess":     "processing",
+    "inProgress":         "processing",
+    "sent":               "shipped",
+    "readyToPickup":      "shipped",
+    "received":           "delivered",
+    "returned":           "refunded",
+    "returningToSender":  "return_requested",
+    "canceled":           "cancelled",
+    "unknown":            "",
+}
+
+# deliveryTracking.status → наш статус (самый свежий факт о посылке)
+ERLI_TRACKING_MAP = {
+    "preparing":            "processing",
+    "readyToSend":          "processing",
+    "waitingForCourier":    "processing",
+    "sent":                 "shipped",
+    "readyToPickup":        "shipped",
+    "delivered":            "delivered",
+    "returned":             "refunded",
+    "canceled":             "cancelled",
+    "pickupTimeExpired":    "return_requested",
+    "deliveryUnsuccessful": "return_requested",
+    "redirected":           "shipped",
+}
+
+
+def _erli_headers(account: dict) -> dict:
+    return {
+        "Authorization": f"Bearer {account['key']}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-ERLI-MARKET": account.get("market", "pl"),
+        "User-Agent": "EkomatDashboard/1.0 (+https://ekomat.bd-subbota.info)",
+    }
+
+
+def _erli_money(value) -> float:
+    """Erli отдаёт деньги целым числом в грошах: 137726 → 1377.26."""
+    try:
+        return round(int(value or 0) / 100.0, 2)
+    except (TypeError, ValueError):
+        try:
+            return round(float(value or 0) / 100.0, 2)
+        except (TypeError, ValueError):
+            return 0.0
+
+
+async def _erli_fetch_orders(session: aiohttp.ClientSession, account: dict,
+                             after: str = None, limit: int = 200) -> list:
+    """Страница заказов. Сортировка по updated ASC — так курсор всегда
+    двигается вперёд и статусы изменённых заказов тоже приезжают."""
+    pagination = {"sortField": "updated", "order": "ASC", "limit": limit}
+    if after:
+        pagination["after"] = after
+    body = {"pagination": pagination}
+    url = f"{ERLI_API_URL}/orders/_search"
+    async with session.post(url, headers=_erli_headers(account), json=body, ssl=True) as resp:
+        if resp.status == 429:
+            raise Exception("Erli API rate limit (429) — слишком много запросов")
+        if resp.status != 200:
+            text = await resp.text()
+            raise Exception(f"Erli API error {resp.status}: {text[:300]}")
+        data = await resp.json()
+    if isinstance(data, dict):
+        data = data.get("items") or data.get("orders") or []
+    return data or []
+
+
+def _erli_parse_dt(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def _parse_erli_order(o: dict, seller_name: str = "erli") -> dict:
+    """Erli Order → наш единый формат заказа."""
+    user = o.get("user") or {}
+    ship = user.get("deliveryAddress") or {}
+    inv = user.get("invoiceAddress") or {}
+    delivery = o.get("delivery") or {}
+    tracking = o.get("deliveryTracking") or {}
+
+    # --- Имя покупателя: сначала данные для фактуры (тот, кто платит),
+    #     потом адрес доставки.
+    name = ""
+    if inv.get("companyName"):
+        name = inv["companyName"].strip()
+    if not name and (inv.get("firstName") or inv.get("lastName")):
+        name = f"{inv.get('firstName', '')} {inv.get('lastName', '')}".strip()
+    if not name and ship.get("companyName"):
+        name = ship["companyName"].strip()
+    if not name:
+        name = f"{ship.get('firstName', '')} {ship.get('lastName', '')}".strip()
+
+    # --- Позиции
+    items = []
+    for li in o.get("items") or []:
+        full_name = li.get("name", "") or ""
+        sku = li.get("sku") or li.get("ean") or str(li.get("externalId") or li.get("id") or "")
+        items.append({
+            "name": _clean_product_display(full_name) if full_name else sku,
+            "full_name": full_name,
+            "qty": int(li.get("quantity", 1) or 1),
+            "price": str(_erli_money(li.get("unitPrice"))),
+            "sku": sku,
+        })
+
+    # --- Статус: оплата → продавец → трекинг. Отмену не перебиваем.
+    status = ERLI_STATUS_MAP.get((o.get("status") or "").strip(), (o.get("status") or "").lower())
+    if status not in ("cancelled", "refunded"):
+        s2 = ERLI_SELLER_STATUS_MAP.get((o.get("sellerStatus") or "").strip(), "")
+        if s2:
+            status = s2
+        s3 = ERLI_TRACKING_MAP.get((tracking.get("status") or "").strip(), "")
+        if s3 and s3 not in ("processing",):
+            status = s3
+    if delivery.get("cancelled") and status not in ("cancelled", "refunded"):
+        status = "cancelled"
+
+    # --- Оплата. purchased при cod=true означает «наложенный платёж»,
+    #     деньги ещё не получены — не выдаём это за оплаченный заказ.
+    if delivery.get("cod"):
+        payment_label = "Płatność przy odbiorze"
+        if status == "payment_accepted":
+            status = "processing"
+    elif (o.get("status") or "") == "purchased":
+        payment_label = "Opłacone (PayU)"
+    else:
+        payment_label = "Oczekiwanie na płatność"
+
+    # --- Доставка
+    shipping_method = delivery.get("name", "") or delivery.get("typeId", "") or ""
+    pickup = delivery.get("pickupPlace") or {}
+    if pickup.get("name") or pickup.get("heading"):
+        point = (pickup.get("name") or pickup.get("heading") or "").strip()
+        addr_bits = " ".join(x for x in [pickup.get("address"), pickup.get("city")] if x)
+        shipping_method = f"{shipping_method} — {point} {addr_bits}".strip()
+
+    # --- Комментарий покупателя + NIP
+    comment = (o.get("comment") or "").strip()
+    invoice_nip = (inv.get("nip") or "").strip()
+    customer_comment = comment
+    if invoice_nip:
+        nip_label = f"NIP: {invoice_nip}"
+        customer_comment = f"{comment}\n{nip_label}".strip() if comment else nip_label
+
+    # --- Данные для фактуры одним блоком (задача «именная фактура»)
+    inv_parts = []
+    if inv.get("companyName"):
+        inv_parts.append(inv["companyName"])
+    elif inv.get("firstName") or inv.get("lastName"):
+        inv_parts.append(f"{inv.get('firstName', '')} {inv.get('lastName', '')}".strip())
+    if inv.get("address"):
+        inv_parts.append(inv["address"])
+    elif inv.get("street"):
+        inv_parts.append(
+            " ".join(x for x in [inv.get("street"), inv.get("buildingNumber"), inv.get("flatNumber")] if x)
+        )
+    if inv.get("zip") or inv.get("city"):
+        inv_parts.append(f"{inv.get('zip', '')} {inv.get('city', '')}".strip())
+    if invoice_nip:
+        inv_parts.append(f"NIP: {invoice_nip}")
+    invoice_data = "\n".join(inv_parts)
+
+    # --- Тип документа. Erli отдаёт блок invoiceAddress только тогда, когда
+    #     покупатель действительно попросил фактуру. Нет блока — нужен чек.
+    #     Внутри блока type = company (есть NIP) или person (именная фактура).
+    inv_kind = (inv.get("type") or "").strip().lower()
+    if not inv:
+        invoice_type = "receipt"
+    elif inv_kind == "company" or invoice_nip:
+        invoice_type = "company"
+    else:
+        invoice_type = "person"
+
+    # --- Адрес доставки
+    ship_addr = ship.get("address") or " ".join(
+        x for x in [ship.get("street"), ship.get("buildingNumber"), ship.get("flatNumber")] if x
+    )
+
+    phone = (ship.get("phone") or "").strip()
+    if phone and not phone.startswith("+") and len(phone) == 9:
+        phone = "+48" + phone
+
+    return {
+        "external_id": str(o.get("id", "")),
+        "status": status,
+        "customer_name": name,
+        "customer_email": (user.get("email") or "").strip(),
+        "customer_phone": phone,
+        "customer_city": ship.get("city", "") or "",
+        "customer_zip": ship.get("zip", "") or "",
+        "customer_address": (ship_addr or "").strip(),
+        "total": _erli_money(o.get("totalPrice")),
+        "currency": o.get("currency", "PLN") or "PLN",
+        "items_count": len(items),
+        "items_json": json.dumps(items, ensure_ascii=False),
+        "payment_method": payment_label,
+        "shipping_method": shipping_method,
+        "note": comment,
+        "external_created": _erli_parse_dt(o.get("created")),
+        "shipping_cost": _erli_money(delivery.get("price")),
+        "seller_account": seller_name,
+        "customer_comment": customer_comment,
+        "invoice_nip": invoice_nip,
+        "product_type": _detect_product_type(items),
+        "utm_source": "erli",
+        "utm_medium": "marketplace",
+        "utm_campaign": "",
+        "utm_content": "",
+        "utm_term": "",
+        "traffic_source_type": "marketplace",
+        "device_type": "",
+        "invoice_data": invoice_data,
+        "invoice_type": invoice_type,
+    }
+
+
+async def _sync_erli_account(account: dict, full=False):
+    """Синк одного магазина Erli."""
+    name = account["name"]
+    source = "erli"
+    pool = await get_db_pool()
+
+    # Инкрементальный проход: берём всё, что изменилось с прошлого
+    # удачного синка минус трое суток запаса. Сортировка по updated,
+    # поэтому так приезжают и смены статусов у старых заказов.
+    after = None
+    if not full:
+        async with pool.acquire() as conn:
+            last_ok = await conn.fetchval(
+                "SELECT MAX(finished_at) FROM sync_log WHERE source=$1 AND status='ok'",
+                f"erli:{name}"
+            )
+        if last_ok:
+            after = (last_ok - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    if not after:
+        print(f"[sync-erli:{name}] FULL resync — забираем все заказы с начала")
+
+    async with pool.acquire() as conn:
+        log_id = await conn.fetchval(
+            "INSERT INTO sync_log (source, status) VALUES ($1, 'running') RETURNING id",
+            f"erli:{name}"
+        )
+
+    new_count = 0
+    upd_count = 0
+    skip_count = 0
+    pages = 0
+
+    try:
+        async with _http_session() as session:
+            cursor = after
+            while True:
+                orders = await _erli_fetch_orders(session, account, after=cursor, limit=200)
+                if not orders:
+                    break
+                pages += 1
+                if pages == 1:
+                    print(f"[sync-erli:{name}] страница 1: {len(orders)} заказов, after={cursor}")
+
+                async with pool.acquire() as conn:
+                    for o in orders:
+                        try:
+                            parsed = _parse_erli_order(o, seller_name=name)
+                            if not parsed["external_id"]:
+                                skip_count += 1
+                                continue
+                            result = await _save_order(conn, source, parsed)
+                            if result == "new":
+                                new_count += 1
+                                await _upsert_customer(
+                                    conn, source,
+                                    parsed["customer_name"], parsed["customer_email"],
+                                    parsed["customer_phone"], parsed["customer_city"],
+                                    parsed["total"], parsed["external_created"]
+                                )
+                            else:
+                                upd_count += 1
+                        except Exception as e_order:
+                            skip_count += 1
+                            print(f"[sync-erli:{name}] SKIP заказ {o.get('id', '?')}: {e_order}")
+
+                # Курсор берём у последнего заказа страницы. Формат
+                # "timestamp;id" гарантирует, что заказы с одинаковым
+                # временем не потеряются.
+                next_cursor = orders[-1].get("cursor")
+                if not next_cursor:
+                    upd = orders[-1].get("updated")
+                    next_cursor = upd if upd else None
+                if not next_cursor or next_cursor == cursor:
+                    break
+                cursor = next_cursor
+                if len(orders) < 200:
+                    break
+                if pages >= 200:  # предохранитель от бесконечного цикла
+                    print(f"[sync-erli:{name}] стоп: 200 страниц, что-то не так с курсором")
+                    break
+
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE sync_log SET status='ok', orders_new=$1, orders_upd=$2, finished_at=NOW() WHERE id=$3",
+                new_count, upd_count, log_id
+            )
+        print(f"[sync-erli:{name}] готово: +{new_count} новых, ~{upd_count} обновлено, "
+              f"пропущено={skip_count}, страниц={pages}")
+
+    except Exception as e:
+        print(f"[sync-erli:{name}] ERROR: {e}")
+        traceback.print_exc()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE sync_log SET status='error', error=$1, finished_at=NOW() WHERE id=$2",
+                str(e)[:500], log_id
+            )
+
+
+async def sync_erli(full=False):
+    """Синк всех настроенных магазинов Erli."""
+    if not ERLI_ACCOUNTS:
+        return
+    for account in ERLI_ACCOUNTS:
+        try:
+            await _sync_erli_account(account, full=full)
+        except Exception as e:
+            print(f"[sync-erli:{account['name']}] FATAL: {e}")
+            traceback.print_exc()
+
+
+# ============================================================
 # === СТРАНИЦЫ ===
 # ============================================================
+
+# ============================================================
+# === Два вида интерфейса: новый и «классический» (старый) ===
+# ============================================================
+# Сервер и база одни. Классический вид — это старые шаблоны поверх тех же
+# API, поэтому всё, что сделано в одном виде, сразу видно в другом.
+# Выбор запоминается в cookie ui=classic|new.
+
+UI_COOKIE = "ekomat_ui"
+
+
+def _wants_classic(request: Request) -> bool:
+    return request.cookies.get(UI_COOKIE) == "classic"
+
+
+@app.get("/ui/{mode}")
+async def ui_switch(mode: str, request: Request, next: str = Query("/")):
+    if mode not in ("new", "classic"):
+        return RedirectResponse("/", status_code=302)
+    if not next.startswith("/") or next.startswith("//"):
+        next = "/"
+    if mode == "classic":
+        target = "/classic/orders" if next.startswith("/orders") else "/classic"
+    else:
+        target = "/orders" if next.startswith("/classic/orders") or next.startswith("/orders") else "/"
+    resp = RedirectResponse(target, status_code=302)
+    resp.set_cookie(UI_COOKIE, mode, max_age=365 * 86400, httponly=True, samesite="lax",
+                    secure=os.getenv("COOKIE_SECURE", "true").lower() != "false")
+    return resp
+
+
+@app.get("/classic", response_class=HTMLResponse)
+async def classic_index(request: Request):
+    user = await get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if not has_perm(user, "dashboard"):
+        if has_perm(user, "orders"):
+            return RedirectResponse("/classic/orders", status_code=302)
+        return templates.TemplateResponse(
+            request=request, name="no_access.html", context={"user": user})
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        last_syncs = await conn.fetch("""
+            SELECT DISTINCT ON (source) source, status, orders_new, orders_upd, finished_at
+            FROM sync_log ORDER BY source, finished_at DESC NULLS LAST
+        """)
+    return templates.TemplateResponse(
+        request=request, name="classic/index.html",
+        context={"user": user, "last_syncs": last_syncs})
+
+
+@app.get("/classic/orders", response_class=HTMLResponse)
+async def classic_orders(request: Request):
+    user = await get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if not has_perm(user, "orders"):
+        return RedirectResponse("/classic", status_code=302)
+    return templates.TemplateResponse(
+        request=request, name="classic/orders.html", context={"user": user})
+
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     user = await get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=302)
+    if _wants_classic(request):
+        return RedirectResponse("/classic", status_code=302)
     # If user has no dashboard permission — redirect to orders (if they have it) or show empty
     if not has_perm(user, "dashboard"):
         if has_perm(user, "orders"):
@@ -1725,6 +2621,8 @@ async def orders_page(request: Request):
     user = await get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=302)
+    if _wants_classic(request) and not request.query_params.get("q"):
+        return RedirectResponse("/classic/orders", status_code=302)
     if not has_perm(user, "orders"):
         return RedirectResponse("/", status_code=302)
     return templates.TemplateResponse(
@@ -1764,20 +2662,20 @@ async def api_stats(
         sellers = [s.strip() for s in seller.split(",") if s.strip()] if seller else []
         if sources and sellers:
             # Combined: (non-allegro sources) OR (allegro + specific sellers)
-            non_allegro = [s for s in sources if s != "allegro"]
+            non_allegro = [s for s in sources if s not in ("allegro", "erli")]
             or_parts = []
             if non_allegro:
                 params.append(non_allegro)
                 or_parts.append(f"source = ANY(${len(params)})")
             params.append(sellers)
-            or_parts.append(f"(source = 'allegro' AND seller_account = ANY(${len(params)}))")
+            or_parts.append(f"(source IN ('allegro', 'erli') AND seller_account = ANY(${len(params)}))")
             source_filter += f" AND ({' OR '.join(or_parts)})"
         elif sources:
             params.append(sources)
             source_filter += f" AND source = ANY(${len(params)})"
         elif sellers:
             params.append(sellers)
-            source_filter += f" AND (source = 'allegro' AND seller_account = ANY(${len(params)}))"
+            source_filter += f" AND (source IN ('allegro', 'erli') AND seller_account = ANY(${len(params)}))"
 
     async with pool.acquire() as conn:
         leads = await conn.fetchrow("""
@@ -1799,7 +2697,8 @@ async def api_stats(
                 COUNT(*) FILTER (WHERE source = 'dobraszklarnia') AS woo_count,
                 COUNT(*) FILTER (WHERE source = 'oteko') AS oteko_count,
                 COUNT(*) FILTER (WHERE source = 'cieplarnia') AS ciep_count,
-                COUNT(*) FILTER (WHERE source = 'allegro') AS allegro_count
+                COUNT(*) FILTER (WHERE source = 'allegro') AS allegro_count,
+                COUNT(*) FILTER (WHERE source = 'erli') AS erli_count
             FROM orders
             WHERE COALESCE(external_created, created_at)::date >= $1
               AND COALESCE(external_created, created_at)::date <= $2
@@ -1860,7 +2759,7 @@ async def api_dashboard_stats(
         by_seller = await conn.fetch("""
             SELECT seller_account, COUNT(*) AS cnt, COALESCE(SUM(total), 0) AS revenue
             FROM orders
-            WHERE source = 'allegro'
+            WHERE source IN ('allegro', 'erli')
               AND COALESCE(external_created, created_at)::date >= $1
               AND COALESCE(external_created, created_at)::date <= $2
               AND seller_account IS NOT NULL AND seller_account != ''
@@ -2013,6 +2912,60 @@ async def api_orders_daily(
 # === API: Ручное добавление заказа ===
 # ============================================================
 
+def _manual_items(body: dict):
+    """Позиции ручного заказа.
+    Новый формат: body["items"] = [{product_id, name, qty, price (за шт., брутто), weight (кг за шт.), code}].
+    Старый формат (одна строка): product_name + price — поддерживаем для совместимости.
+    Возвращает (items, сумма товаров, вес заказа или None)."""
+    raw = body.get("items")
+    items = []
+    if isinstance(raw, list) and raw:
+        for it in raw:
+            if not isinstance(it, dict):
+                continue
+            name = " ".join(str(it.get("name") or "").split())
+            if not name and not str(it.get("price") or "").strip("0. "):
+                continue
+            try:
+                qty = float(str(it.get("qty") or 1).replace(",", "."))
+            except ValueError:
+                qty = 1
+            if qty <= 0:
+                qty = 1
+            if qty == int(qty):
+                qty = int(qty)
+            try:
+                price = float(str(it.get("price") or 0).replace(",", "."))
+            except ValueError:
+                price = 0.0
+            w = it.get("weight")
+            try:
+                w = float(str(w).replace(",", ".")) if w not in (None, "") else None
+                if w is not None and w <= 0:
+                    w = None
+            except ValueError:
+                w = None
+            item = {"name": name, "qty": qty, "price": str(round(price, 2)),
+                    "sku": str(it.get("code") or "")}
+            if it.get("product_id"):
+                try:
+                    item["product_id"] = int(it["product_id"])
+                except (TypeError, ValueError):
+                    pass
+            if it.get("code"):
+                item["code"] = str(it["code"])
+            if w is not None:
+                item["weight"] = round(w, 3)
+            items.append(item)
+        goods = round(sum(float(i["price"]) * float(i["qty"]) for i in items), 2)
+    else:
+        price = float(body.get("price", 0) or 0)
+        items = [{"name": body.get("product_name", ""), "qty": 1, "price": str(price), "sku": ""}]
+        goods = price
+    weight, _ = catalog.order_weight(items)
+    return items, goods, weight
+
+
 @app.post("/api/orders/manual")
 async def add_manual_order(request: Request):
     """Добавить заказ вручную. Не перезаписывается синком."""
@@ -2040,17 +2993,13 @@ async def add_manual_order(request: Request):
             ext_created = datetime.now(TZ)
     else:
         ext_created = datetime.now(TZ)
+    # Колонка без часового пояса: aware-дата роняла вставку (заказ без даты)
+    if ext_created is not None and ext_created.tzinfo is not None:
+        ext_created = ext_created.astimezone(TZ).replace(tzinfo=None)
 
-    price = float(body.get("price", 0) or 0)
+    items, goods, weight = _manual_items(body)
     ship = float(body.get("shipping_cost", 0) or 0)
-    total = price + ship
-
-    items = [{
-        "name": body.get("product_name", ""),
-        "qty": 1,
-        "price": str(price),
-        "sku": "",
-    }]
+    total = round(goods + ship, 2)
 
     order_data = {
         "external_id": ext_id,
@@ -2063,7 +3012,7 @@ async def add_manual_order(request: Request):
         "customer_address": body.get("customer_address", ""),
         "total": total,
         "currency": "PLN",
-        "items_count": 1,
+        "items_count": len(items),
         "items_json": json.dumps(items, ensure_ascii=False),
         "payment_method": body.get("payment_method", ""),
         "shipping_method": "",
@@ -2072,7 +3021,7 @@ async def add_manual_order(request: Request):
         "shipping_cost": ship,
         "customer_comment": body.get("comment", ""),
         "seller_account": body.get("seller_account", ""),
-        "product_type": body.get("product_type", ""),
+        "product_type": body.get("product_type", "") or _detect_product_type(items),
         "configuration": body.get("configuration", ""),
     }
 
@@ -2084,17 +3033,17 @@ async def add_manual_order(request: Request):
                 total, currency, items_count, items_json,
                 payment_method, shipping_method, note, external_created,
                 shipping_cost, seller_account, customer_comment,
-                product_type, configuration, created_by_email
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+                product_type, configuration, created_by_email, weight_kg
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
         """,
             ext_id, source,
             order_data["status"], order_data["customer_name"], order_data["customer_email"],
             order_data["customer_phone"], order_data["customer_city"], order_data["customer_zip"],
-            order_data["customer_address"], total, "PLN", 1, order_data["items_json"],
+            order_data["customer_address"], total, "PLN", len(items), order_data["items_json"],
             order_data["payment_method"], "", order_data["note"], ext_created,
             ship, order_data["seller_account"], order_data["customer_comment"],
             order_data["product_type"], order_data["configuration"],
-            user.get("email", ""),
+            user.get("email", ""), weight,
         )
 
     return JSONResponse({"ok": True, "id": ext_id})
@@ -2109,7 +3058,8 @@ async def edit_manual_order(order_id: int, request: Request):
     body = await request.json()
     pool = await get_db_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT source, external_id, created_by_email FROM orders WHERE id=$1", order_id)
+        row = await conn.fetchrow("SELECT source, external_id, created_by_email, items_json, "
+                                  "weight_kg, shipping_cost FROM orders WHERE id=$1", order_id)
         if not row or not (row["external_id"] or "").startswith("manual"):
             return JSONResponse({"ok": False, "error": "Only manual orders can be edited"}, status_code=400)
         # Only creator or superadmin can edit
@@ -2117,10 +3067,39 @@ async def edit_manual_order(order_id: int, request: Request):
             if (row["created_by_email"] or "") != (user.get("email", "") or ""):
                 return JSONResponse({"ok": False, "error": "Możesz edytować tylko swoje zamówienia"}, status_code=403)
 
-        price = float(body.get("price", 0) or 0)
+        items, goods, weight = _manual_items(body)
         ship = float(body.get("shipping_cost", 0) or 0)
-        total = price + ship
-        items = [{"name": body.get("product_name", ""), "qty": 1, "price": str(price), "sku": ""}]
+
+        # Правка из классического вида: он знает только одну позицию
+        # (product_name + price). Чтобы не затереть позиции, вес и коды,
+        # проставленные в новом виде, сохраняем то, что уже есть.
+        if not isinstance(body.get("items"), list):
+            try:
+                old_items = json.loads(row["items_json"] or "[]")
+            except (TypeError, ValueError):
+                old_items = []
+            old_items = [it for it in old_items if isinstance(it, dict)]
+            if len(old_items) > 1:
+                items = old_items
+                goods = 0.0
+                for it in items:
+                    try:
+                        goods += float(it.get("price") or 0) * float(it.get("qty") or 1)
+                    except (TypeError, ValueError):
+                        pass
+                weight = float(row["weight_kg"]) if row["weight_kg"] is not None else None
+            elif len(old_items) == 1 and items and (items[0].get("name") or "") in (
+                    old_items[0].get("name") or "", old_items[0].get("full_name") or ""):
+                # Классический вид показывает сумму строки — делим обратно на количество
+                keep = dict(old_items[0])
+                try:
+                    qty = float(keep.get("qty") or 1) or 1
+                except (TypeError, ValueError):
+                    qty = 1
+                keep["price"] = str(round(goods / qty, 2))
+                items = [keep]
+                weight = float(row["weight_kg"]) if row["weight_kg"] is not None else weight
+        total = round(goods + ship, 2)
 
         ext_created = None
         if body.get("date"):
@@ -2136,7 +3115,7 @@ async def edit_manual_order(order_id: int, request: Request):
                 customer_comment=$9, shipping_cost=$10, seller_account=$11,
                 product_type=$12, configuration=$13, customer_email=$14,
                 external_created=COALESCE($15, external_created),
-                source=$16, updated_at=NOW()
+                source=$16, weight_kg=$18, items_count=$19, updated_at=NOW()
             WHERE id=$17
         """,
             body.get("status", "processing"),
@@ -2150,12 +3129,14 @@ async def edit_manual_order(order_id: int, request: Request):
             body.get("comment", ""),
             ship,
             body.get("seller_account", ""),
-            body.get("product_type", ""),
+            body.get("product_type", "") or _detect_product_type(items),
             body.get("configuration", ""),
             body.get("customer_email", ""),
             ext_created,
             body.get("source", "manual"),
             order_id,
+            weight,
+            len(items),
         )
     return JSONResponse({"ok": True})
 
@@ -2192,10 +3173,17 @@ async def update_order_comment(request: Request):
         return JSONResponse({"ok": False, "error": "no id"})
     pool = await get_db_pool()
     async with pool.acquire() as conn:
+        was = await conn.fetchval(
+            "SELECT customer_comment FROM orders WHERE id=$1", int(order_id)
+        )
         await conn.execute(
             "UPDATE orders SET customer_comment=$1 WHERE id=$2",
             comment, int(order_id),
         )
+        if (was or "") != (comment or ""):
+            await log_action(conn, user, "comment", [order_id],
+                             old_value=was or "", new_value=comment or "",
+                             label=await _order_label(conn, order_id))
     return JSONResponse({"ok": True})
 
 
@@ -2216,12 +3204,18 @@ async def toggle_exported(request: Request):
         return JSONResponse({"ok": False, "error": "no id"})
     pool = await get_db_pool()
     async with pool.acquire() as conn:
+        was = await conn.fetchval("SELECT exported FROM orders WHERE id=$1", int(order_id))
         await conn.execute(
             "UPDATE orders SET exported=$1, exported_at=$2 WHERE id=$3",
             exported,
             datetime.now() if exported else None,
             int(order_id),
         )
+        if bool(was) != bool(exported):
+            await log_action(conn, user, "exported", [order_id],
+                             old_value="1" if was else "0",
+                             new_value="1" if exported else "0",
+                             label=await _order_label(conn, order_id))
     return JSONResponse({"ok": True})
 
 
@@ -2240,6 +3234,139 @@ async def mark_exported(request: Request):
             datetime.now(), int_ids,
         )
     return JSONResponse({"ok": True, "marked": len(int_ids)})
+
+
+# ── Журнал действий ──
+
+# Какие действия умеем откатывать и как их показывать.
+ACTION_KINDS = {
+    "export":   "export",     # массовый экспорт в XLSX
+    "exported": "exported",   # галочка «выгружено» вручную
+    "priority": "priority",   # звёздочка
+    "comment":  "comment",    # комментарий
+}
+
+
+async def log_action(conn, user, action, order_ids,
+                     old_value="", new_value="", label=""):
+    """Записать действие в журнал. Никогда не роняет основную операцию:
+    журнал важен, но не важнее самой работы."""
+    try:
+        ids = [int(x) for x in (order_ids or [])]
+        await conn.execute(
+            "INSERT INTO action_log "
+            "(user_email, action, order_ids, old_value, new_value, label) "
+            "VALUES ($1, $2, $3, $4, $5, $6)",
+            (user or {}).get("email", ""), action, ids,
+            str(old_value or ""), str(new_value or ""), str(label or ""),
+        )
+    except Exception as e:
+        print(f"[action_log] не записал {action}: {e}")
+
+
+async def _order_label(conn, order_id):
+    """Короткая подпись заказа для журнала: номер + имя покупателя."""
+    try:
+        r = await conn.fetchrow(
+            "SELECT external_id, customer_name FROM orders WHERE id=$1", int(order_id)
+        )
+        if not r:
+            return f"#{order_id}"
+        num = r["external_id"] or f"#{order_id}"
+        name = (r["customer_name"] or "").strip()
+        return f"{num} · {name}" if name else str(num)
+    except Exception:
+        return f"#{order_id}"
+
+
+@app.get("/api/action-log")
+async def api_action_log(request: Request,
+                         limit: int = Query(50, ge=1, le=200),
+                         offset: int = Query(0, ge=0),
+                         action: str = Query(None)):
+    """Журнал действий. Только админ — в чужие правки лезть незачем."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+
+    conds, params = [], []
+    if action:
+        params.append(action)
+        conds.append(f"action = ${len(params)}")
+    where = ("WHERE " + " AND ".join(conds)) if conds else ""
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        total = await conn.fetchval(f"SELECT COUNT(*) FROM action_log {where}", *params)
+        params2 = params + [limit, offset]
+        rows = await conn.fetch(
+            f"SELECT * FROM action_log {where} ORDER BY id DESC "
+            f"LIMIT ${len(params2)-1} OFFSET ${len(params2)}",
+            *params2
+        )
+    log = []
+    for r in rows:
+        log.append({
+            "id": r["id"],
+            "user_email": r["user_email"] or "",
+            "action": r["action"] or "",
+            "count": len(r["order_ids"] or []),
+            "order_id": (r["order_ids"] or [None])[0],
+            "old_value": r["old_value"] or "",
+            "new_value": r["new_value"] or "",
+            "label": r["label"] or "",
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "undone": bool(r["undone"]),
+            "undone_at": r["undone_at"].isoformat() if r["undone_at"] else None,
+            "undone_by": r["undone_by"] or "",
+        })
+    return JSONResponse({"total": total, "log": log})
+
+
+@app.post("/api/action-log/{log_id}/undo")
+async def api_action_undo(log_id: int, request: Request):
+    """Откатить одно действие из журнала — вернуть значение, какое было до него."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Only admin can undo"}, status_code=403)
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM action_log WHERE id=$1", log_id)
+        if not row:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if row["undone"]:
+            return JSONResponse({"error": "already undone"}, status_code=400)
+
+        act = row["action"]
+        ids = row["order_ids"] or []
+        old = row["old_value"] or ""
+
+        if act in ("export", "exported"):
+            # Возвращаем ровно то состояние галочки, что было до действия.
+            was_on = (old == "1")
+            await conn.execute(
+                "UPDATE orders SET exported=$1, exported_at=$2 WHERE id = ANY($3)",
+                was_on, datetime.now() if was_on else None, ids,
+            )
+        elif act == "priority":
+            await conn.execute(
+                "UPDATE orders SET is_priority=$1 WHERE id = ANY($2)",
+                old == "1", ids,
+            )
+        elif act == "comment":
+            await conn.execute(
+                "UPDATE orders SET customer_comment=$1 WHERE id = ANY($2)",
+                old, ids,
+            )
+        else:
+            return JSONResponse({"error": "this action cannot be undone"}, status_code=400)
+
+        await conn.execute(
+            "UPDATE action_log SET undone=TRUE, undone_at=$1, undone_by=$2 WHERE id=$3",
+            datetime.now(), user.get("email", ""), log_id,
+        )
+    return JSONResponse({"ok": True, "reverted": len(ids)})
 
 
 # ── Export history & undo ──
@@ -2471,10 +3598,16 @@ async def toggle_priority(request: Request):
         return JSONResponse({"ok": False, "error": "no id"})
     pool = await get_db_pool()
     async with pool.acquire() as conn:
+        was = await conn.fetchval("SELECT is_priority FROM orders WHERE id=$1", int(order_id))
         await conn.execute(
             "UPDATE orders SET is_priority=$1 WHERE id=$2",
             is_priority, int(order_id),
         )
+        if bool(was) != bool(is_priority):
+            await log_action(conn, user, "priority", [order_id],
+                             old_value="1" if was else "0",
+                             new_value="1" if is_priority else "0",
+                             label=await _order_label(conn, order_id))
     return JSONResponse({"ok": True})
 
 
@@ -2496,6 +3629,7 @@ async def api_orders(
     exported: str = Query(None),
     priority: str = Query(None),
     product_type: str = Query(None),
+    invoice_type: str = Query(None),
 ):
     user = await get_current_user(request)
     if not user:
@@ -2532,13 +3666,13 @@ async def api_orders(
         seller_list = [s.strip() for s in seller.split(",") if s.strip()] if seller else []
         if source_list and seller_list:
             # Combined filter: (non-allegro sources) OR (allegro + specific sellers)
-            non_allegro = [s for s in source_list if s != "allegro"]
+            non_allegro = [s for s in source_list if s not in ("allegro", "erli")]
             or_parts = []
             if non_allegro:
                 params.append(non_allegro)
                 or_parts.append(f"source = ANY(${len(params)})")
             params.append(seller_list)
-            or_parts.append(f"(source = 'allegro' AND seller_account = ANY(${len(params)}))")
+            or_parts.append(f"(source IN ('allegro', 'erli') AND seller_account = ANY(${len(params)}))")
             conditions.append(f"({' OR '.join(or_parts)})")
         elif source_list:
             if len(source_list) == 1:
@@ -2549,13 +3683,43 @@ async def api_orders(
                 conditions.append(f"source = ANY(${len(params)})")
         elif seller_list:
             params.append(seller_list)
-            conditions.append(f"(source = 'allegro' AND seller_account = ANY(${len(params)}))")
+            conditions.append(f"(source IN ('allegro', 'erli') AND seller_account = ANY(${len(params)}))")
     if status:
         params.append(status)
         conditions.append(f"status = ${len(params)}")
-    if search:
-        params.append(f"%{search}%")
-        conditions.append(f"(customer_name ILIKE ${len(params)} OR customer_phone ILIKE ${len(params)} OR customer_email ILIKE ${len(params)})")
+    if search and search.strip():
+        # v1 искал только по имени, телефону и email. Менеджеры при этом
+        # регулярно ищут по номеру заказа, названию товара, городу и по
+        # собственному комментарию — раньше это просто не находилось.
+        #
+        # Каждое слово ищется отдельно и должно найтись хотя бы в одном поле:
+        # "kowalski szklarnia" найдёт Ковальского, заказавшего теплицу.
+        terms = [t for t in search.strip().split() if t][:6]
+
+        search_fields = [
+            "customer_name", "customer_phone", "customer_email",
+            "external_id", "customer_city", "customer_address",
+            "customer_comment", "items_json", "product_type",
+            "invoice_nip", "seller_account",
+        ]
+        for term in terms:
+            params.append("%" + term + "%")
+            idx = len(params)
+            parts = ["COALESCE(%s, '') ILIKE $%d" % (f, idx) for f in search_fields]
+            # Сумма заказа: менеджеры ищут заказ по цене, когда не помнят
+            # ни имени, ни номера. NUMERIC приводим к тексту, чтобы
+            # "2460" нашло и 2460.00.
+            parts.append("COALESCE(total, 0)::text ILIKE $%d" % idx)
+            # Телефон в базе лежит в разном виде (+48, пробелы, дефисы).
+            # Если слово похоже на номер, сверяем только цифры.
+            digits = "".join(ch for ch in term if ch.isdigit())
+            if len(digits) >= 5:
+                params.append("%" + digits + "%")
+                parts.append(
+                    "regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g') "
+                    "ILIKE $%d" % len(params)
+                )
+            conditions.append("(" + " OR ".join(parts) + ")")
     if date_from:
         params.append(date.fromisoformat(date_from))
         conditions.append(f"COALESCE(external_created, created_at)::date >= ${len(params)}")
@@ -2571,6 +3735,16 @@ async def api_orders(
     if product_type:
         params.append(product_type)
         conditions.append(f"product_type = ${len(params)}")
+    if invoice_type:
+        # "faktura" — любая фактура, и на фирму, и именная: бухгалтеру нужно
+        # видеть одним списком всё, по чему надо выписать документ.
+        if invoice_type == "faktura":
+            conditions.append("invoice_type IN ('company', 'person')")
+        elif invoice_type == "unknown":
+            conditions.append("(invoice_type IS NULL OR invoice_type = '')")
+        else:
+            params.append(invoice_type)
+            conditions.append(f"invoice_type = ${len(params)}")
 
     where = " AND ".join(conditions)
 
@@ -2627,7 +3801,7 @@ async def debug_utm(request: Request):
 
     results = []
     try:
-        async with aiohttp.ClientSession() as session:
+        async with _http_session() as session:
             async with session.get(
                 f"{WOO_URL}/wp-json/wc/v3/orders",
                 params={"per_page": 5, "orderby": "date", "order": "desc"},
@@ -2765,6 +3939,9 @@ async def export_orders(
                 "INSERT INTO export_log (user_email, order_ids, orders_count) VALUES ($1, $2, $3)",
                 user.get("email", ""), exported_ids, len(exported_ids),
             )
+            await log_action(conn, user, "export", exported_ids,
+                             old_value="0", new_value="1",
+                             label="%d шт." % len(exported_ids))
 
     # --- XLSX export (openpyxl) — one row per order, items concatenated ---
     from openpyxl import Workbook
@@ -2779,7 +3956,7 @@ async def export_orders(
         "Data", "Konfiguracja", "Cena brutto szt.", "Wartość brutto",
         "Dostawa", "Razem zamówienie", "Status", "Płatność",
         "Produkt", "Telefon", "Adres", "NIP", "Dane do faktury", "Komentarz",
-        "Nr zamówienia", "Źródło", "Konto", "Klient"
+        "Nr zamówienia", "Źródło", "Konto", "Klient", "Waga (kg)"
     ]
     header_font = Font(name="Arial", bold=True, color="FFFFFF", size=11)
     header_fill = PatternFill("solid", fgColor="1a1a2e")
@@ -2894,6 +4071,7 @@ async def export_orders(
             r["source"] or "",                              # Źródło
             r.get("seller_account") or "",                  # Konto
             r.get("customer_name") or "",                   # Klient
+            float(r["weight_kg"]) if r.get("weight_kg") is not None else "",  # Waga (kg)
         ]
 
         for col_idx, val in enumerate(row_data, 1):
@@ -2915,7 +4093,7 @@ async def export_orders(
         current_row += 1
 
     # Column widths
-    col_widths = [18, 16, 18, 14, 12, 14, 22, 20, 55, 16, 35, 16, 30, 30, 14, 14, 14, 20]
+    col_widths = [18, 16, 18, 14, 12, 14, 22, 20, 55, 16, 35, 16, 30, 30, 14, 14, 14, 20, 11]
     for i, w in enumerate(col_widths, 1):
         if i <= len(headers):
             ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
@@ -3102,11 +4280,16 @@ async def webhook_woo_oteko(request: Request):
 
 
 async def _handle_woo_webhook(request: Request, source: str, secret: str, unit_price: bool = False):
+    if not WEBHOOKS_ENABLED:
+        return JSONResponse(
+            {"ok": False, "error": "webhooks disabled on this instance"},
+            status_code=503,
+        )
     raw = await request.body()
     if not raw:
         return JSONResponse({"ok": False, "error": "empty body"}, status_code=400)
 
-    # Верификация подписи (если задан WOO_WEBHOOK_SECRET)
+    # Верификация подписи (если задан секрет)
     if secret:
         signature = request.headers.get("X-WC-Webhook-Signature", "")
         expected = b64encode(
@@ -3143,12 +4326,27 @@ async def _handle_woo_webhook(request: Request, source: str, secret: str, unit_p
 # === Ручной синк + лог ===
 # ============================================================
 
-@app.get("/admin/sync")
+# GET, который меняет данные, — дыра. Cookie сессии стоит SameSite=lax,
+# а это значит, что при переходе по внешней ссылке браузер всё равно
+# приложит cookie. Достаточно было подсунуть залогиненному админу
+# ссылку — и запрос выполнялся от его имени. POST браузер cross-site
+# уже не отправит вместе с cookie.
+@app.post("/admin/sync")
 async def manual_sync(request: Request, source: str = Query(None), full: bool = Query(False)):
     """Ручной запуск синхронизации. /admin/sync?source=allegro&full=true"""
     user = await get_current_user(request)
     if not user or not has_perm(user, "sync"):
         return JSONResponse({"error": "Access denied"}, status_code=403)
+    if not SYNC_ENABLED and source != "erli":
+        # Иначе кнопка «Синхр.» в интерфейсе v2 дёрнет Allegro и провернёт
+        # refresh_token, которым прямо сейчас пользуется прод.
+        # Erli — исключение: ключ не ротируется, а сокет-барьер
+        # пропускает к нему только чтение и поиск.
+        return JSONResponse({
+            "error": "Синхронизация отключена на этом инстансе (SYNC_ENABLED=false). "
+                     "Это копия для разработки: она намеренно не обращается "
+                     "к Allegro, WooCommerce и PrestaShop.",
+        }, status_code=503)
     if source == "dobraszklarnia":
         asyncio.create_task(sync_woocommerce(full=full))
         return JSONResponse({"ok": True, "message": f"WooCommerce sync started (full={full})"})
@@ -3158,6 +4356,21 @@ async def manual_sync(request: Request, source: str = Query(None), full: bool = 
     elif source == "cieplarnia":
         asyncio.create_task(sync_presta_ciep(full=full))
         return JSONResponse({"ok": True, "message": f"Cieplarnia sync started (full={full})"})
+
+    elif source == "erli":
+        # Все магазины Erli, либо один конкретный через ?seller=name
+        seller = request.query_params.get("seller", "")
+        if seller:
+            acc = next((a for a in ERLI_ACCOUNTS if a["name"] == seller), None)
+            if not acc:
+                return JSONResponse({"ok": False, "error": f"Erli account '{seller}' not found"}, status_code=404)
+            asyncio.create_task(_sync_erli_account(acc, full=full))
+            return JSONResponse({"ok": True, "message": f"Erli:{seller} sync started (full={full})"})
+        if not ERLI_ACCOUNTS:
+            return JSONResponse({"ok": False, "error": "Erli не настроен: нет ERLI_KEY в окружении"}, status_code=400)
+        asyncio.create_task(sync_erli(full=full))
+        names = [a["name"] for a in ERLI_ACCOUNTS]
+        return JSONResponse({"ok": True, "message": f"Erli sync started for {names} (full={full})"})
 
     elif source == "allegro":
         # Sync all Allegro accounts, or a specific one via ?seller=name
@@ -3178,6 +4391,8 @@ async def manual_sync(request: Request, source: str = Query(None), full: bool = 
         asyncio.create_task(sync_presta_oteko(full=full))
         asyncio.create_task(sync_presta_ciep(full=full))
         asyncio.create_task(sync_allegro(full=full))
+        if ERLI_ACCOUNTS:
+            asyncio.create_task(sync_erli(full=full))
         names = [a["name"] for a in ALLEGRO_ACCOUNTS]
         return JSONResponse({"ok": True, "message": f"All syncs started (full={full}), allegro accounts: {names}"})
 
@@ -3198,11 +4413,19 @@ async def api_sync_log(limit: int = Query(20)):
 # ============================================================
 
 @app.get("/admin/woo-debug")
-async def woo_debug(order_id: str = Query(None)):
+async def woo_debug(request: Request, order_id: str = Query(None)):
     """Show raw WooCommerce line_items with meta_data for debugging."""
+    # Был открыт всем: отдавал сырые заказы WooCommerce вместе
+    # с персональными данными покупателей.
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Admin access required"}, status_code=403)
+    if not SYNC_ENABLED:
+        return JSONResponse({"error": "Внешние API отключены (SYNC_ENABLED=false)"},
+                            status_code=503)
     if not WOO_KEY or not WOO_SECRET:
         return JSONResponse({"error": "no woo keys"})
-    async with aiohttp.ClientSession() as session:
+    async with _http_session() as session:
         if order_id:
             url = f"{WOO_URL}/wp-json/wc/v3/orders/{order_id}"
         else:
@@ -3242,9 +4465,19 @@ async def woo_debug(order_id: str = Query(None)):
 # === Утилита: массовое обновление seller_account ===
 # ============================================================
 
-@app.get("/admin/fix-seller-account")
-async def fix_seller_account():
+# GET, который меняет данные, — дыра. Cookie сессии стоит SameSite=lax,
+# а это значит, что при переходе по внешней ссылке браузер всё равно
+# приложит cookie. Достаточно было подсунуть залогиненному админу
+# ссылку — и запрос выполнялся от его имени. POST браузер cross-site
+# уже не отправит вместе с cookie.
+@app.post("/admin/fix-seller-account")
+async def fix_seller_account(request: Request):
     """Fix empty seller_account → 'mantrade' for existing Allegro orders."""
+    # Был открыт всем: любой, кто знал URL, делал массовый UPDATE
+    # по таблице заказов одним GET-запросом.
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Admin access required"}, status_code=403)
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         res = await conn.execute(
@@ -3258,14 +4491,22 @@ async def fix_seller_account():
 # ============================================================
 
 @app.get("/admin/presta-states")
-async def presta_states():
+async def presta_states(request: Request):
     """Fetch order_states from both PrestaShop stores."""
+    # Был открыт всем и обращался к API магазинов ключами
+    # из окружения от имени анонимного посетителя.
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Admin access required"}, status_code=403)
+    if not SYNC_ENABLED:
+        return JSONResponse({"error": "Внешние API отключены (SYNC_ENABLED=false)"},
+                            status_code=503)
     results = {}
     stores = [
         ("oteko", "https://oteko.pl", os.getenv("PRESTA_OTEKO_KEY", "")),
         ("cieplarnia", "https://cieplarnia.pl", os.getenv("PRESTA_CIEP_KEY", "")),
     ]
-    async with aiohttp.ClientSession() as session:
+    async with _http_session() as session:
         for name, base_url, key in stores:
             if not key:
                 results[name] = "no key"
@@ -3299,7 +4540,12 @@ async def presta_states():
 # === Миграции / Healthcheck ===
 # ============================================================
 
-@app.get("/admin/migrate")
+# GET, который меняет данные, — дыра. Cookie сессии стоит SameSite=lax,
+# а это значит, что при переходе по внешней ссылке браузер всё равно
+# приложит cookie. Достаточно было подсунуть залогиненному админу
+# ссылку — и запрос выполнялся от его имени. POST браузер cross-site
+# уже не отправит вместе с cookie.
+@app.post("/admin/migrate")
 async def run_migration(request: Request):
     user = await get_current_user(request)
     if not user or not has_perm(user, "manage_users"):
@@ -3350,6 +4596,105 @@ async def run_migration(request: Request):
     return JSONResponse({"migrations": results})
 
 
+@app.get("/api/instance")
+async def api_instance():
+    """Режим инстанса. Нужен интерфейсу, чтобы отличать копию от прода."""
+    return JSONResponse({
+        "instance_name": INSTANCE_NAME,
+        "instance_id": INSTANCE_ID,
+        "is_prod_instance": IS_PROD_INSTANCE,
+        "sync_enabled": SYNC_ENABLED,
+        "webhooks_enabled": WEBHOOKS_ENABLED,
+        "trgm": TRGM_AVAILABLE,
+    })
+
+
+@app.get("/admin/allegro/status")
+async def admin_allegro_status(request: Request):
+    """Состояние токенов Allegro. Сам токен не показываем — только факт,
+    длину, когда последний раз ротировался и не было ли ошибки."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Admin access required"}, status_code=403)
+
+    out = []
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        for acc in ALLEGRO_ACCOUNTS:
+            name = acc["name"]
+            key = _allegro_key(name)
+            row = await conn.fetchrow(
+                "SELECT value, updated_at FROM app_settings WHERE key=$1", key
+            )
+            last = await conn.fetchval(
+                "SELECT value FROM app_settings WHERE key=$1", key + "__last"
+            )
+            last_at, last_status, last_detail = "", "", ""
+            if last:
+                parts = last.split("|", 2)
+                last_at = parts[0] if len(parts) > 0 else ""
+                last_status = parts[1] if len(parts) > 1 else ""
+                last_detail = parts[2] if len(parts) > 2 else ""
+            out.append({
+                "account": name,
+                "db_key": key,
+                "token_present": bool(row and row["value"]),
+                "token_len": len(row["value"]) if row and row["value"] else 0,
+                "rotated_at": row["updated_at"].isoformat() if row and row["updated_at"] else None,
+                "last_attempt_at": last_at,
+                "last_attempt_status": last_status,
+                "last_attempt_detail": last_detail,
+            })
+
+    return JSONResponse({
+        "instance_id": INSTANCE_ID,
+        "is_prod_instance": IS_PROD_INSTANCE,
+        "sync_enabled": SYNC_ENABLED,
+        "accounts": out,
+    })
+
+
+@app.post("/admin/allegro/set-refresh-token")
+async def admin_allegro_set_refresh_token(request: Request):
+    """Вставить свежий refresh_token руками — восстановление за минуту,
+    без правки переменных и редеплоя.
+
+    Тело: {"account": "mantrade", "refresh_token": "..."}
+    """
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Admin access required"}, status_code=403)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Ожидается JSON"}, status_code=400)
+
+    account = (body.get("account") or "").strip()
+    token = (body.get("refresh_token") or "").strip()
+    if not account or not token:
+        return JSONResponse(
+            {"error": "Нужны поля account и refresh_token"}, status_code=400
+        )
+    known = [a["name"] for a in ALLEGRO_ACCOUNTS]
+    if known and account not in known:
+        return JSONResponse(
+            {"error": f"Аккаунт '{account}' не настроен", "known": known},
+            status_code=404,
+        )
+
+    await _allegro_db_save_refresh_token(account, token)
+    _allegro_tokens.pop(account, None)   # сбросить кеш, чтобы взялся новый
+    await _allegro_note(account, "manual", f"задан вручную: {user.get('email', '?')}")
+    print(f"[allegro:{account}] refresh_token задан вручную ({user.get('email', '?')})")
+    return JSONResponse({
+        "ok": True,
+        "account": account,
+        "db_key": _allegro_key(account),
+        "note": "Кеш сброшен. Следующий синк возьмёт новый токен.",
+    })
+
+
 @app.get("/health")
 async def health():
     try:
@@ -3359,3 +4704,49 @@ async def health():
         return JSONResponse({"status": "ok", "db": "connected"})
     except Exception as e:
         return JSONResponse({"status": "error", "db": str(e)}, status_code=500)
+
+
+# ============================================================
+# === Бэкап базы ===
+# Ночная выгрузка всей базы в приватный репозиторий на GitHub.
+# Выключен, пока не заданы BACKUP_GITHUB_TOKEN и BACKUP_GITHUB_REPO.
+# ============================================================
+configure_backup(
+    get_db_pool=get_db_pool,
+    http_session=_http_session,
+    tz=TZ,
+    instance_id=INSTANCE_ID,
+)
+app.include_router(backup_router)
+
+import gdrive
+gdrive.configure_gdrive(get_db_pool=get_db_pool, http_session=_http_session,
+                        instance_id=INSTANCE_ID)
+app.include_router(gdrive.gdrive_router)
+
+
+# ============================================================
+# === MCP: удалённый коннектор для Claude ===
+# Подключается по адресу  https://<домен>/mcp/<MCP_TOKEN>
+# Выключен, пока в окружении не задана переменная MCP_TOKEN.
+# ============================================================
+configure_mcp(
+    get_db_pool=get_db_pool,
+    sync_map={
+        "dobraszklarnia": sync_woocommerce,
+        "oteko": sync_presta_oteko,
+        "cieplarnia": sync_presta_ciep,
+        "allegro": sync_allegro,
+        "erli": sync_erli,
+    },
+    tz=TZ,
+    instance_id=INSTANCE_ID,
+    sync_enabled=SYNC_ENABLED,
+)
+app.include_router(mcp_router)
+print("[startup] MCP: %s" % ("включён на /mcp/<token>" if os.getenv("MCP_TOKEN") else "выключен (нет MCP_TOKEN)"))
+
+
+# Помощник: зависимости из main (журнал действий, подписи заказов, статусы)
+assistant.configure(get_pool=get_db_pool, log_action=log_action,
+                    order_label=_order_label, status_pl=_status_pl)

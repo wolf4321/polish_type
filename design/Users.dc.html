@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;}
+  *{box-sizing:border-box;}
+  body{font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;transition:background-color .2s ease,color .2s ease;}
+  a{text-decoration:none;transition:color .15s ease;}
+  input,select,button{font-family:inherit;letter-spacing:-.01em;}
+  input:focus{outline:none;}
+  input[type=checkbox]{accent-color:#16a34a;}
+  .num{font-family:'IBM Plex Mono',ui-monospace,monospace;font-feature-settings:"tnum" 1;letter-spacing:-.03em;}
+  .card{transition:background-color .2s ease,border-color .2s ease;}
+  .navlink{transition:background-color .15s ease,color .15s ease;}
+</style>
+</helmet>
+<div style="min-height:100vh;background:{{ p.bg }};color:{{ p.ink }};">
+  <nav style="display:flex;align-items:center;flex-wrap:wrap;gap:{{ L.navGap }};padding:{{ L.navPad }};min-height:58px;border-bottom:1px solid {{ p.line }};position:sticky;top:0;z-index:20;background:{{ p.navBg }};backdrop-filter:blur(8px);">
+    <span style="order:1;font-weight:600;font-size:15.5px;letter-spacing:-.04em;">ekomat<span style="color:#16a34a;">.</span></span>
+    <div style="order:{{ L.linksOrder }};width:{{ L.linksW }};margin-left:{{ L.linksML }};display:flex;align-items:center;gap:2px;overflow-x:auto;">
+      <a href="Dashboard.dc.html" class="navlink" style="font-size:13px;font-weight:500;color:{{ p.muted }};padding:6px 12px;border-radius:8px;white-space:nowrap;" style-hover="background:{{ p.chip }};color:{{ p.ink }};">{{ t.nav_dash }}</a>
+      <a href="Orders.dc.html" class="navlink" style="font-size:13px;font-weight:500;color:{{ p.muted }};padding:6px 12px;border-radius:8px;white-space:nowrap;" style-hover="background:{{ p.chip }};color:{{ p.ink }};">{{ t.nav_orders }}</a>
+      <a href="Users.dc.html" class="navlink" style="font-size:13px;font-weight:600;color:{{ p.ink }};padding:6px 12px;border-radius:8px;background:{{ p.chip }};white-space:nowrap;">{{ t.nav_users }}</a>
+    </div>
+    <div style="order:3;margin-left:auto;display:flex;align-items:center;gap:{{ L.ctrlGap }};">
+      <div style="display:flex;background:{{ p.chip }};border-radius:9px;padding:2px;">
+        <button onClick="{{ setPl }}" style="border:none;cursor:pointer;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:7px;background:{{ p.plBg }};color:{{ p.plColor }};box-shadow:{{ p.plShadow }};transition:all .15s ease;">PL</button>
+        <button onClick="{{ setRu }}" style="border:none;cursor:pointer;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:7px;background:{{ p.ruBg }};color:{{ p.ruColor }};box-shadow:{{ p.ruShadow }};transition:all .15s ease;">RU</button>
+      </div>
+      <button onClick="{{ toggleTheme }}" title="{{ t.theme }}" style="width:32px;height:32px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1px solid {{ p.line }};border-radius:9px;background:{{ p.cardBg }};cursor:pointer;font-size:14px;color:{{ p.muted }};transition:all .15s ease;" style-hover="color:{{ p.ink }};border-color:{{ p.lineStrong }};">{{ themeIcon }}</button>
+      <div style="width:1px;height:18px;background:{{ p.line }};display:{{ L.hideMeta }};"></div>
+      <span style="font-size:13px;color:{{ p.muted }};display:{{ L.hideMeta }};">Jan Kowalski</span>
+      <a href="Login.dc.html" style="font-size:13px;color:{{ p.muted }};font-weight:500;white-space:nowrap;" style-hover="color:{{ p.ink }};">{{ t.logout }}</a>
+    </div>
+  </nav>
+
+  <main style="max-width:1100px;margin:0 auto;padding:{{ L.pad }};">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:20px;flex-wrap:wrap;">
+      <div>
+        <h1 style="font-size:{{ L.h1 }};font-weight:600;letter-spacing:-.045em;margin:0 0 5px;">{{ t.users }}</h1>
+        <p style="font-size:13px;color:{{ p.muted }};margin:0;">{{ subtitle }}</p>
+      </div>
+      <button onClick="{{ openAdd }}" style="width:{{ L.addBtnW }};padding:9px 17px;background:{{ p.btnBg }};color:{{ p.btnInk }};border:none;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background-color .15s ease;" style-hover="background:{{ p.btnHover }};">+ {{ t.add_user }}</button>
+    </div>
+
+    <sc-if value="{{ notMob }}" hint-placeholder-val="{{ true }}">
+    <div class="card" style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:14px;overflow-x:auto;">
+      <div style="min-width:940px;">
+      <div style="display:grid;grid-template-columns:minmax(190px,1.3fr) minmax(220px,1.6fr) 110px 145px 160px;gap:0;padding:0 22px;background:{{ p.headBg }};border-bottom:1px solid {{ p.line }};">
+        <div style="padding:13px 4px;font-size:10.5px;color:{{ p.faint }};font-weight:600;text-transform:uppercase;letter-spacing:.05em;">{{ t.c_user }}</div>
+        <div style="padding:13px 4px;font-size:10.5px;color:{{ p.faint }};font-weight:600;text-transform:uppercase;letter-spacing:.05em;">{{ t.c_perms }}</div>
+        <div style="padding:13px 4px;font-size:10.5px;color:{{ p.faint }};font-weight:600;text-transform:uppercase;letter-spacing:.05em;">{{ t.c_status }}</div>
+        <div style="padding:13px 4px;font-size:10.5px;color:{{ p.faint }};font-weight:600;text-transform:uppercase;letter-spacing:.05em;">{{ t.c_login }}</div>
+        <div style="padding:13px 4px;font-size:10.5px;color:{{ p.faint }};font-weight:600;text-transform:uppercase;letter-spacing:.05em;text-align:right;">{{ t.c_actions }}</div>
+      </div>
+      <sc-for list="{{ users }}" as="u" hint-placeholder-count="4">
+        <div style="display:grid;grid-template-columns:minmax(190px,1.3fr) minmax(220px,1.6fr) 110px 145px 160px;gap:0;padding:0 22px;border-bottom:1px solid {{ p.lineSoft }};transition:background-color .15s ease;" style-hover="background:{{ p.hoverBg }};">
+          <div style="padding:15px 4px;display:flex;align-items:center;gap:11px;min-width:0;">
+            <div style="width:34px;height:34px;border-radius:10px;background:{{ u.avBg }};color:{{ u.avColor }};display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12.5px;flex-shrink:0;">{{ u.initials }}</div>
+            <div style="min-width:0;">
+              <div style="font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ u.name }}</div>
+              <div style="font-size:12px;color:{{ p.muted }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ u.email }}</div>
+            </div>
+          </div>
+          <div style="padding:15px 4px;display:flex;align-items:center;flex-wrap:wrap;gap:5px;">
+            <sc-for list="{{ u.tags }}" as="tg" hint-placeholder-count="3">
+              <span style="font-size:11px;font-weight:500;color:{{ tg.color }};background:{{ tg.bg }};padding:2px 8px;border-radius:6px;">{{ tg.label }}</span>
+            </sc-for>
+          </div>
+          <div style="padding:15px 4px;display:flex;align-items:center;">
+            <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:{{ u.statusColor }};">
+              <span style="width:7px;height:7px;border-radius:50%;background:{{ u.statusColor }};"></span>{{ u.statusLabel }}
+            </span>
+          </div>
+          <div class="num" style="padding:15px 4px;display:flex;align-items:center;font-size:12px;color:{{ p.muted }};">{{ u.lastLogin }}</div>
+          <div style="padding:15px 4px;display:flex;align-items:center;justify-content:flex-end;gap:6px;">
+            <button onClick="{{ u.edit }}" title="{{ t.edit }}" style="width:30px;height:30px;border:1px solid {{ p.line }};border-radius:8px;background:{{ p.cardBg }};cursor:pointer;font-size:13px;color:{{ p.inkSoft }};transition:all .15s ease;" style-hover="background:{{ p.chip }};">✎</button>
+            <button onClick="{{ u.toggle }}" style="padding:0 10px;height:30px;border:1px solid {{ p.line }};border-radius:8px;background:{{ p.cardBg }};cursor:pointer;font-size:12px;color:{{ p.inkSoft }};white-space:nowrap;transition:all .15s ease;" style-hover="background:{{ p.chip }};">{{ u.toggleLabel }}</button>
+            <button onClick="{{ u.del }}" title="{{ t.del }}" style="width:30px;height:30px;border:1px solid {{ p.dangerLine }};border-radius:8px;background:{{ p.cardBg }};cursor:pointer;font-size:13px;color:{{ p.dangerInk }};transition:all .15s ease;" style-hover="background:{{ p.dangerBg }};">✕</button>
+          </div>
+        </div>
+      </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ mob }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <sc-for list="{{ users }}" as="u" hint-placeholder-count="4">
+          <div class="card" style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:13px;padding:15px;">
+            <div style="display:flex;align-items:center;gap:11px;margin-bottom:13px;">
+              <div style="width:38px;height:38px;border-radius:11px;background:{{ u.avBg }};color:{{ u.avColor }};display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex-shrink:0;">{{ u.initials }}</div>
+              <div style="min-width:0;flex:1;">
+                <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ u.name }}</div>
+                <div style="font-size:12px;color:{{ p.muted }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ u.email }}</div>
+              </div>
+              <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:{{ u.statusColor }};flex-shrink:0;">
+                <span style="width:7px;height:7px;border-radius:50%;background:{{ u.statusColor }};"></span>{{ u.statusLabel }}
+              </span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:13px;">
+              <sc-for list="{{ u.tags }}" as="tg" hint-placeholder-count="3">
+                <span style="font-size:11px;font-weight:500;color:{{ tg.color }};background:{{ tg.bg }};padding:2px 8px;border-radius:6px;">{{ tg.label }}</span>
+              </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:12px;border-top:1px solid {{ p.lineSoft }};">
+              <span class="num" style="font-size:11.5px;color:{{ p.faint }};white-space:nowrap;">{{ u.lastLogin }}</span>
+              <div style="display:flex;gap:6px;flex-shrink:0;">
+                <button onClick="{{ u.edit }}" style="height:32px;padding:0 12px;border:1px solid {{ p.line }};border-radius:8px;background:{{ p.cardBg }};cursor:pointer;font-size:12.5px;color:{{ p.inkSoft }};">{{ t.edit }}</button>
+                <button onClick="{{ u.toggle }}" style="height:32px;padding:0 12px;border:1px solid {{ p.line }};border-radius:8px;background:{{ p.cardBg }};cursor:pointer;font-size:12.5px;color:{{ p.inkSoft }};white-space:nowrap;">{{ u.toggleLabel }}</button>
+                <button onClick="{{ u.del }}" style="width:32px;height:32px;border:1px solid {{ p.dangerLine }};border-radius:8px;background:{{ p.cardBg }};cursor:pointer;font-size:13px;color:{{ p.dangerInk }};">✕</button>
+              </div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+  </main>
+
+  <sc-if value="{{ modalOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ close }}" style="position:fixed;inset:0;background:{{ p.overlay }};z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:{{ L.modalPad }};overflow-y:auto;backdrop-filter:blur(2px);">
+      <div onClick="{{ stop }}" style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:16px;width:520px;max-width:100%;box-shadow:{{ p.modalShadow }};">
+        <div style="padding:22px 26px;border-bottom:1px solid {{ p.line }};display:flex;align-items:center;justify-content:space-between;">
+          <h3 style="font-size:17px;font-weight:600;margin:0;letter-spacing:-.035em;">{{ modalTitle }}</h3>
+          <button onClick="{{ close }}" style="border:none;background:none;cursor:pointer;font-size:18px;color:{{ p.faint }};">✕</button>
+        </div>
+        <div style="padding:22px 26px;">
+          <div style="display:grid;grid-template-columns:{{ L.formCols }};gap:14px;margin-bottom:20px;">
+            <div>
+              <label style="display:block;font-size:12px;color:{{ p.muted }};font-weight:500;margin-bottom:6px;">{{ t.f_name }}</label>
+              <input value="{{ fName }}" onInput="{{ onName }}" placeholder="Jan Kowalski" style="width:100%;padding:9px 12px;border:1px solid {{ p.line }};border-radius:9px;font-size:13px;background:{{ p.inputBg }};color:{{ p.ink }};" style-focus="border-color:{{ p.lineStrong }};">
+            </div>
+            <div>
+              <label style="display:block;font-size:12px;color:{{ p.muted }};font-weight:500;margin-bottom:6px;">Email</label>
+              <input value="{{ fEmail }}" onInput="{{ onEmail }}" placeholder="jan@ekomat.pl" style="width:100%;padding:9px 12px;border:1px solid {{ p.line }};border-radius:9px;font-size:13px;background:{{ p.inputBg }};color:{{ p.ink }};" style-focus="border-color:{{ p.lineStrong }};">
+            </div>
+          </div>
+
+          <div style="margin-bottom:20px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;">
+              <span style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:{{ p.muted }};">{{ t.f_perms }}</span>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:{{ p.muted }};cursor:pointer;"><input type="checkbox" checked="{{ allPerms }}" onChange="{{ toggleAllPerms }}">{{ t.select_all }}</label>
+            </div>
+            <div style="border:1px solid {{ p.line }};border-radius:11px;overflow:hidden;">
+              <sc-for list="{{ perms }}" as="pm" hint-placeholder-count="6">
+                <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 13px;border-bottom:1px solid {{ p.lineSoft }};cursor:pointer;transition:background-color .15s ease;" style-hover="background:{{ p.hoverBg }};">
+                  <input type="checkbox" checked="{{ pm.checked }}" onChange="{{ pm.toggle }}" style="margin-top:2px;">
+                  <span style="flex:1;">
+                    <span style="display:block;font-size:13px;font-weight:500;">{{ pm.label }}</span>
+                    <span style="display:block;font-size:11.5px;color:{{ p.faint }};">{{ pm.desc }}</span>
+                  </span>
+                </label>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="margin-bottom:20px;">
+            <span style="display:block;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:{{ p.muted }};margin-bottom:9px;">{{ t.f_sources }}</span>
+            <label style="display:flex;align-items:center;gap:9px;padding:8px 0;font-size:13px;font-weight:600;cursor:pointer;"><input type="checkbox" checked="{{ srcAll }}" onChange="{{ toggleSrcAll }}">{{ t.all_stores }}</label>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              <sc-for list="{{ srcs }}" as="s" hint-placeholder-count="5">
+                <label style="display:flex;align-items:center;gap:7px;padding:6px 11px;border:1px solid {{ s.border }};border-radius:8px;font-size:12.5px;cursor:pointer;color:{{ s.color }};background:{{ s.bg }};transition:all .15s ease;"><input type="checkbox" checked="{{ s.checked }}" onChange="{{ s.toggle }}" disabled="{{ srcAll }}">{{ s.label }}</label>
+              </sc-for>
+            </div>
+          </div>
+
+          <div>
+            <label style="display:block;font-size:12px;color:{{ p.muted }};font-weight:500;margin-bottom:6px;">{{ t.f_pass }}</label>
+            <input value="{{ fPass }}" onInput="{{ onPass }}" placeholder="{{ passPlaceholder }}" style="width:100%;padding:9px 12px;border:1px solid {{ p.line }};border-radius:9px;font-size:13px;background:{{ p.inputBg }};color:{{ p.ink }};" style-focus="border-color:{{ p.lineStrong }};">
+            <sc-if value="{{ isEdit }}" hint-placeholder-val="{{ false }}"><span style="display:block;margin-top:5px;font-size:11px;color:{{ p.faint }};">{{ t.pass_hint }}</span></sc-if>
+          </div>
+        </div>
+        <div style="padding:16px 26px;border-top:1px solid {{ p.line }};display:flex;justify-content:flex-end;gap:9px;">
+          <button onClick="{{ close }}" style="padding:9px 18px;background:{{ p.chip }};color:{{ p.inkSoft }};border:none;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;transition:background-color .15s ease;">{{ t.cancel }}</button>
+          <button onClick="{{ save }}" style="padding:9px 18px;background:#16a34a;color:#fff;border:none;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;transition:background-color .15s ease;" style-hover="background:#15803d;">{{ t.save }}</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(props){
+    super(props);
+    let lang='pl', theme='light';
+    try{ lang=localStorage.getItem('ekomat_lang')||'pl'; theme=localStorage.getItem('ekomat_theme')||'light'; }catch(e){}
+
+    this.T = {
+      pl:{nav_dash:'Pulpit',nav_orders:'Zamówienia',nav_users:'Użytkownicy',logout:'Wyloguj',theme:'Motyw',
+        users:'Użytkownicy',add_user:'Dodaj użytkownika',c_user:'Użytkownik',c_perms:'Uprawnienia',c_status:'Status',
+        c_login:'Logowanie',c_actions:'Akcje',edit:'Edytuj',del:'Usuń',on:'Włącz',off:'Wyłącz',
+        active:'Aktywny',inactive:'Nieaktywny',f_name:'Imię i nazwisko',f_perms:'Uprawnienia',f_sources:'Dostęp do źródeł',
+        f_pass:'Hasło',select_all:'Zaznacz wszystko',all_stores:'Wszystkie sklepy',cancel:'Anuluj',save:'Zapisz',
+        modal_add:'Dodaj użytkownika',modal_edit:'Edytuj użytkownika',pass_hint:'Pozostaw puste, aby nie zmieniać hasła',
+        pass_new:'nowe hasło (opcjonalnie)',pass_min:'min. 4 znaki',accounts:'kont · zarządzanie dostępem i uprawnieniami'},
+      ru:{nav_dash:'Панель',nav_orders:'Заказы',nav_users:'Пользователи',logout:'Выйти',theme:'Тема',
+        users:'Пользователи',add_user:'Добавить пользователя',c_user:'Пользователь',c_perms:'Права',c_status:'Статус',
+        c_login:'Вход',c_actions:'Действия',edit:'Изменить',del:'Удалить',on:'Включить',off:'Выключить',
+        active:'Активен',inactive:'Отключён',f_name:'Имя и фамилия',f_perms:'Права доступа',f_sources:'Доступ к источникам',
+        f_pass:'Пароль',select_all:'Выбрать все',all_stores:'Все магазины',cancel:'Отмена',save:'Сохранить',
+        modal_add:'Добавить пользователя',modal_edit:'Изменить пользователя',pass_hint:'Оставьте пустым, чтобы не менять пароль',
+        pass_new:'новый пароль (необязательно)',pass_min:'мин. 4 символа',accounts:'аккаунтов · управление доступом и правами'}
+    };
+    this.PERMS = [
+      {v:'dashboard',label:{pl:'Pulpit',ru:'Панель'},desc:{pl:'Widzi dashboard ze statystykami',ru:'Видит панель со статистикой'}},
+      {v:'orders',label:{pl:'Zamówienia',ru:'Заказы'},desc:{pl:'Widzi tabelę zamówień',ru:'Видит таблицу заказов'}},
+      {v:'prices',label:{pl:'Ceny i przychody',ru:'Цены и выручка'},desc:{pl:'Widzi ceny, koszty dostawy, przychody',ru:'Видит цены, доставку, выручку'}},
+      {v:'phones',label:{pl:'Telefony klientów',ru:'Телефоны клиентов'},desc:{pl:'Widzi numery telefonów',ru:'Видит номера телефонов'}},
+      {v:'export',label:{pl:'Eksport XLSX',ru:'Экспорт XLSX'},desc:{pl:'Może eksportować zamówienia',ru:'Может экспортировать заказы'}},
+      {v:'sync',label:{pl:'Synchronizacja',ru:'Синхронизация'},desc:{pl:'Może uruchamiać sync',ru:'Может запускать синхронизацию'}},
+      {v:'add_orders',label:{pl:'Dodawanie zamówień',ru:'Добавление заказов'},desc:{pl:'Może dodawać zamówienia ręcznie',ru:'Может добавлять заказы вручную'}},
+      {v:'edit_comments',label:{pl:'Edycja komentarzy',ru:'Редактирование комментариев'},desc:{pl:'Może edytować komentarze',ru:'Может править комментарии'}},
+      {v:'mark_delivery',label:{pl:'Oznaczanie dostawy',ru:'Отметка доставки'},desc:{pl:'Może oznaczać jako dostarczone',ru:'Может отмечать как доставлено'}},
+      {v:'manage_users',label:{pl:'Zarządzanie użytkownikami',ru:'Управление пользователями'},desc:{pl:'Dodawanie/edycja/usuwanie kont',ru:'Добавление/правка/удаление аккаунтов'}}
+    ];
+    this.TAG = {
+      dashboard:{pl:'Pulpit',ru:'Панель'}, orders:{pl:'Zamówienia',ru:'Заказы'}, prices:{pl:'Ceny',ru:'Цены'},
+      phones:{pl:'Telefony',ru:'Телефоны'}, export:{pl:'Eksport',ru:'Экспорт'}, sync:{pl:'Sync',ru:'Синх'},
+      add_orders:{pl:'Dodawanie',ru:'Добавление'}, edit_comments:{pl:'Komentarze',ru:'Комментарии'},
+      mark_delivery:{pl:'Dostawa',ru:'Доставка'}, manage_users:{pl:'Admin',ru:'Админ'}
+    };
+    this.SRCS = [
+      {v:'dobraszklarnia',label:'dobraszklarnia.pl'},{v:'oteko',label:'oteko.pl'},
+      {v:'cieplarnia',label:'cieplarnia.pl'},{v:'allegro',label:'Allegro'},
+      {v:'manual',label:{pl:'Ręczne',ru:'Вручную'}}
+    ];
+    this.AVL = ['#16a34a|#e7f4ec','#4b7bf5|#e8f0fe','#e8a33d|#fbf0dd','#9b6ef7|#f1ecfd','#f5763d|#fdece3'];
+    this.AVD = ['#43d183|rgba(47,196,111,.16)','#7aa7f8|rgba(75,123,245,.16)','#e8b56a|rgba(232,163,61,.16)','#b795f9|rgba(155,110,247,.16)','#f59a6d|rgba(245,118,61,.16)'];
+
+    const w = typeof window!=='undefined' ? window.innerWidth : 1200;
+    this.state = {
+      lang, theme, isMobile:w<=760,
+      users:[
+        {id:1,name:'Jan Kowalski',email:'jan@ekomat.pl',perms:'dashboard,orders,prices,phones,export,sync,add_orders,edit_comments,mark_delivery,manage_users',srcs:'all',active:true,last:'15.07.2026, 09:12'},
+        {id:2,name:'Anna Nowak',email:'anna@ekomat.pl',perms:'dashboard,orders,prices',srcs:'dobraszklarnia,oteko',active:true,last:'15.07.2026, 08:40'},
+        {id:3,name:'Piotr Zieliński',email:'piotr@ekomat.pl',perms:'orders,export,sync',srcs:'all',active:true,last:'14.07.2026, 17:22'},
+        {id:4,name:'Maria Wójcik',email:'maria@ekomat.pl',perms:'dashboard,orders',srcs:'cieplarnia',active:false,last:'02.07.2026, 11:05'}
+      ],
+      modalOpen:false, isEdit:false, editId:null,
+      fName:'', fEmail:'', fPass:'',
+      perms:{}, srcAll:true, srcs:{}, nextId:5
+    };
+  }
+  loc(v,lang){ return (v && typeof v==='object') ? v[lang] : v; }
+  set(k,v){ this.setState({[k]:v}); }
+
+  componentDidMount(){
+    this._onResize=()=>{
+      const m=window.innerWidth<=760;
+      if(m!==this.state.isMobile) this.setState({isMobile:m});
+    };
+    window.addEventListener('resize',this._onResize);
+    this._onResize();
+  }
+  componentWillUnmount(){ if(this._onResize) window.removeEventListener('resize',this._onResize); }
+  initials(n){ return n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+  setLang(l){ this.setState({lang:l}); try{ localStorage.setItem('ekomat_lang',l); }catch(e){} }
+  toggleTheme(){
+    const next=this.state.theme==='dark'?'light':'dark';
+    this.setState({theme:next});
+    try{ localStorage.setItem('ekomat_theme',next); }catch(e){}
+  }
+
+  palette(){
+    const dark=this.state.theme==='dark', st=this.state;
+    const base = dark ? {
+      bg:'#0e0f11', navBg:'rgba(18,19,22,.85)', cardBg:'#16181c', chip:'#22252b', inputBg:'#1b1e23',
+      headBg:'#1a1d21', hoverBg:'#1c1f24',
+      ink:'#f2f3f5', inkSoft:'#c8ccd2', muted:'#9aa0a8', faint:'#6e747c',
+      line:'#282c33', lineSoft:'#21242a', lineStrong:'#3a3f47',
+      btnBg:'#f2f3f5', btnInk:'#111214', btnHover:'#d8dade',
+      dangerInk:'#f08a8a', dangerLine:'#4a2c2c', dangerBg:'#241717',
+      overlay:'rgba(0,0,0,.6)', modalShadow:'0 20px 60px rgba(0,0,0,.5)'
+    } : {
+      bg:'#f6f6f5', navBg:'rgba(255,255,255,.88)', cardBg:'#ffffff', chip:'#f0f0ef', inputBg:'#ffffff',
+      headBg:'#fafafa', hoverBg:'#fafafa',
+      ink:'#111214', inkSoft:'#3a3d42', muted:'#6f747b', faint:'#9ba0a7',
+      line:'#e4e4e2', lineSoft:'#f0f0ee', lineStrong:'#cfcfcc',
+      btnBg:'#111214', btnInk:'#ffffff', btnHover:'#2a2c31',
+      dangerInk:'#dc2626', dangerLine:'#f0d4d4', dangerBg:'#fdeaea',
+      overlay:'rgba(10,10,10,.4)', modalShadow:'0 20px 60px rgba(0,0,0,.18)'
+    };
+    const activeBg=dark?'#31353d':'#ffffff';
+    const shadow=dark?'none':'0 1px 2px rgba(0,0,0,.07)';
+    return {...base,
+      plBg:st.lang==='pl'?activeBg:'transparent', plColor:st.lang==='pl'?base.ink:base.muted, plShadow:st.lang==='pl'?shadow:'none',
+      ruBg:st.lang==='ru'?activeBg:'transparent', ruColor:st.lang==='ru'?base.ink:base.muted, ruShadow:st.lang==='ru'?shadow:'none'
+    };
+  }
+
+  openAdd(){ this.setState({modalOpen:true,isEdit:false,editId:null,fName:'',fEmail:'',fPass:'',perms:{dashboard:true,orders:true},srcAll:true,srcs:{}}); }
+  openEdit(u){
+    const perms={}; u.perms.split(',').forEach(x=>{if(x)perms[x]=true;});
+    const srcAll=!u.srcs||u.srcs==='all';
+    const srcs={}; if(!srcAll) u.srcs.split(',').forEach(s=>{if(s)srcs[s]=true;});
+    this.setState({modalOpen:true,isEdit:true,editId:u.id,fName:u.name,fEmail:u.email,fPass:'',perms,srcAll,srcs});
+  }
+  close(){ this.set('modalOpen',false); }
+  togglePerm(v){ this.setState(s=>({perms:{...s.perms,[v]:!s.perms[v]}})); }
+  toggleAllPerms(){ const all=this.PERMS.every(x=>this.state.perms[x.v]); const np={}; if(!all) this.PERMS.forEach(x=>np[x.v]=true); this.set('perms',np); }
+  toggleSrc(v){ this.setState(s=>({srcs:{...s.srcs,[v]:!s.srcs[v]}})); }
+  toggleSrcAll(){ this.setState(s=>({srcAll:!s.srcAll,srcs:{}})); }
+  save(){
+    const s=this.state;
+    if(!s.fName.trim()||!s.fEmail.trim()) return;
+    const perms=this.PERMS.filter(x=>s.perms[x.v]).map(x=>x.v).join(',');
+    const srcs=s.srcAll?'all':(this.SRCS.filter(x=>s.srcs[x.v]).map(x=>x.v).join(',')||'all');
+    if(s.isEdit){
+      this.setState(st=>({users:st.users.map(u=>u.id===s.editId?{...u,name:s.fName,email:s.fEmail,perms,srcs}:u),modalOpen:false}));
+    } else {
+      const nu={id:s.nextId,name:s.fName,email:s.fEmail,perms,srcs,active:true,last:'—'};
+      this.setState(st=>({users:[...st.users,nu],nextId:st.nextId+1,modalOpen:false}));
+    }
+  }
+  toggleActive(id){ this.setState(st=>({users:st.users.map(u=>u.id===id?{...u,active:!u.active}:u)})); }
+  del(id){ this.setState(st=>({users:st.users.filter(u=>u.id!==id)})); }
+
+  renderVals(){
+    const st=this.state, lang=st.lang, t=this.T[lang];
+    const p=this.palette(), dark=st.theme==='dark';
+    const AV = dark?this.AVD:this.AVL;
+    const okC = dark?'#43d183':'#16a34a';
+    const offC = dark?'#f0a070':'#c2410c';
+
+    const users=st.users.map((u,i)=>{
+      const [c,b]=AV[i%AV.length].split('|');
+      const plist=u.perms.split(',').filter(Boolean);
+      const tags=plist.slice(0,4).map(x=>({label:this.loc(this.TAG[x],lang)||x,color:p.inkSoft,bg:p.chip}));
+      if(plist.length>4) tags.push({label:'+'+(plist.length-4),color:p.faint,bg:p.chip});
+      return {name:u.name,email:u.email,initials:this.initials(u.name),avColor:c,avBg:b,tags,
+        statusLabel:u.active?t.active:t.inactive,statusColor:u.active?okC:offC,
+        lastLogin:u.last,toggleLabel:u.active?t.off:t.on,
+        edit:()=>this.openEdit(u),toggle:()=>this.toggleActive(u.id),del:()=>this.del(u.id)};
+    });
+
+    const perms=this.PERMS.map(x=>({label:this.loc(x.label,lang),desc:this.loc(x.desc,lang),
+      checked:!!st.perms[x.v],toggle:()=>this.togglePerm(x.v)}));
+    const srcs=this.SRCS.map(x=>{
+      const on=!st.srcAll&&!!st.srcs[x.v];
+      return {label:this.loc(x.label,lang),checked:on,toggle:()=>this.toggleSrc(x.v),
+        border:on?(dark?'#2c6343':'#a5d2b7'):p.line,
+        bg:on?(dark?'rgba(47,196,111,.12)':'#e7f4ec'):p.cardBg,
+        color:st.srcAll?p.faint:(on?okC:p.inkSoft)};
+    });
+
+    const mob=st.isMobile;
+    const L = {
+      pad: mob?'20px 16px 56px':'34px 28px 72px',
+      navPad: mob?'10px 16px':'0 28px',
+      navGap: mob?'9px':'0px',
+      linksOrder: mob?4:2,
+      linksW: mob?'100%':'auto',
+      linksML: mob?'0':'22px',
+      ctrlGap: mob?'8px':'12px',
+      hideMeta: mob?'none':'inline',
+      h1: mob?'21px':'24px',
+      addBtnW: mob?'100%':'auto',
+      modalPad: mob?'24px 14px':'48px 20px',
+      formCols: mob?'1fr':'1fr 1fr'
+    };
+
+    return {
+      p, t, L, mob, notMob:!mob, users,
+      subtitle:st.users.length+' '+t.accounts,
+      modalOpen:st.modalOpen, isEdit:st.isEdit,
+      modalTitle:st.isEdit?t.modal_edit:t.modal_add,
+      passPlaceholder:st.isEdit?t.pass_new:t.pass_min,
+      fName:st.fName, fEmail:st.fEmail, fPass:st.fPass,
+      onName:e=>this.set('fName',e.target.value),
+      onEmail:e=>this.set('fEmail',e.target.value),
+      onPass:e=>this.set('fPass',e.target.value),
+      perms, allPerms:this.PERMS.every(x=>st.perms[x.v]),
+      srcs, srcAll:st.srcAll,
+      toggleAllPerms:()=>this.toggleAllPerms(), toggleSrcAll:()=>this.toggleSrcAll(),
+      openAdd:()=>this.openAdd(), close:()=>this.close(), save:()=>this.save(),
+      stop:e=>e.stopPropagation(),
+      setPl:()=>this.setLang('pl'), setRu:()=>this.setLang('ru'),
+      toggleTheme:()=>this.toggleTheme(), themeIcon:dark?'☀':'☾'
+    };
+  }
+}
+</script>
+</body>
+</html>

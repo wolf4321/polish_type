@@ -1,47 +1,64 @@
 <!doctype html>
-<html lang="pl">
+<html lang="pl" data-theme="light">
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
     <title>Logowanie — EKOMAT Dashboard</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-               background: #f3f4f6; display: flex; align-items: center; justify-content: center;
-               min-height: 100vh; }
-        .card { background: #fff; border-radius: 12px; padding: 40px; width: 380px;
-                box-shadow: 0 4px 24px rgba(0,0,0,.08); }
-        .logo { text-align: center; margin-bottom: 8px; }
-        .logo h1 { font-size: 22px; color: #1a1a2e; font-weight: 700; }
-        .logo .sub { font-size: 12px; color: #9ca3af; margin-top: 4px; }
-        h2 { font-size: 16px; margin-bottom: 20px; color: #374151; font-weight: 500; text-align: center; }
-        label { display: block; font-size: 13px; color: #6b7280; margin-bottom: 4px; font-weight: 500; }
-        input { width: 100%; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 8px;
-                font-size: 14px; margin-bottom: 16px; outline: none; transition: border-color .2s; }
-        input:focus { border-color: #1a1a2e; }
-        button { width: 100%; padding: 11px; background: #1a1a2e; color: #fff; border: none;
-                 border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
-                 transition: background .2s; }
-        button:hover { background: #2d2d5e; }
-        .error { color: #dc2626; font-size: 13px; margin-bottom: 12px; text-align: center;
-                 background: #fef2f2; padding: 8px 12px; border-radius: 6px; }
-    </style>
+
+    <script>
+      /* тему ставим до отрисовки, чтобы не мигало белым */
+      (function(){try{var t=localStorage.getItem('ekomat_theme');
+        if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/theme.css">
 </head>
 <body>
-    <div class="card">
-        <div class="logo">
-            <h1>EKOMAT Dashboard</h1>
-            <div class="sub">Panel analityczny</div>
+    <div class="screen">
+
+        <div class="switches screen-switches">
+            <div class="seg">
+                <button type="button" data-lang="pl">PL</button>
+                <button type="button" data-lang="ru">RU</button>
+            </div>
+            <button type="button" class="theme-toggle" data-theme-toggle data-i18n-title="theme">&#9790;</button>
         </div>
-        <br/>
-        {% if error %}<div class="error">{{ error }}</div>{% endif %}
-        <form method="POST" action="/login">
-            <label for="email">Email</label>
-            <input type="email" name="email" id="email" placeholder="jan@ekomat.pl" autofocus required>
-            <label for="password">Hasło</label>
-            <input type="password" name="password" id="password" placeholder="••••••••" required>
-            <button type="submit">Zaloguj się</button>
-        </form>
+
+        <div style="width:392px;max-width:100%;">
+
+            <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:26px;">
+                <span class="logo" style="font-size:23px;margin-bottom:8px;">ekomat<span class="dot">.</span></span>
+                <p style="font-size:13px;color:var(--muted);margin:0;" data-i18n="panel">Panel analityczny</p>
+            </div>
+
+            <div class="card" style="padding:30px;">
+                <h2 style="font-size:15px;font-weight:600;text-align:center;color:var(--ink-soft);margin:0 0 22px;letter-spacing:-.025em;"
+                    data-i18n="signin">Zaloguj się do konta</h2>
+
+                {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+                <form method="POST" action="/login">
+                    <label class="field-label" for="email" data-i18n="email">Email</label>
+                    <input class="field" style="margin-bottom:16px;" type="email" name="email" id="email"
+                           placeholder="jan@ekomat.pl" autocomplete="username" autofocus required>
+
+                    <label class="field-label" for="password" data-i18n="password">Hasło</label>
+                    <input class="field" style="margin-bottom:22px;" type="password" name="password" id="password"
+                           placeholder="••••••••" autocomplete="current-password" required>
+
+                    <button class="btn btn-block" type="submit" data-i18n="signin_btn">Zaloguj się</button>
+                </form>
+            </div>
+
+            <p style="text-align:center;font-size:12px;color:var(--faint);margin:18px 0 0;">
+                © 2026 EKOMAT · <span data-i18n="rights">Wszystkie prawa zastrzeżone</span>
+            </p>
+        </div>
     </div>
+
+    <script src="/static/i18n.js"></script>
 </body>
 </html>

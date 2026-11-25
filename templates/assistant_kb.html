@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="pl" data-theme="light">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Asystent — EKOMAT Dashboard</title>
+    <script>
+      (function(){try{var t=localStorage.getItem('ekomat_theme');
+        if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/theme.css">
+    <style>
+        .kb-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;}
+        .kb-grid{display:grid;grid-template-columns:1fr 1.6fr;gap:16px;align-items:start;}
+        .kb-unk li{list-style:none;padding:7px 0;border-top:1px solid var(--line);font-size:13px;cursor:pointer;display:flex;justify-content:space-between;gap:10px;}
+        .kb-unk li:first-child{border-top:none;}
+        .kb-unk li:hover{color:var(--accent);}
+        .kb-unk ul{margin:0;padding:0;max-height:520px;overflow:auto;}
+        .kb-n{color:var(--faint);font-size:12px;flex-shrink:0;}
+        .kb-item{border-top:1px solid var(--line);padding:10px 0;}
+        .kb-item:first-child{border-top:none;}
+        .kb-q{font-weight:600;font-size:13.5px;cursor:pointer;}
+        .kb-q:hover{text-decoration:underline;}
+        .kb-a{font-size:13px;color:var(--ink-soft);white-space:pre-wrap;margin-top:3px;}
+        .kb-meta{font-size:11px;color:var(--faint);margin-top:3px;}
+        .kb-off{opacity:.5;}
+        .kb-list{max-height:620px;overflow:auto;}
+        .modal{max-width:560px;}
+        .modal textarea.field{min-height:110px;}
+        .kb-tools{display:flex;gap:8px;margin-bottom:10px;}
+        .kb-tools input{flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:9px;font:13px inherit;background:var(--input-bg);color:var(--ink);}
+        @media (max-width:800px){.kb-grid{grid-template-columns:1fr;}.kb-stats{grid-template-columns:1fr 1fr;}}
+    </style>
+</head>
+<body>
+<nav class="nav">
+    <span class="nav-logo">ekomat<span style="color:var(--accent);">.</span></span>
+    <div class="nav-links">
+        {% if user and 'dashboard' in (user.permissions or '').split(',') %}<a href="/" data-i18n="nav_dash">Pulpit</a>{% endif %}
+        {% if user and 'orders' in (user.permissions or '').split(',') %}<a href="/orders" data-i18n="nav_orders">Zamówienia</a>{% endif %}
+        {% if user and 'products' in (user.permissions or '').split(',') %}<a href="/products" data-i18n="nav_products">Katalog</a>{% endif %}
+        <a href="/assistant" class="active" data-i18n="nav_assistant">Asystent</a>
+        {% if user and 'manage_users' in (user.permissions or '').split(',') %}<a href="/admin/users" data-i18n="nav_users">Użytkownicy</a>{% endif %}
+    </div>
+    <div class="nav-right">
+        <div class="seg"><button type="button" data-lang="pl">PL</button><button type="button" data-lang="ru">RU</button></div>
+        <button type="button" class="theme-toggle" data-theme-toggle data-i18n-title="theme">&#9790;</button>
+        {% if user %}<div class="nav-sep"></div><span class="nav-user">{{ user.name }}</span><a href="/logout" class="logout" data-i18n="logout">Wyloguj</a>{% endif %}
+    </div>
+</nav>
+
+<main class="main">
+    <div class="page-head">
+        <div>
+            <h1 data-i18n="kb_title">Asystent — baza wiedzy</h1>
+            <p class="sub" data-i18n="kb_sub">Czego asystent nie wiedział i czego się nauczył</p>
+        </div>
+        <div class="filters"><button class="btn-sm" onclick="openKb(null)" data-i18n="kb_add">+ Dodaj odpowiedź</button></div>
+    </div>
+
+    <div class="kb-stats">
+        <div class="stat-card"><div class="label" data-i18n="st_total">Pytań (30 dni)</div><div class="value num" id="st-total">—</div></div>
+        <div class="stat-card"><div class="label" data-i18n="st_ans">Z odpowiedzią</div><div class="value num" id="st-ans">—</div></div>
+        <div class="stat-card"><div class="label">👍</div><div class="value num" id="st-good">—</div></div>
+        <div class="stat-card"><div class="label">👎</div><div class="value num" id="st-bad">—</div></div>
+    </div>
+
+    <div class="kb-grid">
+        <div class="section kb-unk" data-help="Pytania, na które asystent nie znał odpowiedzi albo dostał 👎. Kliknij, żeby dopisać odpowiedź.">
+            <h3 style="margin-bottom:10px;" data-i18n="kb_unknown">Bez odpowiedzi / 👎</h3>
+            <ul id="unk"></ul>
+        </div>
+        <div class="section">
+            <div class="kb-tools"><input type="text" id="q" data-i18n-ph="kb_search" placeholder="Szukaj w bazie" oninput="render()"></div>
+            <div class="kb-list" id="kb"></div>
+        </div>
+    </div>
+</main>
+
+<div class="modal-overlay" id="kb-modal">
+    <div class="modal">
+        <h3 id="m-title"></h3>
+        <label class="field-label" data-i18n="kb_q">Pytanie (jak zapytają ludzie)</label>
+        <input type="text" class="field" id="f-q">
+        <label class="field-label" data-i18n="kb_a">Odpowiedź</label>
+        <textarea class="field" id="f-a"></textarea>
+        <div class="check-row"><input type="checkbox" id="f-on" checked><label for="f-on" data-i18n="kb_on">Aktywna</label></div>
+        <div class="modal-actions">
+            <button class="btn-quiet" onclick="closeKb()" data-i18n="cancel">Anuluj</button>
+            <button class="btn-sm" onclick="saveKb()" data-i18n="save">Zapisz</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/i18n.js"></script>
+<script>
+EKOMAT.extend({
+  pl:{nav_dash:'Pulpit',nav_orders:'Zamówienia',nav_products:'Katalog',nav_assistant:'Asystent',nav_users:'Użytkownicy',logout:'Wyloguj',
+      kb_title:'Asystent — baza wiedzy',kb_sub:'Czego asystent nie wiedział i czego się nauczył',kb_add:'+ Dodaj odpowiedź',
+      st_total:'Pytań (30 dni)',st_ans:'Z odpowiedzią',kb_unknown:'Bez odpowiedzi / 👎',kb_search:'Szukaj w bazie',
+      kb_q:'Pytanie (jak zapytają ludzie)',kb_a:'Odpowiedź',kb_on:'Aktywna',cancel:'Anuluj',save:'Zapisz',
+      kb_new:'Nowa odpowiedź',kb_edit:'Edycja odpowiedzi',kb_none:'Wszystko z odpowiedzią 🎉',kb_by:'dodał',kb_off:'wyłączona'},
+  ru:{nav_dash:'Сводка',nav_orders:'Заказы',nav_products:'Каталог',nav_assistant:'Помощник',nav_users:'Пользователи',logout:'Выйти',
+      kb_title:'Помощник — база знаний',kb_sub:'Чего помощник не знал и чему научился',kb_add:'+ Добавить ответ',
+      st_total:'Вопросов (30 дней)',st_ans:'С ответом',kb_unknown:'Без ответа / 👎',kb_search:'Поиск по базе',
+      kb_q:'Вопрос (как спросят люди)',kb_a:'Ответ',kb_on:'Активен',cancel:'Отмена',save:'Сохранить',
+      kb_new:'Новый ответ',kb_edit:'Редактирование ответа',kb_none:'Всё с ответами 🎉',kb_by:'добавил',kb_off:'выключен'}
+});
+var T=function(k){return EKOMAT.t(k);}, KB=[], EDIT=null;
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function load(){
+  fetch('/api/assistant/kb').then(function(r){return r.json();}).then(function(d){
+    KB=d.kb||[];
+    var s=d.stats||{};
+    document.getElementById('st-total').textContent=s.total||0;
+    document.getElementById('st-ans').textContent=s.answered||0;
+    document.getElementById('st-good').textContent=s.good||0;
+    document.getElementById('st-bad').textContent=s.bad||0;
+    var u=document.getElementById('unk');
+    u.innerHTML=(d.unknown||[]).map(function(x,i){return '<li data-i="'+i+'"><span>'+esc(x.question)+'</span><span class="kb-n">×'+x.n+'</span></li>';}).join('')||'<li>'+esc(T('kb_none'))+'</li>';
+    u.querySelectorAll('li[data-i]').forEach(function(li){li.onclick=function(){openKb(null,(d.unknown[+li.dataset.i]||{}).question);};});
+    render();
+  });
+}
+function render(){
+  var q=document.getElementById('q').value.trim().toLowerCase();
+  document.getElementById('kb').innerHTML=KB.filter(function(k){return !q||(k.question+' '+k.answer).toLowerCase().indexOf(q)>=0;}).map(function(k){
+    return '<div class="kb-item'+(k.active?'':' kb-off')+'"><div class="kb-q" onclick="openKb('+k.id+')">'+esc(k.question)+'</div>'
+      +'<div class="kb-a">'+esc(k.answer)+'</div><div class="kb-meta">👍 '+k.helpful+' · 👎 '+k.unhelpful+' · '+esc(T('kb_by'))+' '+esc(k.created_by||'—')
+      +(k.active?'':' · '+esc(T('kb_off')))+'</div></div>';
+  }).join('');
+}
+function openKb(id,q){
+  var k=null; KB.forEach(function(x){if(x.id===id)k=x;}); EDIT=k?k.id:null;
+  document.getElementById('m-title').textContent=k?T('kb_edit'):T('kb_new');
+  document.getElementById('f-q').value=k?k.question:(q||'');
+  document.getElementById('f-a').value=k?k.answer:'';
+  document.getElementById('f-on').checked=k?!!k.active:true;
+  document.getElementById('kb-modal').classList.add('open');
+  document.getElementById(k||q?'f-a':'f-q').focus();
+}
+function closeKb(){document.getElementById('kb-modal').classList.remove('open');}
+function saveKb(){
+  fetch('/api/assistant/kb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:EDIT,question:document.getElementById('f-q').value,answer:document.getElementById('f-a').value,active:document.getElementById('f-on').checked})})
+  .then(function(r){return r.json();}).then(function(d){if(d.ok){closeKb();load();}});
+}
+window.onEkomatLangChange=function(){load();};
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeKb();});
+load();
+</script>
+<script src="/static/help.js" defer></script>
+<script src="/static/assistant.js" defer></script>
+</body>
+</html>

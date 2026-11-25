@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  html,body{margin:0;padding:0;}
+  *{box-sizing:border-box;}
+  body{font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;transition:background-color .2s ease,color .2s ease;}
+  a{text-decoration:none;transition:color .15s ease;}
+  input,select,button{font-family:inherit;letter-spacing:-.01em;}
+  input:focus,select:focus{outline:none;}
+  .num{font-family:'IBM Plex Mono',ui-monospace,monospace;font-feature-settings:"tnum" 1;letter-spacing:-.03em;}
+  .card{transition:background-color .2s ease,border-color .2s ease,box-shadow .2s ease;}
+  .navlink{transition:background-color .15s ease,color .15s ease;}
+  .rowline{transition:background-color .15s ease;}
+</style>
+</helmet>
+<div style="min-height:100vh;background:{{ p.bg }};color:{{ p.ink }};">
+  <nav style="display:flex;align-items:center;flex-wrap:wrap;gap:{{ L.navGap }};padding:{{ L.navPad }};min-height:58px;border-bottom:1px solid {{ p.line }};position:sticky;top:0;z-index:20;background:{{ p.navBg }};backdrop-filter:blur(8px);">
+    <span style="order:1;font-weight:600;font-size:15.5px;letter-spacing:-.04em;">ekomat<span style="color:#16a34a;">.</span></span>
+    <div style="order:{{ L.linksOrder }};width:{{ L.linksW }};margin-left:{{ L.linksML }};display:flex;align-items:center;gap:2px;overflow-x:auto;">
+      <a href="Dashboard.dc.html" class="navlink" style="font-size:13px;font-weight:600;color:{{ p.ink }};padding:6px 12px;border-radius:8px;background:{{ p.chip }};white-space:nowrap;">{{ t.nav_dash }}</a>
+      <a href="Orders.dc.html" class="navlink" style="font-size:13px;font-weight:500;color:{{ p.muted }};padding:6px 12px;border-radius:8px;white-space:nowrap;" style-hover="background:{{ p.chip }};color:{{ p.ink }};">{{ t.nav_orders }}</a>
+      <a href="Users.dc.html" class="navlink" style="font-size:13px;font-weight:500;color:{{ p.muted }};padding:6px 12px;border-radius:8px;white-space:nowrap;" style-hover="background:{{ p.chip }};color:{{ p.ink }};">{{ t.nav_users }}</a>
+    </div>
+    <div style="order:3;margin-left:auto;display:flex;align-items:center;gap:{{ L.ctrlGap }};">
+      <div style="display:flex;background:{{ p.chip }};border-radius:9px;padding:2px;">
+        <button onClick="{{ setPl }}" style="border:none;cursor:pointer;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:7px;background:{{ p.plBg }};color:{{ p.plColor }};box-shadow:{{ p.plShadow }};transition:all .15s ease;">PL</button>
+        <button onClick="{{ setRu }}" style="border:none;cursor:pointer;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:7px;background:{{ p.ruBg }};color:{{ p.ruColor }};box-shadow:{{ p.ruShadow }};transition:all .15s ease;">RU</button>
+      </div>
+      <button onClick="{{ toggleTheme }}" title="{{ t.theme }}" style="width:32px;height:32px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1px solid {{ p.line }};border-radius:9px;background:{{ p.cardBg }};cursor:pointer;font-size:14px;color:{{ p.muted }};transition:all .15s ease;" style-hover="color:{{ p.ink }};border-color:{{ p.lineStrong }};">{{ themeIcon }}</button>
+      <div style="width:1px;height:18px;background:{{ p.line }};display:{{ L.hideMeta }};"></div>
+      <span style="font-size:13px;color:{{ p.muted }};display:{{ L.hideMeta }};">Jan Kowalski</span>
+      <a href="Login.dc.html" style="font-size:13px;color:{{ p.muted }};font-weight:500;white-space:nowrap;" style-hover="color:{{ p.ink }};">{{ t.logout }}</a>
+    </div>
+  </nav>
+
+  <main style="max-width:1240px;margin:0 auto;padding:{{ L.pad }};">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:24px;">
+      <div>
+        <h1 style="font-size:{{ L.h1 }};font-weight:600;letter-spacing:-.045em;margin:0 0 5px;">{{ t.dashboard }}</h1>
+        <p style="font-size:13px;color:{{ p.muted }};margin:0;">{{ t.subtitle }}</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <input type="date" value="2026-04-16" class="num" style="padding:8px 11px;border:1px solid {{ p.line }};border-radius:9px;font-size:12.5px;color:{{ p.ink }};background:{{ p.cardBg }};" style-focus="border-color:{{ p.inkSoft }};">
+        <span style="color:{{ p.faint }};">—</span>
+        <input type="date" value="2026-07-15" class="num" style="padding:8px 11px;border:1px solid {{ p.line }};border-radius:9px;font-size:12.5px;color:{{ p.ink }};background:{{ p.cardBg }};" style-focus="border-color:{{ p.inkSoft }};">
+        <select style="padding:8px 28px 8px 11px;border:1px solid {{ p.line }};border-radius:9px;font-size:12.5px;color:{{ p.ink }};background:{{ p.cardBg }};">
+          <option>{{ t.all_sources }}</option><option>dobraszklarnia.pl</option><option>oteko.pl</option><option>cieplarnia.pl</option><option>Allegro</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:{{ L.statsCols }};gap:14px;margin-bottom:14px;">
+      <sc-for list="{{ stats }}" as="s" hint-placeholder-count="4">
+        <div class="card" style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:14px;padding:{{ L.cardPad }};">
+          <div style="font-size:12px;color:{{ p.muted }};font-weight:500;margin-bottom:13px;">{{ s.label }}</div>
+          <div class="num" style="font-size:{{ L.statValue }};font-weight:600;line-height:1;letter-spacing:-.04em;">{{ s.value }}</div>
+          <div style="display:flex;align-items:center;gap:7px;margin-top:12px;">
+            <span class="num" style="font-size:11.5px;font-weight:600;color:{{ s.trendColor }};background:{{ s.trendBg }};padding:2px 7px;border-radius:6px;">{{ s.trend }}</span>
+            <span style="font-size:12px;color:{{ p.faint }};">{{ s.sub }}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div class="card" style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:14px;padding:{{ L.sectionPad }};margin-bottom:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+        <h3 style="font-size:14px;font-weight:600;margin:0;letter-spacing:-.02em;">{{ t.chart_title }}</h3>
+        <div style="display:flex;gap:18px;">
+          <div style="display:flex;align-items:center;gap:7px;font-size:12px;color:{{ p.muted }};"><span style="width:11px;height:11px;border-radius:3px;background:{{ p.barFill }};border:1px solid {{ p.barLine }};"></span>{{ t.revenue }}</div>
+          <div style="display:flex;align-items:center;gap:7px;font-size:12px;color:{{ p.muted }};"><span style="width:14px;height:3px;border-radius:2px;background:{{ p.accent }};"></span>{{ t.orders }}</div>
+        </div>
+      </div>
+      <div style="position:relative;height:{{ L.chartH }};"><canvas id="dailyChart" ref="{{ chartRef }}"></canvas></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:{{ L.splitCols }};gap:14px;margin-bottom:14px;">
+      <div class="card" style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:14px;padding:{{ L.sectionPad }};">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px;">
+          <h3 style="font-size:14px;font-weight:600;margin:0;letter-spacing:-.02em;">{{ t.by_source }}</h3>
+          <span class="num" style="font-size:12px;color:{{ p.faint }};">{{ totalOrders }} {{ t.ord_short }}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;">
+          <sc-for list="{{ sourceRows }}" as="r" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:15px;padding:8px 0;border-bottom:1px solid {{ p.lineSoft }};">
+              <div style="width:{{ L.srcLabelW }};flex-shrink:0;display:flex;align-items:center;gap:9px;padding-left:{{ r.indent }};">
+                <span style="width:8px;height:8px;border-radius:3px;background:{{ r.color }};flex-shrink:0;"></span>
+                <span style="font-size:13px;font-weight:{{ r.weight }};color:{{ r.textColor }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.label }}</span>
+              </div>
+              <div style="flex:1;height:8px;background:{{ p.track }};border-radius:4px;overflow:hidden;">
+                <div style="height:100%;border-radius:4px;background:{{ r.color }};width:{{ r.width }};transition:width .4s ease;"></div>
+              </div>
+              <span class="num" style="width:{{ L.cntW }};text-align:right;font-size:13px;font-weight:600;flex-shrink:0;">{{ r.cnt }}</span>
+              <span class="num" style="width:{{ L.revW }};text-align:right;font-size:12.5px;color:{{ p.muted }};flex-shrink:0;white-space:nowrap;">{{ r.revenue }}</span>
+            </div>
+          </sc-for>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding-top:15px;margin-top:4px;">
+            <span style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:{{ p.muted }};">{{ t.total }}</span>
+            <div style="display:flex;gap:20px;"><span class="num" style="font-size:14px;font-weight:600;">{{ totalOrders }}</span><span class="num" style="font-size:14px;font-weight:600;color:{{ p.accent }};white-space:nowrap;">{{ totalRevenue }} zł</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:14px;padding:{{ L.sectionPad }};">
+        <h3 style="font-size:14px;font-weight:600;margin:0 0 4px;letter-spacing:-.02em;">{{ t.devices }}</h3>
+        <p style="font-size:12px;color:{{ p.faint }};margin:0 0 18px;">dobraszklarnia.pl</p>
+        <div style="display:flex;flex-direction:column;gap:18px;">
+          <sc-for list="{{ devices }}" as="d" hint-placeholder-count="3">
+            <div>
+              <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;">
+                <span style="font-size:13px;font-weight:500;">{{ d.name }}</span>
+                <span class="num" style="font-size:12.5px;color:{{ p.muted }};"><b style="color:{{ p.ink }};font-weight:600;">{{ d.cnt }}</b> · {{ d.pct }}</span>
+              </div>
+              <div style="height:8px;background:{{ p.track }};border-radius:4px;overflow:hidden;"><div style="height:100%;border-radius:4px;background:{{ d.color }};width:{{ d.width }};transition:width .4s ease;"></div></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:{{ L.pairCols }};gap:14px;">
+      <div class="card" style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:14px;padding:{{ L.sectionPad }};">
+        <h3 style="font-size:14px;font-weight:600;margin:0 0 14px;letter-spacing:-.02em;">{{ t.campaigns }}</h3>
+        <div style="display:flex;flex-direction:column;">
+          <sc-for list="{{ campaigns }}" as="c" hint-placeholder-count="4">
+            <div style="display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid {{ p.lineSoft }};">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ c.name }}</div>
+                <span style="font-size:11.5px;font-weight:500;color:{{ c.color }};">{{ c.source }}</span>
+              </div>
+              <span class="num" style="width:52px;text-align:right;font-size:13px;font-weight:600;">{{ c.cnt }}</span>
+              <span class="num" style="width:96px;text-align:right;font-size:12.5px;color:{{ p.muted }};">{{ c.revenue }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div class="card" style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:14px;padding:{{ L.sectionPad }};">
+        <h3 style="font-size:14px;font-weight:600;margin:0 0 14px;letter-spacing:-.02em;">{{ t.sync_status }}</h3>
+        <div style="display:flex;flex-direction:column;">
+          <sc-for list="{{ syncs }}" as="s" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid {{ p.lineSoft }};gap:10px;">
+              <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+                <span style="width:7px;height:7px;border-radius:50%;background:{{ s.dot }};flex-shrink:0;"></span>
+                <span style="font-size:13px;font-weight:500;white-space:nowrap;">{{ s.name }}</span>
+                <span style="font-size:11px;font-weight:600;color:{{ s.statusColor }};background:{{ s.statusBg }};padding:2px 8px;border-radius:6px;white-space:nowrap;">{{ s.status }}</span>
+                <span style="font-size:12px;color:{{ p.faint }};white-space:nowrap;">{{ s.added }}</span>
+              </div>
+              <span class="num" style="font-size:12px;color:{{ p.faint }};white-space:nowrap;">{{ s.time }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(props){
+    super(props);
+    let lang='pl', theme='light';
+    try{ lang=localStorage.getItem('ekomat_lang')||'pl'; theme=localStorage.getItem('ekomat_theme')||'light'; }catch(e){}
+    const w = typeof window!=='undefined' ? window.innerWidth : 1200;
+    this.state = { lang, theme, isMobile:w<=760, isNarrow:w<=1040 };
+
+    this.SRC = {
+      dobraszklarnia:{label:'dobraszklarnia.pl',color:'#4b7bf5'},
+      oteko:{label:'oteko.pl',color:'#e8a33d'},
+      cieplarnia:{label:'cieplarnia.pl',color:'#22b062'},
+      allegro:{label:'Allegro',color:'#f5763d'},
+      manual:{label:{pl:'Ręczne',ru:'Вручную'},color:'#9b6ef7'}
+    };
+    this.T = {
+      pl:{nav_dash:'Pulpit',nav_orders:'Zamówienia',nav_users:'Użytkownicy',logout:'Wyloguj',theme:'Motyw',
+        dashboard:'Pulpit',subtitle:'Ostatnie 90 dni · 5 kanałów sprzedaży',all_sources:'Wszystkie źródła',
+        chart_title:'Zamówienia i przychód dziennie',revenue:'Przychód',orders:'Zamówienia',
+        by_source:'Zamówienia wg źródła',ord_short:'zam.',total:'Razem',devices:'Urządzenia',
+        campaigns:'Kampanie reklamowe',sync_status:'Status synchronizacji',
+        st_orders:'Zamówienia',st_revenue:'Przychód, zł',st_avg:'Śr. wartość zam.',st_channels:'Aktywne kanały',
+        sub_today:'+25 dziś',sub_prev:'vs. poprz.',sub_avg:'zł / zam.',sub_market:'+1 marketplace',ch_www:'4 www',
+        sync_ok:'ok',sync_run:'w trakcie',sync_new:'nowych',inprogress:'w trakcie'},
+      ru:{nav_dash:'Панель',nav_orders:'Заказы',nav_users:'Пользователи',logout:'Выйти',theme:'Тема',
+        dashboard:'Панель',subtitle:'Последние 90 дней · 5 каналов продаж',all_sources:'Все источники',
+        chart_title:'Заказы и выручка по дням',revenue:'Выручка',orders:'Заказы',
+        by_source:'Заказы по источникам',ord_short:'зак.',total:'Итого',devices:'Устройства',
+        campaigns:'Рекламные кампании',sync_status:'Статус синхронизации',
+        st_orders:'Заказы',st_revenue:'Выручка, zł',st_avg:'Ср. чек',st_channels:'Активные каналы',
+        sub_today:'+25 сегодня',sub_prev:'к пред.',sub_avg:'zł / зак.',sub_market:'+1 маркетплейс',ch_www:'4 сайта',
+        sync_ok:'ок',sync_run:'идёт',sync_new:'новых',inprogress:'идёт'}
+    };
+    this.data = {
+      bySource:[
+        {source:'dobraszklarnia',cnt:1240,revenue:486200},
+        {source:'allegro',cnt:890,revenue:312400},
+        {source:'oteko',cnt:430,revenue:158900},
+        {source:'cieplarnia',cnt:210,revenue:78300},
+        {source:'manual',cnt:64,revenue:29100}
+      ],
+      sellers:[
+        {seller:'mantrade',cnt:520,revenue:190200},
+        {seller:'drogatrade',cnt:240,revenue:84600},
+        {seller:'mega-agronom',cnt:130,revenue:37600}
+      ],
+      campaigns:[
+        {name:'brand_szklarnie_2026',source:'Google Ads',color:'#4b7bf5',cnt:210,revenue:96000},
+        {name:'remarketing_fb',source:'Facebook Ads',color:'#9b6ef7',cnt:140,revenue:61000},
+        {name:'pergole_spring',source:'Google Ads',color:'#4b7bf5',cnt:96,revenue:44200},
+        {name:'newsletter_maj',source:'Direct',color:'#8a8a8a',cnt:60,revenue:21800}
+      ],
+      devices:[
+        {name:{pl:'Desktop',ru:'Компьютер'},color:'#4b7bf5',cnt:720},
+        {name:{pl:'Mobile',ru:'Смартфон'},color:'#e8a33d',cnt:470},
+        {name:{pl:'Tablet',ru:'Планшет'},color:'#22b062',cnt:50}
+      ],
+      syncs:[
+        {source:'dobraszklarnia',status:'ok',added:12,time:'15.07 · 08:12'},
+        {source:'allegro',status:'ok',added:5,time:'15.07 · 08:10'},
+        {source:'oteko',status:'ok',added:3,time:'15.07 · 08:09'},
+        {source:'cieplarnia',status:'running',added:0,time:null},
+        {source:'manual',status:'ok',added:0,time:'14.07 · 22:40'}
+      ]
+    };
+  }
+
+  fmt(n){ return (n||0).toLocaleString('pl-PL'); }
+  loc(v,lang){ return (v && typeof v==='object') ? v[lang] : v; }
+
+  setLang(l){ this.setState({lang:l}); try{ localStorage.setItem('ekomat_lang',l); }catch(e){} }
+  toggleTheme(){
+    const next = this.state.theme==='dark'?'light':'dark';
+    this.setState({theme:next});
+    try{ localStorage.setItem('ekomat_theme',next); }catch(e){}
+    if(this._chart){ try{ this._chart.destroy(); }catch(e){} this._chart=null; }
+    setTimeout(()=>{
+      const el=this._live||document.getElementById('dailyChart');
+      if(el){ this._live=el; this._tick(el); }
+    },30);
+  }
+
+  componentDidMount(){
+    this._onResize=()=>{
+      const w=window.innerWidth;
+      const m=w<=760, n=w<=1040;
+      if(m!==this.state.isMobile || n!==this.state.isNarrow) this.setState({isMobile:m,isNarrow:n});
+    };
+    window.addEventListener('resize',this._onResize);
+    this._onResize();
+  }
+
+  palette(){
+    const dark = this.state.theme==='dark';
+    const st = this.state;
+    const base = dark ? {
+      bg:'#0e0f11', navBg:'rgba(18,19,22,.85)', cardBg:'#16181c', chip:'#22252b',
+      ink:'#f2f3f5', inkSoft:'#c8ccd2', muted:'#9aa0a8', faint:'#6e747c',
+      line:'#282c33', lineSoft:'#21242a', lineStrong:'#3a3f47', track:'#24272d',
+      accent:'#2fc46f', barFill:'#1d3b2a', barLine:'#2c6343',
+      gridLine:'#21242a', tickColor:'#6e747c'
+    } : {
+      bg:'#f6f6f5', navBg:'rgba(255,255,255,.88)', cardBg:'#ffffff', chip:'#f0f0ef',
+      ink:'#111214', inkSoft:'#3a3d42', muted:'#6f747b', faint:'#9ba0a7',
+      line:'#e4e4e2', lineSoft:'#f0f0ee', lineStrong:'#cfcfcc', track:'#f0f0ee',
+      accent:'#16a34a', barFill:'#d9ebe0', barLine:'#a5d2b7',
+      gridLine:'#f0f0ee', tickColor:'#9ba0a7'
+    };
+    const activeBg = dark?'#31353d':'#ffffff';
+    const shadow = dark?'none':'0 1px 2px rgba(0,0,0,.07)';
+    return {...base,
+      plBg:st.lang==='pl'?activeBg:'transparent', plColor:st.lang==='pl'?base.ink:base.muted, plShadow:st.lang==='pl'?shadow:'none',
+      ruBg:st.lang==='ru'?activeBg:'transparent', ruColor:st.lang==='ru'?base.ink:base.muted, ruShadow:st.lang==='ru'?shadow:'none'
+    };
+  }
+
+  renderVals(){
+    const d = this.data, S = this.SRC, lang = this.state.lang, t = this.T[lang];
+    const p = this.palette();
+    const dark = this.state.theme==='dark';
+    const totalOrders = d.bySource.reduce((a,s)=>a+s.cnt,0);
+    const totalRevenue = d.bySource.reduce((a,s)=>a+s.revenue,0);
+    const maxCnt = Math.max(...d.bySource.map(s=>s.cnt));
+
+    const posC = dark?'#43d183':'#15803d';
+    const posB = dark?'rgba(47,196,111,.14)':'#e7f4ec';
+    const neuC = p.muted, neuB = p.chip;
+
+    const stats = [
+      {label:t.st_orders,value:this.fmt(totalOrders),trend:'+8,2%',sub:t.sub_today,trendColor:posC,trendBg:posB},
+      {label:t.st_revenue,value:this.fmt(totalRevenue),trend:'+11,4%',sub:t.sub_prev,trendColor:posC,trendBg:posB},
+      {label:t.st_avg,value:this.fmt(Math.round(totalRevenue/totalOrders)),trend:'+3,0%',sub:t.sub_avg,trendColor:posC,trendBg:posB},
+      {label:t.st_channels,value:'5',trend:t.ch_www,sub:t.sub_market,trendColor:neuC,trendBg:neuB}
+    ];
+
+    const sourceRows = [];
+    d.bySource.forEach(s=>{
+      const m = S[s.source];
+      sourceRows.push({label:this.loc(m.label,lang),color:m.color,textColor:p.ink,weight:600,indent:'0px',
+        width:Math.max(5,(s.cnt/maxCnt)*100)+'%',cnt:this.fmt(s.cnt),revenue:this.fmt(s.revenue)+' zł'});
+      if(s.source==='allegro'){
+        d.sellers.forEach(sl=>{
+          sourceRows.push({label:sl.seller,color:dark?'#7a4a32':'#f8c4a4',textColor:p.faint,weight:400,indent:'16px',
+            width:Math.max(5,(sl.cnt/maxCnt)*100)+'%',cnt:this.fmt(sl.cnt),revenue:this.fmt(sl.revenue)+' zł'});
+        });
+      }
+    });
+
+    const campaigns = d.campaigns.map(c=>({name:c.name,source:c.source,color:c.color,
+      cnt:this.fmt(c.cnt),revenue:this.fmt(c.revenue)+' zł'}));
+
+    const devTotal = d.devices.reduce((a,x)=>a+x.cnt,0);
+    const devices = d.devices.map(x=>({name:this.loc(x.name,lang),color:x.color,cnt:this.fmt(x.cnt),
+      pct:Math.round((x.cnt/devTotal)*100)+'%',width:Math.max(4,(x.cnt/devTotal)*100)+'%'}));
+
+    const syncStyle={
+      ok:{dot:'#22b062',c:posC,b:posB,t:t.sync_ok},
+      running:{dot:'#e8a33d',c:dark?'#e8b56a':'#b45309',b:dark?'rgba(232,163,61,.14)':'#fbf0dd',t:t.sync_run}
+    };
+    const syncs = d.syncs.map(s=>{
+      const stl=syncStyle[s.status], m=S[s.source];
+      return {name:this.loc(m.label,lang),status:stl.t,statusColor:stl.c,statusBg:stl.b,dot:stl.dot,
+        added:s.added>0?'+'+s.added+' '+t.sync_new:'',time:s.time||t.inprogress};
+    });
+
+    const mob=this.state.isMobile, nar=this.state.isNarrow;
+    const L = {
+      pad: mob?'20px 16px 56px':'34px 28px 72px',
+      navPad: mob?'0 16px':'0 28px',
+      statsCols: mob?'repeat(2,1fr)':'repeat(4,1fr)',
+      splitCols: nar?'1fr':'1.2fr 1fr',
+      pairCols: nar?'1fr':'1fr 1fr',
+      cardPad: mob?'16px 17px':'18px 20px',
+      sectionPad: mob?'18px 17px':'22px 24px',
+      statValue: mob?'23px':'28px',
+      h1: mob?'21px':'24px',
+      chartH: mob?'220px':'290px',
+      srcLabelW: mob?'132px':'206px',
+      revW: mob?'74px':'90px',
+      cntW: mob?'42px':'50px',
+      hideMeta: mob?'none':'inline',
+      legendWrap: mob?'wrap':'nowrap',
+      navPad: mob?'10px 16px':'0 28px',
+      navGap: mob?'9px':'0px',
+      linksOrder: mob?4:2,
+      linksW: mob?'100%':'auto',
+      linksML: mob?'0':'22px',
+      ctrlGap: mob?'8px':'12px'
+    };
+
+    return {p,t,L,stats,sourceRows,campaigns,devices,syncs,
+      totalOrders:this.fmt(totalOrders),totalRevenue:this.fmt(totalRevenue),
+      themeIcon:dark?'☀':'☾',
+      setPl:()=>this.setLang('pl'), setRu:()=>this.setLang('ru'),
+      toggleTheme:()=>this.toggleTheme(),
+      chartRef:(el)=>{ if(el){ this._live=el; this._attempt(el); } }};
+  }
+
+  _attempt(el){
+    if(this._live!==el) return;
+    this._observe(el);
+    this._tick(el);
+  }
+
+  // Time-based poll that never gives up silently: waits for BOTH the Chart.js
+  // CDN script and real layout on the canvas parent.
+  _tick(el){
+    if(this._live!==el) return;
+    if(this._chart && Chart.getChart && Chart.getChart(el)) return;
+    if(this._timer){ clearTimeout(this._timer); this._timer=null; }
+    if(this._build(el)) return;
+    this._timer=setTimeout(()=>{ this._timer=null; this._tick(el); },100);
+  }
+
+  _build(el){
+    if(typeof Chart==='undefined') return false;
+    if(!el.isConnected || !el.parentElement) return false;
+    const r=el.parentElement.getBoundingClientRect();
+    if(!(r.width>0 && r.height>0)) return false;
+    const existing = Chart.getChart && Chart.getChart(el);
+    if(existing){ this._chart=existing; return true; }
+    el.removeAttribute('width'); el.removeAttribute('height');
+    el.style.width=''; el.style.height='';
+    try{ this._chart=this._draw(el); return !!this._chart; }
+    catch(e){ return false; }
+  }
+
+  _observe(el){
+    if(this._ro || typeof ResizeObserver==='undefined' || !el.parentElement) return;
+    this._ro=new ResizeObserver(()=>{
+      if(this._live!==el) return;
+      const r=el.parentElement.getBoundingClientRect();
+      if(!(r.width>0 && r.height>0)) return;
+      // Rescues the never-built case (late CDN, zero-size first paint).
+      if(!this._chart){ this._build(el); return; }
+      try{ this._chart.resize(); }catch(e){}
+    });
+    this._ro.observe(el.parentElement);
+  }
+
+  componentWillUnmount(){
+    if(this._onResize) window.removeEventListener('resize',this._onResize);
+    if(this._timer){ clearTimeout(this._timer); this._timer=null; }
+    if(this._ro){ try{ this._ro.disconnect(); }catch(e){} this._ro=null; }
+    if(this._chart){ try{ this._chart.destroy(); }catch(e){} this._chart=null; }
+  }
+
+  _draw(el){
+    const p=this.palette(), lang=this.state.lang, t=this.T[lang];
+    const dark=this.state.theme==='dark';
+    const days=[], orders=[], revenue=[];
+    const base=new Date('2026-07-15');
+    for(let i=29;i>=0;i--){
+      const dt=new Date(base); dt.setDate(dt.getDate()-i);
+      days.push(('0'+dt.getDate()).slice(-2)+'.'+('0'+(dt.getMonth()+1)).slice(-2));
+      const seasonal=1+0.35*Math.sin(i/4);
+      const wd=dt.getDay(); const weekend=(wd===0||wd===6)?0.7:1;
+      const o=Math.round((28+22*seasonal*weekend)+ (i%3)*4 - (i%5)*3);
+      orders.push(Math.max(12,o));
+      revenue.push(Math.round(orders[orders.length-1]*(340+((i*37)%180))));
+    }
+    return new Chart(el.getContext('2d'),{
+      type:'bar',
+      data:{labels:days,datasets:[
+        {label:t.revenue,data:revenue,yAxisID:'yR',backgroundColor:p.barFill,hoverBackgroundColor:dark?'#27523a':'#c6e2d1',borderColor:p.barLine,borderWidth:1,borderRadius:3,order:2,barPercentage:0.72,categoryPercentage:0.85},
+        {label:t.orders,data:orders,type:'line',yAxisID:'yO',borderColor:p.accent,borderWidth:2.5,pointRadius:0,pointHoverRadius:4,pointBackgroundColor:p.accent,fill:false,tension:0.4,order:1}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        plugins:{legend:{display:false},tooltip:{backgroundColor:dark?'#2a2e35':'#111214',padding:11,cornerRadius:8,titleFont:{family:'IBM Plex Sans',size:12},bodyFont:{family:'IBM Plex Mono',size:12},displayColors:false,
+          callbacks:{label:c=>c.dataset.yAxisID==='yR'?t.revenue+': '+c.parsed.y.toLocaleString('pl-PL')+' zł':t.orders+': '+c.parsed.y}}},
+        scales:{
+          x:{grid:{display:false},border:{display:false},ticks:{font:{family:'IBM Plex Mono',size:10},color:p.tickColor,maxRotation:0,autoSkip:true,maxTicksLimit:10}},
+          yO:{position:'right',beginAtZero:true,grid:{display:false},border:{display:false},ticks:{font:{family:'IBM Plex Mono',size:10},color:p.accent}},
+          yR:{position:'left',beginAtZero:true,grid:{color:p.gridLine},border:{display:false},ticks:{font:{family:'IBM Plex Mono',size:10},color:p.tickColor,callback:v=>v>=1000?(v/1000).toFixed(0)+'k':v}}
+        }}
+    });
+  }
+}
+</script>
+</body>
+</html>

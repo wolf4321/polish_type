@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="pl" data-theme="light">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Katalog — EKOMAT Dashboard</title>
+    <script>
+      (function(){try{var t=localStorage.getItem('ekomat_theme');
+        if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/theme.css">
+    <style>
+        .pr-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
+        .pr-tools input[type=text]{flex:1;min-width:220px;}
+        .pr-tools select,.pr-tools input[type=text]{padding:8px 10px;border:1px solid var(--line);border-radius:9px;
+            font-size:13px;font-family:inherit;background:var(--input-bg);color:var(--ink);}
+        .pr-tools label{font-size:12.5px;color:var(--muted);display:flex;gap:6px;align-items:center;}
+        .pr-count{font-size:12px;color:var(--faint);margin-left:auto;}
+        .tbl td{vertical-align:top;}
+        .pr-name{font-weight:500;color:var(--ink);cursor:pointer;}
+        .pr-name:hover{text-decoration:underline;}
+        .pr-attrs{font-size:11.5px;color:var(--muted);margin-top:2px;}
+        .pr-codes{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink-soft);line-height:1.5;}
+        .pr-codes .lbl{color:var(--faint);}
+        .pr-codes .dup{color:var(--danger-ink);font-weight:600;}
+        .pr-off td{opacity:.5;}
+        .pr-w-none{color:var(--faint);}
+        .pr-more{padding:10px;text-align:center;font-size:12px;color:var(--faint);}
+        .modal{max-width:620px;}
+        .modal textarea.field{min-height:84px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;}
+        .pr-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;}
+        .pr-hint{font-size:11px;color:var(--faint);margin:-4px 0 10px;}
+        .pr-warn{font-size:12px;color:var(--danger-ink);background:var(--danger-bg);padding:8px 10px;border-radius:8px;margin-top:8px;display:none;white-space:pre-line;}
+        @media (max-width:700px){ .pr-grid{grid-template-columns:1fr;} .hide-sm{display:none;} }
+    </style>
+</head>
+<body>
+
+<nav class="nav">
+    <span class="nav-logo">ekomat<span style="color:var(--accent);">.</span></span>
+    <div class="nav-links">
+        {% if user and 'dashboard' in (user.permissions or '').split(',') %}<a href="/" data-i18n="nav_dash">Pulpit</a>{% endif %}
+        {% if user and 'orders' in (user.permissions or '').split(',') %}<a href="/orders" data-i18n="nav_orders">Zamówienia</a>{% endif %}
+        <a href="/products" class="active" data-i18n="nav_products">Katalog</a>
+        {% if user and ('assistant_kb' in (user.permissions or '').split(',') or 'manage_users' in (user.permissions or '').split(',')) %}<a href="/assistant" data-i18n="nav_assistant">Asystent</a>{% endif %}
+        {% if user and 'manage_users' in (user.permissions or '').split(',') %}<a href="/admin/users" data-i18n="nav_users">Użytkownicy</a>{% endif %}
+    </div>
+    <div class="nav-right">
+        <div class="seg">
+            <button type="button" data-lang="pl">PL</button>
+            <button type="button" data-lang="ru">RU</button>
+        </div>
+        <button type="button" class="theme-toggle" data-theme-toggle data-i18n-title="theme">&#9790;</button>
+        {% if user %}
+        <div class="nav-sep"></div>
+        <span class="nav-user">{{ user.name }}</span>
+        <a href="/logout" class="logout" data-i18n="logout">Wyloguj</a>
+        {% endif %}
+    </div>
+</nav>
+
+<main class="main">
+    <div class="page-head">
+        <div>
+            <h1 data-i18n="pr_title">Katalog produktów</h1>
+            <p class="sub" data-i18n="pr_sub">Nazwy, kody EAN i waga — z nich składają się zamówienia</p>
+        </div>
+        <div class="filters">
+            <button class="btn-sm" onclick="openEdit(null)" data-i18n="pr_add">+ Dodaj produkt</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="pr-tools">
+            <input type="text" id="q" data-i18n-ph="pr_search" placeholder="Szukaj: nazwa lub kod" oninput="render()">
+            <select id="cat" onchange="render()"></select>
+            <label><input type="checkbox" id="show-off" onchange="render()"> <span data-i18n="pr_show_off">Pokaż ukryte</span></label>
+            <label><input type="checkbox" id="only-dup" onchange="render()"> <span data-i18n="pr_only_dup">Tylko powtórzone kody</span></label>
+            <span class="pr-count" id="count"></span>
+        </div>
+        <table class="tbl">
+            <thead><tr>
+                <th data-i18n="pr_th_name">Produkt</th>
+                <th class="hide-sm" data-i18n="pr_th_cat">Kategoria</th>
+                <th class="r" data-i18n="pr_th_w">Waga/szt.</th>
+                <th data-i18n="pr_th_codes">Kody</th>
+            </tr></thead>
+            <tbody id="rows"><tr><td colspan="4"><div class="empty" data-i18n="loading">Ładowanie…</div></td></tr></tbody>
+        </table>
+        <div class="pr-more" id="more"></div>
+    </div>
+</main>
+
+<div class="modal-overlay" id="edit-modal">
+    <div class="modal">
+        <h3 id="m-title"></h3>
+        <label class="field-label" data-i18n="pr_f_name">Nazwa (tak będzie w zamówieniu)</label>
+        <input type="text" class="field" id="f-name">
+        <div class="pr-grid">
+            <div>
+                <label class="field-label" data-i18n="pr_f_cat">Kategoria</label>
+                <input type="text" class="field" id="f-cat" list="cat-list">
+                <datalist id="cat-list"></datalist>
+            </div>
+            <div>
+                <label class="field-label" data-i18n="pr_f_w">Waga za szt. (kg)</label>
+                <input type="text" class="field" id="f-w" inputmode="decimal" placeholder="—">
+            </div>
+        </div>
+        <label class="field-label" data-i18n="pr_f_type">Typ towaru (kolumna w zamówieniach)</label>
+        <select class="field" id="f-type">
+            <option value="Поликарбонат">Poliwęglan</option>
+            <option value="Теплица">Szklarnia</option>
+            <option value="Аксессуары">Akcesoria</option>
+            <option value="">—</option>
+        </select>
+        <label class="field-label" data-i18n="pr_f_codes">Kody (jeden w linii: kod; etykieta)</label>
+        <textarea class="field" id="f-codes" placeholder="5908173600001; OTEKO&#10;5908204161440; EKOMAT"></textarea>
+        <p class="pr-hint" data-i18n="pr_codes_hint">Jeden produkt może mieć dowolnie dużo kodów (sklepy, Allegro). Ten sam kod nie powinien być przy dwóch produktach.</p>
+        <label class="field-label" data-i18n="pr_f_attrs">Parametry do przycisków (jeden w linii: nazwa: wartość)</label>
+        <textarea class="field" id="f-attrs" placeholder="Grubość: 10 mm&#10;Kolor: Bezbarwny&#10;Wymiar: 2100x6000"></textarea>
+        <div class="check-row"><input type="checkbox" id="f-active"><label for="f-active" data-i18n="pr_f_active">Aktywny (widoczny przy dodawaniu zamówienia)</label></div>
+        <div class="pr-warn" id="m-warn"></div>
+        <div class="modal-actions">
+            <button class="btn-quiet" onclick="closeEdit()" data-i18n="cancel">Anuluj</button>
+            <button class="btn-sm" onclick="saveEdit()" data-i18n="save">Zapisz</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/i18n.js"></script>
+<script>
+EKOMAT.extend({
+  pl:{
+    nav_dash:'Pulpit', nav_orders:'Zamówienia', nav_users:'Użytkownicy', nav_products:'Katalog',nav_assistant:'Asystent', logout:'Wyloguj',
+    pr_title:'Katalog produktów', pr_sub:'Nazwy, kody EAN i waga — z nich składają się zamówienia',
+    pr_add:'+ Dodaj produkt', pr_search:'Szukaj: nazwa lub kod', pr_show_off:'Pokaż ukryte',
+    pr_only_dup:'Tylko powtórzone kody', pr_all_cats:'Wszystkie kategorie',
+    pr_th_name:'Produkt', pr_th_cat:'Kategoria', pr_th_w:'Waga/szt.', pr_th_codes:'Kody',
+    pr_f_name:'Nazwa (tak będzie w zamówieniu)', pr_f_cat:'Kategoria', pr_f_w:'Waga za szt. (kg)',
+    pr_f_type:'Typ towaru (kolumna w zamówieniach)', pr_f_codes:'Kody (jeden w linii: kod; etykieta)',
+    pr_codes_hint:'Jeden produkt może mieć dowolnie dużo kodów (sklepy, Allegro). Ten sam kod nie powinien być przy dwóch produktach.',
+    pr_f_attrs:'Parametry do przycisków (jeden w linii: nazwa: wartość)',
+    pr_f_active:'Aktywny (widoczny przy dodawaniu zamówienia)',
+    pr_new:'Nowy produkt', pr_edit:'Edycja produktu', pr_hidden:'ukryty',
+    pr_dup:'kod przy kilku produktach — automatyczne dopasowanie wyłączone',
+    pr_conflict:'Uwaga: te kody są też przy innych produktach — automatyczne dopasowanie po nich nie zadziała:',
+    pr_shown:'pokazano', pr_of:'z', pr_more:'Zawęź wyszukiwanie, aby zobaczyć resztę',
+    cancel:'Anuluj', save:'Zapisz', loading:'Ładowanie…', q_err:'Błąd', pr_need_name:'Podaj nazwę'
+  },
+  ru:{
+    nav_dash:'Сводка', nav_orders:'Заказы', nav_users:'Пользователи', nav_products:'Каталог',nav_assistant:'Помощник', logout:'Выйти',
+    pr_title:'Каталог товаров', pr_sub:'Названия, коды EAN и вес — из них собираются заказы',
+    pr_add:'+ Добавить товар', pr_search:'Поиск: название или код', pr_show_off:'Показать скрытые',
+    pr_only_dup:'Только повторяющиеся коды', pr_all_cats:'Все категории',
+    pr_th_name:'Товар', pr_th_cat:'Категория', pr_th_w:'Вес/шт.', pr_th_codes:'Коды',
+    pr_f_name:'Название (так будет в заказе)', pr_f_cat:'Категория', pr_f_w:'Вес за шт. (кг)',
+    pr_f_type:'Тип товара (колонка в заказах)', pr_f_codes:'Коды (по одному в строке: код; метка)',
+    pr_codes_hint:'У одного товара может быть сколько угодно кодов (сайты, Allegro). Один и тот же код не должен стоять у двух товаров.',
+    pr_f_attrs:'Параметры для кнопок (по одному в строке: название: значение)',
+    pr_f_active:'Активен (виден при добавлении заказа)',
+    pr_new:'Новый товар', pr_edit:'Редактирование товара', pr_hidden:'скрыт',
+    pr_dup:'код у нескольких товаров — автоподбор выключен',
+    pr_conflict:'Внимание: эти коды есть и у других товаров — автоподбор по ним работать не будет:',
+    pr_shown:'показано', pr_of:'из', pr_more:'Уточните поиск, чтобы увидеть остальные',
+    cancel:'Отмена', save:'Сохранить', loading:'Загрузка…', q_err:'Ошибка', pr_need_name:'Укажите название'
+  }
+});
+var T = function(k){ return EKOMAT.t(k); };
+var ALL = [], EDIT_ID = null, LIMIT = 300;
+
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function fmtW(v){ return (v == null) ? '' : Number(v).toLocaleString(EKOMAT.lang === 'ru' ? 'ru-RU' : 'pl-PL', {maximumFractionDigits: 3}); }
+
+function load(){
+    fetch('/api/products?all=1').then(function(r){ return r.json(); }).then(function(d){
+        ALL = d.products || [];
+        ALL.forEach(function(p){
+            p._hay = (p.name + ' ' + (p.codes || []).map(function(c){ return c.code; }).join(' ')).toLowerCase();
+            p._dup = (p.codes || []).some(function(c){ return c.dup; });
+        });
+        var cats = [];
+        ALL.forEach(function(p){ if (p.category && cats.indexOf(p.category) < 0) cats.push(p.category); });
+        var sel = document.getElementById('cat'), cur = sel.value;
+        sel.innerHTML = '<option value="">' + esc(T('pr_all_cats')) + '</option>'
+            + cats.map(function(c){ return '<option' + (c === cur ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('');
+        document.getElementById('cat-list').innerHTML = cats.map(function(c){ return '<option value="' + esc(c) + '">'; }).join('');
+        render();
+    });
+}
+
+function render(){
+    var q = document.getElementById('q').value.trim().toLowerCase();
+    var cat = document.getElementById('cat').value;
+    var off = document.getElementById('show-off').checked;
+    var dup = document.getElementById('only-dup').checked;
+    var words = q ? q.split(/\s+/) : [];
+    var list = ALL.filter(function(p){
+        if (!off && !p.active) return false;
+        if (cat && p.category !== cat) return false;
+        if (dup && !p._dup) return false;
+        return words.every(function(w){ return p._hay.indexOf(w) >= 0; });
+    });
+    var html = list.slice(0, LIMIT).map(function(p){
+        var attrs = Object.keys(p.attrs || {}).map(function(k){ return esc(k) + ': ' + esc(p.attrs[k]); }).join(' · ');
+        var codes = (p.codes || []).map(function(c){
+            return '<div' + (c.dup ? ' class="dup" title="' + esc(T('pr_dup')) + '"' : '') + '>' + esc(c.code)
+                + (c.label ? ' <span class="lbl">' + esc(c.label) + '</span>' : '') + (c.dup ? ' ⚠' : '') + '</div>';
+        }).join('') || '<span class="pr-w-none">—</span>';
+        return '<tr class="' + (p.active ? '' : 'pr-off') + '">'
+            + '<td><div class="pr-name" onclick="openEdit(' + p.id + ')">' + esc(p.name) + '</div>'
+            + (attrs ? '<div class="pr-attrs">' + attrs + '</div>' : '')
+            + (p.active ? '' : '<div class="pr-attrs">' + esc(T('pr_hidden')) + '</div>') + '</td>'
+            + '<td class="hide-sm">' + esc(p.category) + '</td>'
+            + '<td class="r num">' + (p.weight_kg != null ? fmtW(p.weight_kg) + ' kg' : '<span class="pr-w-none">—</span>') + '</td>'
+            + '<td class="pr-codes">' + codes + '</td></tr>';
+    }).join('');
+    document.getElementById('rows').innerHTML = html || '<tr><td colspan="4"><div class="empty">—</div></td></tr>';
+    document.getElementById('count').textContent = T('pr_shown') + ' ' + Math.min(list.length, LIMIT) + ' ' + T('pr_of') + ' ' + list.length;
+    document.getElementById('more').textContent = list.length > LIMIT ? T('pr_more') : '';
+}
+
+function openEdit(id){
+    var p = null;
+    ALL.forEach(function(x){ if (x.id === id) p = x; });
+    EDIT_ID = p ? p.id : null;
+    document.getElementById('m-title').textContent = p ? T('pr_edit') + ' #' + p.id : T('pr_new');
+    document.getElementById('f-name').value = p ? p.name : '';
+    document.getElementById('f-cat').value = p ? p.category : (document.getElementById('cat').value || '');
+    document.getElementById('f-w').value = p && p.weight_kg != null ? String(p.weight_kg).replace('.', ',') : '';
+    document.getElementById('f-type').value = p ? (p.product_type || '') : 'Поликарбонат';
+    document.getElementById('f-codes').value = p ? (p.codes || []).map(function(c){ return c.code + (c.label ? '; ' + c.label : ''); }).join('\n') : '';
+    document.getElementById('f-attrs').value = p ? Object.keys(p.attrs || {}).map(function(k){ return k + ': ' + p.attrs[k]; }).join('\n') : '';
+    document.getElementById('f-active').checked = p ? !!p.active : true;
+    var warn = document.getElementById('m-warn'); warn.style.display = 'none'; warn.textContent = '';
+    document.getElementById('edit-modal').classList.add('open');
+    document.getElementById('f-name').focus();
+}
+function closeEdit(){ document.getElementById('edit-modal').classList.remove('open'); }
+
+function saveEdit(){
+    var name = document.getElementById('f-name').value.trim();
+    if (!name) { alert(T('pr_need_name')); return; }
+    var codes = document.getElementById('f-codes').value.split('\n').map(function(l){
+        var parts = l.split(/[;\t]/);
+        return {code: (parts[0] || '').trim(), label: (parts.slice(1).join(' ') || '').trim()};
+    }).filter(function(c){ return c.code; });
+    var attrs = {};
+    document.getElementById('f-attrs').value.split('\n').forEach(function(l){
+        var i = l.indexOf(':');
+        if (i > 0) { var k = l.slice(0, i).trim(), v = l.slice(i + 1).trim(); if (k && v) attrs[k] = v; }
+    });
+    var body = {
+        name: name,
+        category: document.getElementById('f-cat').value.trim(),
+        product_type: document.getElementById('f-type').value,
+        weight_kg: document.getElementById('f-w').value.trim().replace(',', '.'),
+        codes: codes, attrs: attrs,
+        active: document.getElementById('f-active').checked
+    };
+    fetch(EDIT_ID ? '/api/products/' + EDIT_ID : '/api/products', {
+        method: EDIT_ID ? 'PUT' : 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    }).then(function(r){ return r.json(); }).then(function(d){
+        if (!d.ok) { alert(T('q_err') + ': ' + (d.error || '')); return; }
+        if (d.conflicts && d.conflicts.length) {
+            var warn = document.getElementById('m-warn');
+            warn.textContent = T('pr_conflict') + '\n' + d.conflicts.map(function(c){ return c.code + ' → ' + c.name; }).join('\n');
+            warn.style.display = 'block';
+            if (!EDIT_ID && d.id) EDIT_ID = d.id;
+            load();
+            return;
+        }
+        closeEdit();
+        load();
+    });
+}
+
+window.onEkomatLangChange = function(){ load(); };
+(function(){
+    var ov = document.getElementById('edit-modal'), down = false;
+    ov.addEventListener('mousedown', function(e){ down = (e.target === ov); });
+    ov.addEventListener('mouseup', function(e){ if (down && e.target === ov) closeEdit(); down = false; });
+    document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeEdit(); });
+})();
+load();
+</script>
+<script src="/static/help.js" defer></script>
+<script src="/static/assistant.js" defer></script>
+</body>
+</html>

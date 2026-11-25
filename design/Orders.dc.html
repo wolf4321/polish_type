@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;}
+  *{box-sizing:border-box;}
+  body{font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;transition:background-color .2s ease,color .2s ease;}
+  a{text-decoration:none;transition:color .15s ease;}
+  input,select,button{font-family:inherit;letter-spacing:-.01em;}
+  input:focus,select:focus{outline:none;}
+  .num{font-family:'IBM Plex Mono',ui-monospace,monospace;font-feature-settings:"tnum" 1;letter-spacing:-.03em;}
+  .card{transition:background-color .2s ease,border-color .2s ease;}
+  .navlink{transition:background-color .15s ease,color .15s ease;}
+</style>
+</helmet>
+<div style="min-height:100vh;background:{{ p.bg }};color:{{ p.ink }};">
+  <nav style="display:flex;align-items:center;flex-wrap:wrap;gap:{{ L.navGap }};padding:{{ L.navPad }};min-height:58px;border-bottom:1px solid {{ p.line }};position:sticky;top:0;z-index:20;background:{{ p.navBg }};backdrop-filter:blur(8px);">
+    <span style="order:1;font-weight:600;font-size:15.5px;letter-spacing:-.04em;">ekomat<span style="color:#16a34a;">.</span></span>
+    <div style="order:{{ L.linksOrder }};width:{{ L.linksW }};margin-left:{{ L.linksML }};display:flex;align-items:center;gap:2px;overflow-x:auto;">
+      <a href="Dashboard.dc.html" class="navlink" style="font-size:13px;font-weight:500;color:{{ p.muted }};padding:6px 12px;border-radius:8px;white-space:nowrap;" style-hover="background:{{ p.chip }};color:{{ p.ink }};">{{ t.nav_dash }}</a>
+      <a href="Orders.dc.html" class="navlink" style="font-size:13px;font-weight:600;color:{{ p.ink }};padding:6px 12px;border-radius:8px;background:{{ p.chip }};white-space:nowrap;">{{ t.nav_orders }}</a>
+      <a href="Users.dc.html" class="navlink" style="font-size:13px;font-weight:500;color:{{ p.muted }};padding:6px 12px;border-radius:8px;white-space:nowrap;" style-hover="background:{{ p.chip }};color:{{ p.ink }};">{{ t.nav_users }}</a>
+    </div>
+    <div style="order:3;margin-left:auto;display:flex;align-items:center;gap:{{ L.ctrlGap }};">
+      <div style="display:flex;background:{{ p.chip }};border-radius:9px;padding:2px;">
+        <button onClick="{{ setPl }}" style="border:none;cursor:pointer;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:7px;background:{{ p.plBg }};color:{{ p.plColor }};box-shadow:{{ p.plShadow }};transition:all .15s ease;">PL</button>
+        <button onClick="{{ setRu }}" style="border:none;cursor:pointer;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:7px;background:{{ p.ruBg }};color:{{ p.ruColor }};box-shadow:{{ p.ruShadow }};transition:all .15s ease;">RU</button>
+      </div>
+      <button onClick="{{ toggleTheme }}" title="{{ t.theme }}" style="width:32px;height:32px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1px solid {{ p.line }};border-radius:9px;background:{{ p.cardBg }};cursor:pointer;font-size:14px;color:{{ p.muted }};transition:all .15s ease;" style-hover="color:{{ p.ink }};border-color:{{ p.lineStrong }};">{{ themeIcon }}</button>
+      <div style="width:1px;height:18px;background:{{ p.line }};display:{{ L.hideMeta }};"></div>
+      <span style="font-size:13px;color:{{ p.muted }};display:{{ L.hideMeta }};">Jan Kowalski</span>
+      <a href="Login.dc.html" style="font-size:13px;color:{{ p.muted }};font-weight:500;white-space:nowrap;" style-hover="color:{{ p.ink }};">{{ t.logout }}</a>
+    </div>
+  </nav>
+
+  <main style="max-width:1480px;margin:0 auto;padding:{{ L.pad }};">
+    <div style="margin-bottom:20px;">
+      <h1 style="font-size:{{ L.h1 }};font-weight:600;letter-spacing:-.045em;margin:0 0 5px;">{{ t.orders }}</h1>
+      <p style="font-size:13px;color:{{ p.muted }};margin:0;">{{ shownLabel }}</p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:{{ L.statsCols }};gap:12px;margin-bottom:14px;">
+      <sc-for list="{{ stats }}" as="s" hint-placeholder-count="6">
+        <div class="card" style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:13px;padding:15px 17px;">
+          <div style="font-size:11.5px;color:{{ p.muted }};font-weight:500;margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ s.label }}</div>
+          <div class="num" style="font-size:21px;font-weight:600;line-height:1;letter-spacing:-.04em;">{{ s.value }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div class="card" style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:13px;padding:13px 15px;margin-bottom:14px;">
+      <div style="position:relative;flex:1;min-width:200px;">
+        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:{{ p.faint }};font-size:14px;">⌕</span>
+        <input value="{{ search }}" onInput="{{ onSearch }}" placeholder="{{ t.search }}" style="width:100%;padding:9px 12px 9px 30px;border:1px solid {{ p.line }};border-radius:9px;font-size:13px;background:{{ p.inputBg }};color:{{ p.ink }};" style-focus="border-color:{{ p.lineStrong }};">
+      </div>
+      <select value="{{ source }}" onChange="{{ onSource }}" style="width:{{ L.filterW }};padding:9px 28px 9px 11px;border:1px solid {{ p.line }};border-radius:9px;font-size:13px;background:{{ p.cardBg }};color:{{ p.ink }};">
+        <option value="">{{ t.all_stores }}</option>
+        <option value="dobraszklarnia">dobraszklarnia.pl</option>
+        <option value="oteko">oteko.pl</option>
+        <option value="cieplarnia">cieplarnia.pl</option>
+        <option value="allegro">Allegro</option>
+        <option value="manual">{{ t.manual }}</option>
+      </select>
+      <select value="{{ status }}" onChange="{{ onStatus }}" style="width:{{ L.filterW }};padding:9px 28px 9px 11px;border:1px solid {{ p.line }};border-radius:9px;font-size:13px;background:{{ p.cardBg }};color:{{ p.ink }};">
+        <option value="">{{ t.all_statuses }}</option>
+        <option value="processing">{{ t.st_processing }}</option>
+        <option value="completed">{{ t.st_completed }}</option>
+        <option value="pending">{{ t.st_pending }}</option>
+        <option value="shipped">{{ t.st_shipped }}</option>
+        <option value="cancelled">{{ t.st_cancelled }}</option>
+      </select>
+      <input type="date" class="num" style="width:{{ L.filterW }};padding:9px 11px;border:1px solid {{ p.line }};border-radius:9px;font-size:12.5px;background:{{ p.cardBg }};color:{{ p.ink }};">
+      <div style="display:flex;gap:9px;margin-left:{{ L.btnGroupML }};width:{{ L.btnGroupW }};">
+        <button style="flex:1;padding:9px 15px;background:{{ p.cardBg }};color:{{ p.warnInk }};border:1px solid {{ p.warnLine }};border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background-color .15s ease;" style-hover="background:{{ p.warnBg }};">↻ {{ t.sync }}</button>
+        <button style="flex:1;padding:9px 15px;background:{{ p.btnBg }};color:{{ p.btnInk }};border:none;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background-color .15s ease;" style-hover="background:{{ p.btnHover }};">+ {{ t.add }}</button>
+      </div>
+    </div>
+
+    <sc-if value="{{ notMob }}" hint-placeholder-val="{{ true }}">
+    <div class="card" style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:14px;overflow-x:auto;">
+      <div style="min-width:1140px;">
+      <div style="display:grid;grid-template-columns:34px 30px 94px minmax(190px,1.5fr) 128px 132px 118px 156px 36px;gap:0;padding:0 18px;background:{{ p.headBg }};border-bottom:1px solid {{ p.line }};">
+        <div style="padding:12px 0;display:flex;align-items:center;"><input type="checkbox" style="cursor:pointer;accent-color:#16a34a;"></div>
+        <div style="padding:12px 0;font-size:11px;color:{{ p.faint }};font-weight:600;">★</div>
+        <div style="padding:12px 4px;font-size:10.5px;color:{{ p.faint }};font-weight:600;text-transform:uppercase;letter-spacing:.05em;">{{ t.c_date }}</div>
+        <div style="padding:12px 4px;font-size:10.5px;color:{{ p.faint }};font-weight:600;text-transform:uppercase;letter-spacing:.05em;">{{ t.c_product }}</div>
+        <div style="padding:12px 4px;font-size:10.5px;color:{{ p.faint }};font-weight:600;text-transform:uppercase;letter-spacing:.05em;text-align:right;">{{ t.c_price }}</div>
+        <div style="padding:12px 4px;font-size:10.5px;color:{{ p.faint }};font-weight:600;text-transform:uppercase;letter-spacing:.05em;">{{ t.c_status }}</div>
+        <div style="padding:12px 4px;font-size:10.5px;color:{{ p.faint }};font-weight:600;text-transform:uppercase;letter-spacing:.05em;">{{ t.c_payment }}</div>
+        <div style="padding:12px 4px;font-size:10.5px;color:{{ p.faint }};font-weight:600;text-transform:uppercase;letter-spacing:.05em;">{{ t.c_source }}</div>
+        <div></div>
+      </div>
+
+      <sc-for list="{{ orders }}" as="o" hint-placeholder-count="8">
+        <div>
+          <div onClick="{{ o.toggle }}" style="display:grid;grid-template-columns:34px 30px 94px minmax(190px,1.5fr) 128px 132px 118px 156px 36px;gap:0;padding:0 18px;border-bottom:1px solid {{ p.lineSoft }};cursor:pointer;background:{{ o.rowBg }};transition:background-color .15s ease;" style-hover="background:{{ p.hoverBg }};">
+            <div style="padding:13px 0;display:flex;align-items:center;"><input type="checkbox" onClick="{{ o.stop }}" style="cursor:pointer;accent-color:#16a34a;"></div>
+            <div style="padding:13px 0;display:flex;align-items:center;"><span onClick="{{ o.star }}" style="cursor:pointer;font-size:15px;color:{{ o.starColor }};line-height:1;transition:color .15s ease;">{{ o.starIcon }}</span></div>
+            <div style="padding:13px 4px;display:flex;flex-direction:column;justify-content:center;">
+              <span class="num" style="font-size:13px;font-weight:600;">{{ o.dateShort }}</span>
+              <span class="num" style="font-size:11px;color:{{ p.faint }};">{{ o.time }}</span>
+            </div>
+            <div style="padding:13px 4px;display:flex;flex-direction:column;justify-content:center;min-width:0;">
+              <span style="font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ o.customer }}</span>
+              <span style="font-size:11.5px;color:{{ p.muted }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ o.product }}</span>
+            </div>
+            <div style="padding:13px 4px;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;">
+              <span class="num" style="font-size:13.5px;font-weight:600;white-space:nowrap;">{{ o.price }}</span>
+              <span class="num" style="font-size:11px;color:{{ p.faint }};white-space:nowrap;">+ {{ o.shipping }}</span>
+            </div>
+            <div style="padding:13px 4px;display:flex;align-items:center;">
+              <span style="font-size:11.5px;font-weight:600;color:{{ o.statusColor }};background:{{ o.statusBg }};padding:3px 9px;border-radius:7px;white-space:nowrap;">{{ o.statusLabel }}</span>
+            </div>
+            <div style="padding:13px 4px;display:flex;align-items:center;">
+              <span style="font-size:12.5px;color:{{ p.inkSoft }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ o.payment }}</span>
+            </div>
+            <div style="padding:13px 4px;display:flex;align-items:center;gap:7px;min-width:0;">
+              <span style="width:8px;height:8px;border-radius:3px;background:{{ o.srcColor }};flex-shrink:0;"></span>
+              <span style="font-size:12px;color:{{ p.inkSoft }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ o.srcLabel }}</span>
+            </div>
+            <div style="padding:13px 0;display:flex;align-items:center;justify-content:center;color:{{ p.faint }};font-size:13px;transform:{{ o.chevron }};transition:transform .2s ease;">⌄</div>
+          </div>
+          <sc-if value="{{ o.open }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:20px 26px;background:{{ p.headBg }};border-bottom:1px solid {{ p.line }};">
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:18px 28px;">
+                <sc-for list="{{ o.details }}" as="d" hint-placeholder-count="6">
+                  <div>
+                    <div style="font-size:10.5px;color:{{ p.faint }};text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">{{ d.label }}</div>
+                    <div style="font-size:13px;color:{{ p.inkSoft }};">{{ d.value }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="margin-top:18px;">
+                <div style="font-size:10.5px;color:{{ p.faint }};text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">{{ t.items }}</div>
+                <div style="border:1px solid {{ p.line }};border-radius:10px;overflow:hidden;background:{{ p.cardBg }};">
+                  <sc-for list="{{ o.items }}" as="it" hint-placeholder-count="2">
+                    <div style="display:grid;grid-template-columns:1fr 60px 120px;gap:12px;padding:9px 14px;border-bottom:1px solid {{ p.lineSoft }};font-size:12.5px;">
+                      <span>{{ it.name }}</span>
+                      <span class="num" style="text-align:center;color:{{ p.muted }};">×{{ it.qty }}</span>
+                      <span class="num" style="text-align:right;font-weight:600;">{{ it.price }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-for>
+
+      <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:60px 20px;text-align:center;">
+          <div style="font-size:15px;font-weight:600;color:{{ p.muted }};margin-bottom:5px;">{{ t.empty }}</div>
+          <div style="font-size:13px;color:{{ p.faint }};">{{ t.empty_sub }}</div>
+        </div>
+      </sc-if>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;">
+        <span class="num" style="font-size:12.5px;color:{{ p.faint }};">{{ pageInfo }}</span>
+        <div style="display:flex;gap:6px;">
+          <button style="padding:6px 12px;border:1px solid {{ p.line }};border-radius:8px;background:{{ p.cardBg }};font-size:13px;cursor:pointer;color:{{ p.muted }};">←</button>
+          <button class="num" style="padding:6px 12px;border:1px solid {{ p.btnBg }};border-radius:8px;background:{{ p.btnBg }};color:{{ p.btnInk }};font-size:13px;cursor:pointer;">1</button>
+          <button class="num" style="padding:6px 12px;border:1px solid {{ p.line }};border-radius:8px;background:{{ p.cardBg }};color:{{ p.ink }};font-size:13px;cursor:pointer;">2</button>
+          <button class="num" style="padding:6px 12px;border:1px solid {{ p.line }};border-radius:8px;background:{{ p.cardBg }};color:{{ p.ink }};font-size:13px;cursor:pointer;">3</button>
+          <button style="padding:6px 12px;border:1px solid {{ p.line }};border-radius:8px;background:{{ p.cardBg }};font-size:13px;cursor:pointer;color:{{ p.muted }};">→</button>
+        </div>
+      </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ mob }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <sc-for list="{{ orders }}" as="o" hint-placeholder-count="5">
+          <div class="card" onClick="{{ o.toggle }}" style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:13px;padding:14px 15px;cursor:pointer;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px;">
+              <div style="display:flex;align-items:center;gap:9px;min-width:0;">
+                <span onClick="{{ o.star }}" style="font-size:15px;color:{{ o.starColor }};line-height:1;flex-shrink:0;">{{ o.starIcon }}</span>
+                <span class="num" style="font-size:12.5px;font-weight:600;white-space:nowrap;">{{ o.dateShort }}</span>
+                <span class="num" style="font-size:11px;color:{{ p.faint }};white-space:nowrap;">{{ o.time }}</span>
+              </div>
+              <span style="font-size:11px;font-weight:600;color:{{ o.statusColor }};background:{{ o.statusBg }};padding:3px 9px;border-radius:7px;white-space:nowrap;flex-shrink:0;">{{ o.statusLabel }}</span>
+            </div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:2px;">{{ o.customer }}</div>
+            <div style="font-size:12.5px;color:{{ p.muted }};margin-bottom:11px;">{{ o.product }}</div>
+            <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;">
+              <div style="display:flex;align-items:center;gap:7px;min-width:0;">
+                <span style="width:8px;height:8px;border-radius:3px;background:{{ o.srcColor }};flex-shrink:0;"></span>
+                <span style="font-size:11.5px;color:{{ p.muted }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ o.srcLabel }}</span>
+              </div>
+              <div style="text-align:right;flex-shrink:0;">
+                <div class="num" style="font-size:15px;font-weight:600;white-space:nowrap;">{{ o.price }}</div>
+                <div class="num" style="font-size:11px;color:{{ p.faint }};white-space:nowrap;">+ {{ o.shipping }}</div>
+              </div>
+            </div>
+            <sc-if value="{{ o.open }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:14px;padding-top:14px;border-top:1px solid {{ p.lineSoft }};display:flex;flex-direction:column;gap:11px;">
+                <sc-for list="{{ o.details }}" as="d" hint-placeholder-count="6">
+                  <div>
+                    <div style="font-size:10px;color:{{ p.faint }};text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">{{ d.label }}</div>
+                    <div style="font-size:12.5px;color:{{ p.inkSoft }};">{{ d.value }}</div>
+                  </div>
+                </sc-for>
+                <div>
+                  <div style="font-size:10px;color:{{ p.faint }};text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">{{ t.items }}</div>
+                  <div style="border:1px solid {{ p.line }};border-radius:9px;overflow:hidden;">
+                    <sc-for list="{{ o.items }}" as="it" hint-placeholder-count="2">
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 11px;border-bottom:1px solid {{ p.lineSoft }};font-size:12px;">
+                        <span style="min-width:0;">{{ it.name }}</span>
+                        <span style="display:flex;gap:10px;flex-shrink:0;">
+                          <span class="num" style="color:{{ p.muted }};">×{{ it.qty }}</span>
+                          <span class="num" style="font-weight:600;">{{ it.price }}</span>
+                        </span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+        <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+          <div class="card" style="background:{{ p.cardBg }};border:1px solid {{ p.line }};border-radius:13px;padding:44px 20px;text-align:center;">
+            <div style="font-size:15px;font-weight:600;color:{{ p.muted }};margin-bottom:5px;">{{ t.empty }}</div>
+            <div style="font-size:13px;color:{{ p.faint }};">{{ t.empty_sub }}</div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(props){
+    super(props);
+    let lang='pl', theme='light';
+    try{ lang=localStorage.getItem('ekomat_lang')||'pl'; theme=localStorage.getItem('ekomat_theme')||'light'; }catch(e){}
+    const w = typeof window!=='undefined' ? window.innerWidth : 1200;
+    this.state = { lang, theme, search:'', source:'', status:'', open:{}, stars:{}, isMobile:w<=760 };
+
+    this.SRC = {
+      dobraszklarnia:{label:'dobraszklarnia',color:'#4b7bf5'},
+      oteko:{label:'oteko.pl',color:'#e8a33d'},
+      cieplarnia:{label:'cieplarnia.pl',color:'#22b062'},
+      allegro:{label:'Allegro',color:'#f5763d'},
+      manual:{label:{pl:'Ręczne',ru:'Вручную'},color:'#9b6ef7'}
+    };
+    this.T = {
+      pl:{nav_dash:'Pulpit',nav_orders:'Zamówienia',nav_users:'Użytkownicy',logout:'Wyloguj',theme:'Motyw',orders:'Zamówienia',
+        search:'Szukaj klienta, produktu...',all_stores:'Wszystkie sklepy',all_statuses:'Wszystkie statusy',manual:'Ręczne',
+        sync:'Synchronizuj',add:'Dodaj',c_date:'Data',c_product:'Klient / Produkt',c_price:'Kwota',c_status:'Status',
+        c_payment:'Płatność',c_source:'Źródło',items:'Pozycje zamówienia',empty:'Brak zamówień',empty_sub:'Zmień filtry lub wyczyść wyszukiwanie',
+        st_processing:'W realizacji',st_completed:'Zrealizowane',st_pending:'Oczekuje',st_shipped:'Wysłane',st_cancelled:'Anulowane',
+        d_config:'Konfiguracja',d_invoice:'Faktura',d_phone:'Telefon',d_address:'Adres',d_comment:'Komentarz',d_account:'Konto',
+        all:'Wszystkie',revenue:'Przychód, zł',free:'gratis'},
+      ru:{nav_dash:'Панель',nav_orders:'Заказы',nav_users:'Пользователи',logout:'Выйти',theme:'Тема',orders:'Заказы',
+        search:'Поиск клиента, товара...',all_stores:'Все магазины',all_statuses:'Все статусы',manual:'Вручную',
+        sync:'Синхронизация',add:'Добавить',c_date:'Дата',c_product:'Клиент / Товар',c_price:'Сумма',c_status:'Статус',
+        c_payment:'Оплата',c_source:'Источник',items:'Позиции заказа',empty:'Нет заказов',empty_sub:'Измените фильтры или очистите поиск',
+        st_processing:'В работе',st_completed:'Выполнен',st_pending:'Ожидает',st_shipped:'Отправлен',st_cancelled:'Отменён',
+        d_config:'Конфигурация',d_invoice:'Счёт-фактура',d_phone:'Телефон',d_address:'Адрес',d_comment:'Комментарий',d_account:'Аккаунт',
+        all:'Все заказы',revenue:'Выручка, zł',free:'бесплатно'}
+    };
+    this.PAY = {
+      'Przelew':{pl:'Przelew',ru:'Перевод'},
+      'Allegro Pay':{pl:'Allegro Pay',ru:'Allegro Pay'},
+      'Za pobraniem':{pl:'Za pobraniem',ru:'При получении'},
+      'Proforma':{pl:'Proforma',ru:'Проформа'},
+      'Karta':{pl:'Karta',ru:'Карта'}
+    };
+    this.ORDERS = [
+      {id:1,ext:'DS-10482',date:'2026-07-15 09:24',customer:'Anna Nowak',product:'Szklarnia ogrodowa 3×4m',config:'3×4m, poliwęglan 6mm',price:4290,shipping:120,status:'processing',payment:'Przelew',phone:'+48 601 234 567',address:'ul. Kwiatowa 12, 31-234 Kraków',comment:'Prosze o kontakt przed dostawą',source:'dobraszklarnia',account:'—',invoice:'FV/2026/1042',items:[{name:'Szklarnia ARROW 3×4m',qty:1,price:3990},{name:'Poliwęglan 6mm',qty:1,price:300}]},
+      {id:2,ext:'ALG-778201',date:'2026-07-15 08:51',customer:'Piotr Zieliński',product:'Poliwęglan komorowy 4mm ×10',config:'4mm, 2100×6000, 10 szt.',price:1840,shipping:0,status:'completed',payment:'Allegro Pay',phone:'+48 512 998 001',address:'ul. Leśna 4, 60-111 Poznań',comment:'',source:'allegro',account:'mantrade',invoice:'—',items:[{name:'Płyta poliwęglan 4mm',qty:10,price:184}]},
+      {id:3,ext:'OT-3391',date:'2026-07-15 08:12',customer:'Maria Wójcik',product:'Tunel foliowy 3×6m',config:'3×6m, folia UV',price:2150,shipping:150,status:'shipped',payment:'Za pobraniem',phone:'+48 698 112 445',address:'ul. Polna 88, 20-950 Lublin',comment:'',source:'oteko',account:'—',invoice:'FV/2026/1041',items:[{name:'Tunel foliowy 3×6m',qty:1,price:2150}]},
+      {id:4,ext:'DS-10479',date:'2026-07-14 19:03',customer:'Krzysztof Lewandowski',product:'Szklarnia 4×6m + montaż',config:'4×6m, poliwęglan 8mm, montaż',price:8990,shipping:0,status:'pending',payment:'Proforma',phone:'+48 604 555 210',address:'ul. Słoneczna 3, 80-180 Gdańsk',comment:'Czeka na potwierdzenie płatności',source:'dobraszklarnia',account:'—',invoice:'PRO/2026/318',items:[{name:'Szklarnia PREMIUM 4×6m',qty:1,price:7990},{name:'Usługa montażu',qty:1,price:1000}]},
+      {id:5,ext:'CP-2205',date:'2026-07-14 16:41',customer:'Agnieszka Kaczmarek',product:'Poliwęglan lity 3mm ×4',config:'3mm, 2050×3050, 4 szt.',price:960,shipping:90,status:'completed',payment:'Przelew',phone:'+48 663 887 120',address:'ul. Ogrodowa 21, 40-001 Katowice',comment:'',source:'cieplarnia',account:'—',invoice:'FV/2026/1039',items:[{name:'Poliwęglan lity 3mm',qty:4,price:240}]},
+      {id:6,ext:'ALG-778145',date:'2026-07-14 14:22',customer:'Tomasz Kamiński',product:'Zestaw uszczelek + profile',config:'Profil H + zaślepki, 20 szt.',price:430,shipping:0,status:'cancelled',payment:'Allegro Pay',phone:'+48 500 221 908',address:'ul. Górska 9, 43-300 Bielsko-Biała',comment:'Klient zrezygnował',source:'allegro',account:'drogatrade',invoice:'—',items:[{name:'Profil łączący H',qty:20,price:21.5}]},
+      {id:7,ext:'DS-10475',date:'2026-07-14 11:08',customer:'Barbara Szymańska',product:'Szklarnia 2.5×4m',config:'2.5×4m, poliwęglan 4mm',price:3190,shipping:120,status:'processing',payment:'Karta',phone:'+48 692 445 771',address:'ul. Akacjowa 6, 50-320 Wrocław',comment:'',source:'dobraszklarnia',account:'—',invoice:'FV/2026/1037',items:[{name:'Szklarnia STANDARD 2.5×4m',qty:1,price:3190}]},
+      {id:8,ext:'OT-3388',date:'2026-07-13 17:55',customer:'Marek Dąbrowski',product:'Folia ogrodnicza UV 6m',config:'Rolka 6×50m, UV 4 sezony',price:1290,shipping:110,status:'shipped',payment:'Za pobraniem',phone:'+48 607 330 214',address:'ul. Wiejska 44, 10-200 Olsztyn',comment:'',source:'oteko',account:'—',invoice:'FV/2026/1035',items:[{name:'Folia ogrodnicza UV 6×50m',qty:1,price:1290}]},
+      {id:9,ext:'ALG-777998',date:'2026-07-13 13:30',customer:'Ewa Kozłowska',product:'Poliwęglan komorowy 10mm ×6',config:'10mm, 2100×6000, 6 szt.',price:2940,shipping:0,status:'completed',payment:'Allegro Pay',phone:'+48 511 660 883',address:'ul. Miła 2, 25-500 Kielce',comment:'',source:'allegro',account:'mega-agronom',invoice:'—',items:[{name:'Poliwęglan 10mm',qty:6,price:490}]},
+      {id:10,ext:'MAN-0044',date:'2026-07-13 10:12',customer:'Zakład Ogrodniczy Zieleń',product:'Szklarnia handlowa 6×12m',config:'6×12m, poliwęglan 8mm, konstrukcja stalowa',price:24500,shipping:0,status:'pending',payment:'Proforma',phone:'+48 618 200 400',address:'ul. Przemysłowa 15, 62-030 Luboń',comment:'Zamówienie hurtowe, faktura VAT',source:'manual',account:'—',invoice:'PRO/2026/312',items:[{name:'Szklarnia handlowa 6×12m',qty:1,price:22500},{name:'Wentylacja dachowa',qty:2,price:1000}]}
+    ];
+  }
+
+  fmt(n){ return (n||0).toLocaleString('pl-PL'); }
+  loc(v,lang){ return (v && typeof v==='object') ? v[lang] : v; }
+  set(k,v){ this.setState({[k]:v}); }
+
+  componentDidMount(){
+    this._onResize=()=>{
+      const m=window.innerWidth<=760;
+      if(m!==this.state.isMobile) this.setState({isMobile:m});
+    };
+    window.addEventListener('resize',this._onResize);
+    this._onResize();
+  }
+  componentWillUnmount(){ if(this._onResize) window.removeEventListener('resize',this._onResize); }
+  setLang(l){ this.setState({lang:l}); try{ localStorage.setItem('ekomat_lang',l); }catch(e){} }
+  toggleTheme(){
+    const next=this.state.theme==='dark'?'light':'dark';
+    this.setState({theme:next});
+    try{ localStorage.setItem('ekomat_theme',next); }catch(e){}
+  }
+
+  palette(){
+    const dark=this.state.theme==='dark', st=this.state;
+    const base = dark ? {
+      bg:'#0e0f11', navBg:'rgba(18,19,22,.85)', cardBg:'#16181c', chip:'#22252b', inputBg:'#1b1e23',
+      headBg:'#1a1d21', hoverBg:'#1c1f24',
+      ink:'#f2f3f5', inkSoft:'#c8ccd2', muted:'#9aa0a8', faint:'#6e747c',
+      line:'#282c33', lineSoft:'#21242a', lineStrong:'#3a3f47',
+      btnBg:'#f2f3f5', btnInk:'#111214', btnHover:'#d8dade',
+      warnInk:'#f0a070', warnLine:'#4a352a', warnBg:'#241a15'
+    } : {
+      bg:'#f6f6f5', navBg:'rgba(255,255,255,.88)', cardBg:'#ffffff', chip:'#f0f0ef', inputBg:'#f7f7f6',
+      headBg:'#fafafa', hoverBg:'#fafafa',
+      ink:'#111214', inkSoft:'#3a3d42', muted:'#6f747b', faint:'#9ba0a7',
+      line:'#e4e4e2', lineSoft:'#f0f0ee', lineStrong:'#cfcfcc',
+      btnBg:'#111214', btnInk:'#ffffff', btnHover:'#2a2c31',
+      warnInk:'#c2410c', warnLine:'#f0d4c4', warnBg:'#fff7f2'
+    };
+    const activeBg=dark?'#31353d':'#ffffff';
+    const shadow=dark?'none':'0 1px 2px rgba(0,0,0,.07)';
+    return {...base,
+      plBg:st.lang==='pl'?activeBg:'transparent', plColor:st.lang==='pl'?base.ink:base.muted, plShadow:st.lang==='pl'?shadow:'none',
+      ruBg:st.lang==='ru'?activeBg:'transparent', ruColor:st.lang==='ru'?base.ink:base.muted, ruShadow:st.lang==='ru'?shadow:'none'
+    };
+  }
+
+  renderVals(){
+    const st=this.state, lang=st.lang, t=this.T[lang], S=this.SRC;
+    const p=this.palette(), dark=st.theme==='dark';
+    const STATUS = dark ? {
+      processing:{c:'#7aa7f8',b:'rgba(75,123,245,.15)'}, completed:{c:'#43d183',b:'rgba(47,196,111,.15)'},
+      pending:{c:'#e8b56a',b:'rgba(232,163,61,.15)'}, shipped:{c:'#b795f9',b:'rgba(155,110,247,.15)'}, cancelled:{c:'#f08a8a',b:'rgba(240,100,100,.15)'}
+    } : {
+      processing:{c:'#2563eb',b:'#e8f0fe'}, completed:{c:'#15803d',b:'#e7f4ec'},
+      pending:{c:'#b45309',b:'#fbf0dd'}, shipped:{c:'#7c3aed',b:'#f1ecfd'}, cancelled:{c:'#dc2626',b:'#fdeaea'}
+    };
+
+    const q=st.search.trim().toLowerCase();
+    const list=this.ORDERS.filter(o=>{
+      if(st.source && o.source!==st.source) return false;
+      if(st.status && o.status!==st.status) return false;
+      if(q && !(o.customer.toLowerCase().includes(q)||o.product.toLowerCase().includes(q)||o.ext.toLowerCase().includes(q))) return false;
+      return true;
+    });
+
+    const totalRev=this.ORDERS.reduce((a,o)=>a+o.price,0);
+    const cnt=s=>this.ORDERS.filter(o=>o.source===s).length;
+    const stats=[
+      {label:t.all,value:this.ORDERS.length},
+      {label:t.revenue,value:this.fmt(totalRev)},
+      {label:'dobraszklarnia',value:cnt('dobraszklarnia')},
+      {label:'oteko.pl',value:cnt('oteko')},
+      {label:'cieplarnia.pl',value:cnt('cieplarnia')},
+      {label:'Allegro',value:cnt('allegro')}
+    ];
+
+    const orders=list.map(o=>{
+      const src=S[o.source], stt=STATUS[o.status];
+      const starred=!!st.stars[o.id], open=!!st.open[o.id];
+      const [dpart,tpart]=o.date.split(' ');
+      const dp=dpart.split('-');
+      const srcName=this.loc(src.label,lang);
+      const pay=this.PAY[o.payment]?this.PAY[o.payment][lang]:o.payment;
+      return {
+        customer:o.customer, product:o.product,
+        dateShort:dp[2]+'.'+dp[1], time:tpart,
+        price:this.fmt(o.price)+' zł', shipping:o.shipping>0?this.fmt(o.shipping)+' zł':t.free,
+        statusLabel:t['st_'+o.status], statusColor:stt.c, statusBg:stt.b,
+        payment:pay,
+        srcLabel:o.source==='allegro'?srcName+' · '+o.account:srcName, srcColor:src.color,
+        starIcon:starred?'★':'☆', starColor:starred?'#e8a33d':p.faint,
+        rowBg:open?p.hoverBg:p.cardBg, chevron:open?'rotate(180deg)':'rotate(0deg)', open,
+        toggle:()=>this.setState(s=>({open:{...s.open,[o.id]:!s.open[o.id]}})),
+        star:(e)=>{ e.stopPropagation(); this.setState(s=>({stars:{...s.stars,[o.id]:!s.stars[o.id]}})); },
+        stop:(e)=>e.stopPropagation(),
+        details:[
+          {label:t.d_config,value:o.config},
+          {label:t.d_invoice,value:o.invoice},
+          {label:t.d_phone,value:o.phone},
+          {label:t.d_account,value:o.source==='allegro'?o.account:srcName},
+          {label:t.d_address,value:o.address},
+          {label:t.d_comment,value:o.comment||'—'}
+        ],
+        items:o.items.map(i=>({name:i.name,qty:i.qty,price:this.fmt(i.price)+' zł'}))
+      };
+    });
+
+    const mob=st.isMobile;
+    const L = {
+      pad: mob?'20px 16px 56px':'34px 28px 72px',
+      navPad: mob?'10px 16px':'0 28px',
+      navGap: mob?'9px':'0px',
+      linksOrder: mob?4:2,
+      linksW: mob?'100%':'auto',
+      linksML: mob?'0':'22px',
+      ctrlGap: mob?'8px':'12px',
+      hideMeta: mob?'none':'inline',
+      statsCols: mob?'repeat(2,1fr)':'repeat(6,1fr)',
+      h1: mob?'21px':'24px',
+      btnW: mob?'100%':'auto',
+      btnGroupW: mob?'100%':'auto',
+      btnGroupML: mob?'0':'auto',
+      filterW: mob?'100%':'auto'
+    };
+
+    return {
+      p, t, L, mob, notMob:!mob, stats, orders,
+      search:st.search, source:st.source, status:st.status,
+      onSearch:e=>this.set('search',e.target.value),
+      onSource:e=>this.set('source',e.target.value),
+      onStatus:e=>this.set('status',e.target.value),
+      setPl:()=>this.setLang('pl'), setRu:()=>this.setLang('ru'),
+      toggleTheme:()=>this.toggleTheme(), themeIcon:dark?'☀':'☾',
+      isEmpty:orders.length===0,
+      shownLabel:(lang==='ru'?'Показано ':'Wyświetlono ')+orders.length+(lang==='ru'?' из ':' z ')+this.ORDERS.length,
+      pageInfo:(lang==='ru'?'Заказы 1–':'Zamówienia 1–')+orders.length+' · '+this.ORDERS.length+(lang==='ru'?' всего':' łącznie')
+    };
+  }
+}
+</script>
+</body>
+</html>
