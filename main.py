@@ -233,6 +233,19 @@ def _load_erli_accounts():
 
 ERLI_ACCOUNTS = _load_erli_accounts()
 
+# До подключения Erli к панели (26.11.2026) заказы Erli вбивали вручную.
+# Более старые заказы из API не берём — иначе задвоятся с ручными.
+# Время в UTC, как и external_created у Erli.
+def _erli_since():
+    raw = (os.getenv("ERLI_SINCE") or "2026-11-25T22:30:00").strip()
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
+ERLI_SINCE = _erli_since()
+
 # In-memory token cache per account: { "account_name": {"access_token": ..., "expires_at": ..., "refresh_token": ...} }
 _allegro_tokens = {}
 
@@ -565,6 +578,30 @@ async def lifespan(app: FastAPI):
             except Exception:
                 pass
         print("[startup] auto-migrations applied")
+
+        # Разовая чистка: заказы Erli, подтянутые первой синхронизацией,
+        # которые старше ERLI_SINCE. Их уже вбили вручную. Не трогаем то,
+        # что успели отметить люди (звезда, выгрузка, комментарий).
+        try:
+            done = await conn.fetchval(
+                "SELECT value FROM app_settings WHERE key='migration:erli_history_cleanup_v1'")
+            if not done and ERLI_SINCE:
+                res = await conn.execute("""
+                    DELETE FROM orders
+                    WHERE source='erli' AND external_created < $1
+                      AND COALESCE(is_priority, FALSE) = FALSE
+                      AND COALESCE(exported, FALSE) = FALSE
+                      AND COALESCE(customer_comment, '') = ''
+                """, ERLI_SINCE)
+                await conn.execute(
+                    "DELETE FROM customers WHERE source='erli' AND NOT EXISTS ("
+                    "SELECT 1 FROM orders o WHERE o.source='erli' AND o.customer_phone=customers.phone)")
+                await conn.execute(
+                    "INSERT INTO app_settings (key, value, updated_at) VALUES "
+                    "('migration:erli_history_cleanup_v1', $1, NOW()) ON CONFLICT (key) DO NOTHING", res)
+                print("[startup] старые заказы Erli (до %s UTC) удалены: %s" % (ERLI_SINCE, res))
+        except Exception as e:
+            print(f"[startup] чистка старых заказов Erli не удалась: {e}")
 
         # Разовая выдача новых прав при переезде со старой версии:
         # всем, кто работает с заказами, — каталог и обучение помощника.
@@ -2454,6 +2491,10 @@ async def _sync_erli_account(account: dict, full=False):
                         try:
                             parsed = _parse_erli_order(o, seller_name=name)
                             if not parsed["external_id"]:
+                                skip_count += 1
+                                continue
+                            if ERLI_SINCE and parsed.get("external_created") and \
+                                    parsed["external_created"] < ERLI_SINCE:
                                 skip_count += 1
                                 continue
                             result = await _save_order(conn, source, parsed)
