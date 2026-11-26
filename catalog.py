@@ -76,6 +76,54 @@ async def init_catalog_tables(conn):
     n = await conn.fetchval("SELECT COUNT(*) FROM products")
     if n == 0 and SEED_FILE.exists():
         await _seed(conn)
+    await _apply_ean_updates(conn)
+    # Типы в каталоге — по-польски, как в заказах (идемпотентно)
+    for old, new in (("Теплица", "Szklarnia"), ("Поликарбонат", "Poliwęglan"),
+                     ("Аксессуары", "Akcesoria")):
+        await conn.execute("UPDATE products SET product_type=$1 WHERE product_type=$2", new, old)
+
+
+# Обновления кодов от клиента: файл data/ean_update_*.json — источник правды
+# для перечисленных в нём товаров (их коды заменяются целиком: так исправлены
+# прежние дубли и ошибки). Товары, которых нет в каталоге, добавляются.
+# Каждый файл применяется один раз (флаг в app_settings).
+EAN_UPDATES = sorted((Path(__file__).resolve().parent / "data").glob("ean_update_*.json"))
+
+
+def _name_key(n: str) -> str:
+    return re.sub(r"\s+", "", (n or "").lower())
+
+
+async def _apply_ean_updates(conn):
+    for f in EAN_UPDATES:
+        flag = "migration:" + f.stem
+        if await conn.fetchval("SELECT value FROM app_settings WHERE key=$1", flag):
+            continue
+        data = json.loads(f.read_text(encoding="utf-8"))
+        rows = await conn.fetch("SELECT id, name FROM products")
+        by_name = {_name_key(r["name"]): r["id"] for r in rows}
+        upd = new = 0
+        async with conn.transaction():
+            sort = await conn.fetchval("SELECT COALESCE(MAX(sort),0) FROM products")
+            for item in data:
+                pid = by_name.get(_name_key(item["name"]))
+                if not pid:
+                    sort += 1
+                    pid = await conn.fetchval("""
+                        INSERT INTO products (name, category, product_type, attrs, active, sort)
+                        VALUES ($1,$2,$3,'{}',TRUE,$4) RETURNING id
+                    """, item["name"], item.get("category", ""), item.get("product_type", ""), sort)
+                    by_name[_name_key(item["name"])] = pid
+                    new += 1
+                else:
+                    upd += 1
+                    await conn.execute(
+                        "UPDATE products SET active=TRUE, updated_at=NOW() WHERE id=$1", pid)
+                await _save_codes(conn, pid, item["codes"])
+            await conn.execute(
+                "INSERT INTO app_settings (key, value, updated_at) VALUES ($1,$2,NOW()) "
+                "ON CONFLICT (key) DO NOTHING", flag, "updated=%d new=%d" % (upd, new))
+        print(f"[catalog] {f.name}: обновлено {upd}, добавлено {new}")
 
 
 async def _seed(conn):

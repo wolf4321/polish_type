@@ -315,6 +315,17 @@
         .pk-more{font-size:11px;color:var(--faint);padding:4px 8px;}
         .w-cell{white-space:nowrap;font-size:12px;}
         .w-partial{color:var(--warn-ink);}
+        .comment-by{font-size:10.5px;color:var(--faint);margin-top:3px;white-space:nowrap;}
+        label.fiscal{display:inline-flex;align-items:center;gap:3px;cursor:pointer;vertical-align:middle;}
+        label.fiscal input{width:16px;height:16px;accent-color:#7c3aed;cursor:pointer;margin:0;}
+        label.fiscal.ro input{cursor:default;opacity:.85;}
+        label.fiscal.warn input{accent-color:#dc2626;outline:2px solid #dc2626;outline-offset:1px;}
+        label.fiscal b{color:#dc2626;font-size:13px;}
+        .mt-group{display:flex;gap:6px;flex-wrap:wrap;}
+        .mt-btn{padding:7px 14px;border:1px solid var(--line-strong);border-radius:8px;background:var(--input-bg);color:var(--ink);font:500 13px inherit;cursor:pointer;}
+        .mt-btn.on{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+        .inv-row{display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px;}
+        .inv-row label{display:inline-flex;gap:6px;align-items:center;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink);}
         @media (max-width:700px){
             .mi-head{display:none;}
             .mi-row{grid-template-columns:1fr 1fr 1fr 26px;}
@@ -583,6 +594,9 @@
                     <label class="src-indent"><input type="checkbox" class="source-check" value="erli:erli_oteko"> erli_oteko</label>
                     <label class="src-indent"><input type="checkbox" class="source-check" value="erli:erli_pl_oteko"> erli_pl_oteko</label>
                     <label><input type="checkbox" class="source-check" value="manual"> Ręczne</label>
+                    <label class="src-indent"><input type="checkbox" class="source-check" value="mtype:Szklarnia"> <span data-i18n="mt_szklarnia">Ręczne: szklarnie</span></label>
+                    <label class="src-indent"><input type="checkbox" class="source-check" value="mtype:Poliwęglan"> <span data-i18n="mt_poliweglan">Ręczne: poliwęglan</span></label>
+                    <label class="src-indent"><input type="checkbox" class="source-check" value="mtype:Reklamacja"> <span data-i18n="mt_reklamacja">Ręczne: reklamacje</span></label>
                 </div>
             </div>
             <select id="f-status">
@@ -635,9 +649,9 @@
                 </select>
                 <select id="f-product-type">
                     <option value="" data-i18n="type_all">Typ: wszystkie</option>
-                    <option value="Теплица" data-i18n="type_greenhouse">Теплица</option>
-                    <option value="Поликарбонат" data-i18n="type_polycarbonate">Поликарбонат</option>
-                    <option value="Теплица + Поликарбонат" data-i18n="type_greenhouse_poly">Теплица + Поликарбонат</option>
+                    <option value="Szklarnia">Szklarnia</option>
+                    <option value="Poliwęglan">Poliwęglan</option>
+                    <option value="Reklamacja">Reklamacja</option>
                 </select>
                 <span class="toolbar-spacer"></span>
                 {% if user and 'sync' in (user.permissions or '').split(',') %}
@@ -736,6 +750,7 @@
                             <th><span data-i18n="col_product">Produkt</span><span class="col-resize"></span></th>
                             <th><span data-i18n="col_status">Status</span><span class="col-resize"></span></th>
                             <th><span data-i18n="col_payment">Płatność</span><span class="col-resize"></span></th>
+                            <th title="Paragon / faktura nabita"><span data-i18n="col_fiscal">Księgowość</span><span class="col-resize"></span></th>
                             <th><span data-i18n="col_phone">Telefon</span><span class="col-resize"></span></th>
                             <th><span data-i18n="col_address">Adres</span><span class="col-resize"></span></th>
                             <th><span data-i18n="col_comment">Komentarz</span><span class="col-resize"></span></th>
@@ -744,7 +759,7 @@
                         </tr>
                     </thead>
                     <tbody id="orders-body">
-                        <tr><td colspan="17" class="empty">
+                        <tr><td colspan="18" class="empty">
                             <h4 data-i18n="loading">Loading...</h4>
                         </td></tr>
                     </tbody>
@@ -849,7 +864,12 @@
             mi_catalog: 'katalog', mi_need_item: 'Dodaj co najmniej jedną pozycję',
             pk_category: 'Kategoria', pk_all: 'Wszystkie', pk_more: 'jeszcze', pk_none: 'Nic nie znaleziono',
             pk_dup: 'Ten kod ma kilka produktów — wybierz ręcznie',
-            col_weight: 'Waga', detail_weight: 'Waga/szt.', nav_products: 'Katalog', nav_assistant: 'Asystent',
+            col_fiscal: 'Księgowość', fiscal_done_by: 'Nabite:', fiscal_not_done: 'Jeszcze nie nabite', fiscal_warn: 'zamówienie anulowane — anuluj paragon!',
+            mt_szklarnia: 'Ręczne: szklarnie', mt_poliweglan: 'Ręczne: poliwęglan', mt_reklamacja: 'Ręczne: reklamacje', alog_a_fiscal: 'Księgowość',
+            modal_invoice: 'Faktura', inv_person: 'Faktura imienna', inv_company: 'Faktura na firmę', inv_nip_ph: 'NIP', inv_data_ph: 'Dane do faktury (nazwa, adres) — opcjonalnie',
+            pay_cod: 'Płatność przy odbiorze', pay_proforma: 'Oczekujemy na opłacenie proformy', pay_paid: 'Opłacone',
+            mt_required: 'Wybierz typ towaru',
+            col_weight: 'Waga (kg)', detail_weight: 'Waga/szt.', nav_products: 'Katalog', nav_assistant: 'Asystent',
             modal_edit_order: 'Edytuj zamówienie',
             modal_date: 'Data',
             modal_product_name: 'Nazwa produktu',
@@ -1070,7 +1090,12 @@
             mi_catalog: 'каталог', mi_need_item: 'Добавьте хотя бы одну позицию',
             pk_category: 'Категория', pk_all: 'Все', pk_more: 'ещё', pk_none: 'Ничего не найдено',
             pk_dup: 'Этот код у нескольких товаров — выберите вручную',
-            col_weight: 'Вес', detail_weight: 'Вес/шт.', nav_products: 'Каталог', nav_assistant: 'Помощник',
+            col_fiscal: 'Бухгалтерия', fiscal_done_by: 'Пробито:', fiscal_not_done: 'Ещё не пробито', fiscal_warn: 'заказ аннулирован — аннулируй чек!',
+            mt_szklarnia: 'Ручные: теплицы', mt_poliweglan: 'Ручные: поликарбонат', mt_reklamacja: 'Ручные: рекламации', alog_a_fiscal: 'Бухгалтерия',
+            modal_invoice: 'Фактура', inv_person: 'Фактура именная', inv_company: 'Фактура на фирму', inv_nip_ph: 'NIP', inv_data_ph: 'Данные для фактуры (название, адрес) — по желанию',
+            pay_cod: 'Płatność przy odbiorze', pay_proforma: 'Oczekujemy na opłacenie proformy', pay_paid: 'Opłacone',
+            mt_required: 'Выбери тип товара',
+            col_weight: 'Вес (кг)', detail_weight: 'Вес/шт.', nav_products: 'Каталог', nav_assistant: 'Помощник',
             modal_edit_order: 'Редактировать заказ',
             modal_date: 'Дата',
             modal_product_name: 'Название продукта',
@@ -1321,8 +1346,10 @@
         var checks = document.querySelectorAll('.source-check:checked');
         var sources = [];
         var sellers = [];
+        var mtypes = [];
         checks.forEach(function(cb) {
             var val = cb.value;
+            if (val.indexOf('mtype:') === 0) { mtypes.push(val.slice(6)); return; }
             if (val.indexOf(':') !== -1) {
                 var parts = val.split(':');
                 sources.push(parts[0]);
@@ -1336,6 +1363,7 @@
         return {
             source: uniqueSources.join(','),
             seller: sellers.join(','),
+            manual_type: mtypes.join(','),
             status: document.getElementById('f-status').value,
             search: document.getElementById('f-search').value,
             date_from: document.getElementById('f-from').value,
@@ -1354,6 +1382,7 @@
         var url = '/api/stats?date_from=' + f.date_from + '&date_to=' + f.date_to;
         if (f.source) url += '&source=' + encodeURIComponent(f.source);
         if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
+        if (f.manual_type) url += '&manual_type=' + encodeURIComponent(f.manual_type);
         fetch(url).then(function(r) { return r.json(); }).then(function(d) {
             var o = d.orders;
             document.getElementById('s-total').textContent = fmt(o.total);
@@ -1373,6 +1402,7 @@
         var url = '/api/orders?limit=' + perPage + '&offset=' + offset;
         if (f.source) url += '&source=' + encodeURIComponent(f.source);
         if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
+        if (f.manual_type) url += '&manual_type=' + encodeURIComponent(f.manual_type);
         if (f.status) url += '&status=' + encodeURIComponent(f.status);
         if (f.search) url += '&search=' + encodeURIComponent(f.search);
         if (f.date_from) url += '&date_from=' + f.date_from;
@@ -1500,6 +1530,14 @@
             return name;
         }
 
+        // Allegro: в колонке «Produkt» — сигнатура оферты (её видят на складе),
+        // полное название остаётся в карточке заказа.
+        function prodLabel(o, it) {
+            var sku = (it.sku || '').trim();
+            if ((o.source || '') === 'allegro' && sku && !/^\d+$/.test(sku)) return esc(sku);
+            return shortenProduct(it.full_name || it.name || '', it.sku || '');
+        }
+
         var html = '';
         orders.forEach(function(o) {
             var items = [];
@@ -1508,7 +1546,7 @@
             // Product names — shortened to dimensions
             var productHtml = '<div class="items-list">';
             items.slice(0, 2).forEach(function(it) {
-                var shortName = shortenProduct(it.full_name || it.name || '', it.sku || '');
+                var shortName = prodLabel(o, it);
                 productHtml += '<span>' + it.qty + 'x ' + shortName + '</span>';
             });
             if (items.length > 2) productHtml += '<span>+ ' + (items.length - 2) + ' ' + t('more_items') + '</span>';
@@ -1536,7 +1574,7 @@
             var wVal = (o.weight_kg !== null && o.weight_kg !== undefined && o.weight_kg !== '') ? parseFloat(o.weight_kg) : null;
             var wMissing = items.filter(function(it){ return !(parseFloat(it.weight) > 0); }).length;
             var weightHtml = (wVal !== null && !isNaN(wVal))
-                ? '<span class="w-cell' + (wMissing ? ' w-partial' : '') + '" title="' + (wMissing ? (wMissing + ' ' + t('mi_items_short') + ' ' + t('mi_no_weight')) : '') + '">' + fmtWeight(wVal) + ' kg' + (wMissing ? ' +?' : '') + '</span>'
+                ? '<span class="w-cell" title="' + (wMissing ? (wMissing + ' ' + t('mi_items_short') + ' ' + t('mi_no_weight')) : 'kg') + '">' + fmtWeight(wVal) + '</span>'
                 : '<span class="w-cell" style="color:var(--faint);">—</span>';
 
             // Address: city + full address
@@ -1549,8 +1587,16 @@
             // Comment (messageToSeller + NIP)
             var commentHtml = (o.customer_comment || o.note || '—');
 
-            // Status in Polish
-            var statusLabel = getStatus(o.status);
+            // Status in Polish. У ручных заказов статуса нет — оплата в «Płatność»
+            var statusLabel = (o.source === 'manual' && !o.status) ? '' : getStatus(o.status);
+            var commentBy = (o.comment_by && (o.customer_comment || '').trim())
+                ? '<div class="comment-by">\u270e ' + esc(o.comment_by) + (o.comment_at ? ' \u00b7 ' + fmtShortDt(o.comment_at) : '') + '</div>' : '';
+            var fiscalWarn = o.fiscal_done && /cancel|anul|refund/i.test(o.status || '');
+            var fiscalHtml = '<label class="fiscal' + (CAN_FISCAL ? '' : ' ro') + (fiscalWarn ? ' warn' : '') + '" onclick="event.stopPropagation()" title="'
+                + (o.fiscal_done ? (t('fiscal_done_by') + ' ' + esc(o.fiscal_by || '') + (o.fiscal_at ? ', ' + fmtShortDt(o.fiscal_at) : '')) : t('fiscal_not_done'))
+                + (fiscalWarn ? ' \u2014 ' + t('fiscal_warn') : '') + '">'
+                + '<input type="checkbox" data-id="' + (o.id || '') + '"' + (o.fiscal_done ? ' checked' : '') + (CAN_FISCAL ? ' onchange="toggleFiscal(this)"' : ' disabled') + '>'
+                + (fiscalWarn ? '<b>!</b>' : '') + '</label>';
 
             var rowId = 'detail-' + (o.id || o.external_id);
             var orderId = o.id || '';
@@ -1570,7 +1616,7 @@
                     dTime = cd.toLocaleTimeString('pl-PL', {hour: '2-digit', minute: '2-digit'});
                 }
                 var prodLine = items.slice(0, 2).map(function(it) {
-                    return it.qty + 'x ' + shortenProduct(it.full_name || it.name || '', it.sku || '');
+                    return it.qty + 'x ' + prodLabel(o, it);
                 }).join(', ');
                 if (items.length > 2) prodLine += ' + ' + (items.length - 2) + ' ' + t('more_items');
                 if (!prodLine) prodLine = (o.product_type || '');
@@ -1601,12 +1647,13 @@
                         + '<span class="c-prod" onclick="toggleDetail(\'' + rowId + '\')">' + prodLine + '</span>'
                         + (extra.length ? '<span class="c-extra" onclick="toggleDetail(\'' + rowId + '\')">' + extra.join(' \u00b7 ') + '</span>' : '')
                         + '<span class="c-note editable-comment' + (noteTxt ? '' : ' is-empty') + '" data-id="' + orderId + '" onclick="event.stopPropagation();editComment(this)" title="' + t('click_to_edit') + '">' + (noteTxt || '\u2014') + '</span>'
+                        + commentBy
                     + '</td>'
                     + '<td class="c-amount" onclick="toggleDetail(\'' + rowId + '\')"><b>' + fmtMoney(totalVal) + ' z\u0142</b>'
                     + (shipCost > 0 ? '<span>+ ' + fmtMoney(shipCost) + ' ' + t('delivery_short') + '</span>' : '')
                     + (wVal !== null && !isNaN(wVal) ? '<span>' + weightHtml + '</span>' : '') + '</td>'
-                    + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="pill ' + pillClass(o.status) + '">' + statusLabel + '</span></td>'
-                    + '<td class="c-pay" onclick="toggleDetail(\'' + rowId + '\')">' + (o.payment_method || '\u2014') + '</td>'
+                    + '<td onclick="toggleDetail(\'' + rowId + '\')">' + (statusLabel ? '<span class="pill ' + pillClass(o.status) + '">' + statusLabel + '</span>' : '') + '</td>'
+                    + '<td class="c-pay" onclick="toggleDetail(\'' + rowId + '\')">' + (o.payment_method || '\u2014') + ' ' + fiscalHtml + '</td>'
                     + '<td class="c-src" onclick="toggleDetail(\'' + rowId + '\')">' + srcHtml + '</td>'
                     + '<td class="c-chev" onclick="toggleDetail(\'' + rowId + '\')">\u2304</td>'
                     + '</tr>';
@@ -1625,11 +1672,12 @@
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + productHtml + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span></td>'
                 + '<td style="font-size:11px;" onclick="toggleDetail(\'' + rowId + '\')">' + (o.payment_method || '—') + '</td>'
+                + '<td style="text-align:center;">' + fiscalHtml + '</td>'
                 + '<td class="phone-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.customer_phone || '—') + '</td>'
                 + '<td class="address-cell" onclick="toggleDetail(\'' + rowId + '\')">' + addrHtml + '</td>'
-                + '<td class="comment-cell" onclick="event.stopPropagation()"><span class="editable-comment" data-id="' + orderId + '" onclick="editComment(this)" title="' + t('click_to_edit') + '">' + commentHtml + '</span></td>'
+                + '<td class="comment-cell" onclick="event.stopPropagation()"><span class="editable-comment" data-id="' + orderId + '" onclick="editComment(this)" title="' + t('click_to_edit') + '">' + commentHtml + '</span>' + commentBy + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="badge badge-' + o.source + '">' + (o.source || '').toUpperCase() + '</span>'
-                + '<div class="order-extid">' + ((o.external_id || '').replace(/[^0-9]/g, '') || '') + '</div>'
+                + (o.source === 'manual' ? '' : '<div class="order-extid">' + ((o.external_id || '').replace(/[^0-9]/g, '') || '') + '</div>')
                 + (o.created_by_email ? '<div class="order-extid">' + o.created_by_email + '</div>' : '')
                 + '</td>'
                 + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.seller_account || '') + '</td>'
@@ -1832,6 +1880,7 @@
         var url = '/api/orders/export?fmt=xlsx';
         if (f.source) url += '&source=' + encodeURIComponent(f.source);
         if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
+        if (f.manual_type) url += '&manual_type=' + encodeURIComponent(f.manual_type);
         if (f.status) url += '&status=' + encodeURIComponent(f.status);
         if (f.date_from) url += '&date_from=' + f.date_from;
         if (f.date_to) url += '&date_to=' + f.date_to;
@@ -1971,6 +2020,29 @@
     }
 
     // --- Toggle priority star ---
+    var CAN_FISCAL = {{ 'true' if user and 'ksiegowosc' in (user.permissions or '').split(',') else 'false' }};
+    function fmtShortDt(v) {
+        var d = new Date(v);
+        if (isNaN(d)) return '';
+        return ('0' + d.getDate()).slice(-2) + '.' + ('0' + (d.getMonth() + 1)).slice(-2) + ' '
+            + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    }
+    function toggleFiscal(cb) {
+        var id = cb.getAttribute('data-id');
+        var want = cb.checked;
+        fetch('/api/orders/toggle-fiscal', {method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: id, done: want})})
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d.ok) { cb.checked = !want; alert(d.error || 'Error'); return; }
+            (lastRenderedOrders || []).forEach(function(o) {
+                if (o.id == id) { o.fiscal_done = want; o.fiscal_by = d.by || ''; o.fiscal_at = want ? new Date().toISOString() : null; }
+            });
+            cb.parentNode.title = want ? (t('fiscal_done_by') + ' ' + (d.by || '')) : t('fiscal_not_done');
+        })
+        .catch(function() { cb.checked = !want; });
+    }
+
     function togglePriority(btn) {
         var id = btn.getAttribute('data-id');
         var isActive = btn.classList.contains('active');
@@ -2063,20 +2135,19 @@
             + ':' + String(now.getMinutes()).padStart(2,'0');
         document.getElementById('m-date').value = dtStr;
         document.getElementById('m-source').value = 'manual';
-        document.getElementById('m-type').value = '';
+        setMType('');
         document.getElementById('m-config').value = '';
         document.getElementById('m-shipping').value = '0';
         setItems([]);
         closePicker();
-        document.getElementById('m-status').value = 'awaiting_cod';
-        document.getElementById('m-payment').value = '';
+        setInvFields('', '', '');
+        document.getElementById('m-payment').value = 'Płatność przy odbiorze';
         document.getElementById('m-name').value = '';
         document.getElementById('m-phone').value = '';
         document.getElementById('m-city').value = '';
         document.getElementById('m-address').value = '';
         document.getElementById('m-email').value = '';
         document.getElementById('m-comment').value = '';
-        document.getElementById('m-seller').value = '';
     }
 
     // ===== Позиции заказа + выбор из каталога =====
@@ -2309,7 +2380,8 @@
             document.getElementById('m-source').value = order.source || 'manual';
             var items = [];
             try { items = JSON.parse(order.items_json || '[]'); } catch(e) {}
-            document.getElementById('m-type').value = order.product_type || '';
+            setMType(order.product_type || '');
+            setInvFields(order.invoice_type || '', order.invoice_nip || '', order.invoice_data || '');
             document.getElementById('m-config').value = order.configuration || '';
             var shipCost = parseFloat(order.shipping_cost || 0);
             var totalVal = parseFloat(order.total || 0);
@@ -2323,7 +2395,6 @@
                         qty: it.qty || 1, price: (it.price === undefined || it.price === '' || it.price === null) ? '' : parseFloat(it.price), weight: it.weight || '', code: it.code || ''};
             }));
             closePicker();
-            document.getElementById('m-status').value = order.status || 'awaiting_cod';
             document.getElementById('m-payment').value = order.payment_method || '';
             document.getElementById('m-name').value = order.customer_name || '';
             document.getElementById('m-phone').value = order.customer_phone || '';
@@ -2331,7 +2402,6 @@
             document.getElementById('m-address').value = order.customer_address || '';
             document.getElementById('m-email').value = order.customer_email || '';
             document.getElementById('m-comment').value = order.customer_comment || order.note || '';
-            document.getElementById('m-seller').value = order.seller_account || '';
         });
     }
     function deleteManualOrder(orderId) {
@@ -2343,7 +2413,34 @@
                 else alert(t('error_prefix') + ': ' + (d.error || 'unknown'));
             });
     }
+    function setMType(v) {
+        document.getElementById('m-type').value = v || '';
+        document.querySelectorAll('#m-type-btns .mt-btn').forEach(function(b) {
+            b.classList.toggle('on', b.dataset.v === v);
+        });
+    }
+    function setInv(kind, on) {
+        var p = document.getElementById('m-inv-person'), c = document.getElementById('m-inv-company');
+        if (on) { if (kind === 'person') c.checked = false; else p.checked = false; }
+        var cur = p.checked ? 'person' : (c.checked ? 'company' : '');
+        document.getElementById('m-inv-nip').style.display = cur === 'company' ? '' : 'none';
+        document.getElementById('m-inv-data').style.display = cur ? '' : 'none';
+        if (cur === 'company') document.getElementById('m-inv-nip').focus();
+    }
+    function setInvFields(type, nip, data) {
+        document.getElementById('m-inv-person').checked = (type === 'person');
+        document.getElementById('m-inv-company').checked = (type === 'company');
+        document.getElementById('m-inv-nip').value = nip || '';
+        document.getElementById('m-inv-data').value = (data || '').replace(/\n?NIP:\s*\S+\s*$/, '');
+        setInv(type, false);
+    }
     function saveManualOrder() {
+        if (!document.getElementById('m-type').value) {
+            alert(t('mt_required'));
+            return;
+        }
+        var invType = document.getElementById('m-inv-person').checked ? 'person'
+                    : (document.getElementById('m-inv-company').checked ? 'company' : '');
         var items = readItems();
         var data = {
             date: document.getElementById('m-date').value,
@@ -2352,15 +2449,16 @@
             product_type: document.getElementById('m-type').value,
             configuration: document.getElementById('m-config').value,
             shipping_cost: parseFloat(document.getElementById('m-shipping').value) || 0,
-            status: document.getElementById('m-status').value,
             payment_method: document.getElementById('m-payment').value,
+            invoice_type: invType,
+            invoice_nip: document.getElementById('m-inv-nip').value,
+            invoice_data: document.getElementById('m-inv-data').value,
             customer_name: document.getElementById('m-name').value,
             customer_phone: document.getElementById('m-phone').value,
             customer_city: document.getElementById('m-city').value,
             customer_address: document.getElementById('m-address').value,
             customer_email: document.getElementById('m-email').value,
             comment: document.getElementById('m-comment').value,
-            seller_account: document.getElementById('m-seller').value,
         };
         var url = editingOrderId ? '/api/orders/manual/' + editingOrderId : '/api/orders/manual';
         var method = editingOrderId ? 'PUT' : 'POST';
@@ -2384,7 +2482,7 @@
         try { localStorage.removeItem('ekomat_col_widths'); } catch(e) {}
         try { localStorage.removeItem('ekomat_col_minwidths_v2'); } catch(e) {}
 
-        var STORAGE_KEY = 'ekomat_col_w_v4';
+        var STORAGE_KEY = 'ekomat_col_w_v5';
         var startX, startW, activeTh, tableStartW;
         var locked = false;
 
@@ -2725,9 +2823,14 @@
                     </div>
                     <div class="mi-sum" id="m-sum"></div>
                 </div>
-                <div class="form-group">
+                <div class="form-group full">
                     <label data-i18n="modal_product_type">Typ towaru</label>
-                    <input type="text" id="m-type" placeholder="Szklarnia / Poliwęglan">
+                    <input type="hidden" id="m-type">
+                    <div class="mt-group" id="m-type-btns">
+                        <button type="button" class="mt-btn" data-v="Szklarnia" onclick="setMType(this.dataset.v)">Szklarnia</button>
+                        <button type="button" class="mt-btn" data-v="Poliwęglan" onclick="setMType(this.dataset.v)">Poliwęglan</button>
+                        <button type="button" class="mt-btn" data-v="Reklamacja" onclick="setMType(this.dataset.v)">Reklamacja</button>
+                    </div>
                 </div>
                 <div class="form-group full">
                     <label data-i18n="modal_config">Konfiguracja</label>
@@ -2738,15 +2841,16 @@
                     <input type="number" step="0.01" id="m-shipping" value="0" placeholder="0.00" oninput="updateItemsSum()">
                 </div>
                 <div class="form-group">
-                    <label data-i18n="modal_status">Status</label>
-                    <select id="m-status">
-                        <option value="awaiting_cod" data-i18n="status_awaiting_cod">Płatność przy odbiorze</option>
-                        <option value="awaiting_proforma" data-i18n="status_awaiting_proforma">Oczekujemy na opłacenie Proformy</option>
-                    </select>
-                </div>
-                <div class="form-group">
                     <label data-i18n="modal_payment">Płatność</label>
-                    <input type="text" id="m-payment" placeholder="Gotówka / Przelew / Blik">
+                    <input type="text" id="m-payment" list="m-payment-list" placeholder="Płatność przy odbiorze / Proforma / Gotówka">
+                    <datalist id="m-payment-list">
+                        <option value="Płatność przy odbiorze"></option>
+                        <option value="Oczekujemy na opłacenie proformy"></option>
+                        <option value="Opłacone"></option>
+                        <option value="Gotówka"></option>
+                        <option value="Przelew"></option>
+                        <option value="Blik"></option>
+                    </datalist>
                 </div>
                 <div class="form-group">
                     <label data-i18n="modal_customer_name">Imię i nazwisko klienta</label>
@@ -2768,9 +2872,14 @@
                     <label data-i18n="modal_address">Adres</label>
                     <input type="text" id="m-address" placeholder="">
                 </div>
-                <div class="form-group">
-                    <label data-i18n="modal_seller_account">Konto sprzedawcy</label>
-                    <input type="text" id="m-seller" placeholder="np. mantrade">
+                <div class="form-group full">
+                    <label data-i18n="modal_invoice">Faktura</label>
+                    <div class="inv-row">
+                        <label><input type="checkbox" id="m-inv-person" onchange="setInv('person', this.checked)"> <span data-i18n="inv_person">Faktura imienna</span></label>
+                        <label><input type="checkbox" id="m-inv-company" onchange="setInv('company', this.checked)"> <span data-i18n="inv_company">Faktura na firmę</span></label>
+                        <input type="text" id="m-inv-nip" data-i18n-placeholder="inv_nip_ph" placeholder="NIP" style="display:none;max-width:180px;">
+                    </div>
+                    <textarea id="m-inv-data" rows="2" data-i18n-placeholder="inv_data_ph" placeholder="Dane do faktury (nazwa, adres) — opcjonalnie" style="display:none;margin-top:8px;"></textarea>
                 </div>
                 <div class="form-group full">
                     <label data-i18n="modal_comment">Komentarz</label>

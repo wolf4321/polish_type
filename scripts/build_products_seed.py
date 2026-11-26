@@ -83,7 +83,7 @@ for ws in wb:
         add({
             "name": name,
             "category": "Poliwęglan " + kind.lower(),
-            "product_type": "Поликарбонат",
+            "product_type": "Poliwęglan",
             "attrs": {
                 "Grubość": f"{thick} mm",
                 "Kolor": color,
@@ -124,7 +124,7 @@ for r in ws.iter_rows(min_row=2, values_only=True):
     add({
         "name": name,
         "category": "Szklarnie",
-        "product_type": "Теплица",
+        "product_type": "Szklarnia",
         "attrs": attrs,
         "weight_kg": None,
         "codes": codes,
@@ -148,7 +148,7 @@ for ws in wb:
         add({
             "name": name,
             "category": "Taśmy" if is_tasmy else "Profile i akcesoria",
-            "product_type": "Аксессуары",
+            "product_type": "Akcesoria",
             "attrs": {},
             "weight_kg": None,
             "codes": codes,

@@ -184,6 +184,10 @@
                     <label for="p-assistant_kb"><span data-i18n="p_assistant_kb">Baza wiedzy asystenta</span><span class="hint" data-i18n="p_assistant_kb_d">Może edytować odpowiedzi asystenta i widzi pytania bez odpowiedzi</span></label>
                 </div>
                 <div class="check-row">
+                    <input type="checkbox" class="perm-check" value="ksiegowosc" id="p-ksiegowosc">
+                    <label for="p-ksiegowosc"><span data-i18n="p_ksiegowosc">Księgowość (paragony)</span><span class="hint" data-i18n="p_ksiegowosc_d">Może odhaczać w kolumnie Księgowość, że paragon/faktura jest nabita. Tylko ta osoba — nikt inny nie zmieni ptaszka.</span></label>
+                </div>
+                <div class="check-row">
                     <input type="checkbox" class="perm-check" value="manage_users" id="p-manage_users">
                     <label for="p-manage_users"><span data-i18n="p_manage_users">Zarządzanie użytkownikami</span><span class="hint" data-i18n="p_manage_users_d">Może dodawać/edytować/usuwać użytkowników</span></label>
                 </div>
@@ -304,7 +308,7 @@ EKOMAT.extend({
     p_edit_comments:'Edycja komentarzy', p_edit_comments_d:'Może edytować komentarze w zamówieniach',
     p_mark_delivery:'Oznaczanie dostawy', p_mark_delivery_d:'Może oznaczać zamówienia jako dostarczone',
     p_products:'Katalog produktów', p_products_d:'Może edytować katalog: nazwy, kody EAN, wagę', t_products:'Katalog', nav_products:'Katalog',nav_assistant:'Asystent',
-    p_assistant_kb:'Baza wiedzy asystenta', p_assistant_kb_d:'Może edytować odpowiedzi asystenta i widzi pytania bez odpowiedzi', t_assistant_kb:'Asystent', nav_assistant:'Asystent',
+    p_ksiegowosc:'Księgowość (paragony)', p_ksiegowosc_d:'Może odhaczać w kolumnie Księgowość, że paragon/faktura jest nabita. Tylko ta osoba — nikt inny nie zmieni ptaszka.', t_ksiegowosc:'Księgowość', p_assistant_kb:'Baza wiedzy asystenta', p_assistant_kb_d:'Może edytować odpowiedzi asystenta i widzi pytania bez odpowiedzi', t_assistant_kb:'Asystent', nav_assistant:'Asystent',
     p_manage_users:'Zarządzanie użytkownikami', p_manage_users_d:'Może dodawać/edytować/usuwać użytkowników',
     t_dashboard:'Dashboard', t_orders:'Zamówienia', t_prices:'Ceny', t_phones:'Telefony',
     t_export:'Eksport', t_sync:'Sync', t_add_orders:'Dodawanie', t_edit_comments:'Komentarze',
@@ -351,7 +355,7 @@ EKOMAT.extend({
     p_edit_comments:'Правка комментариев', p_edit_comments_d:'Может править комментарии в заказах',
     p_mark_delivery:'Отметка доставки', p_mark_delivery_d:'Может отмечать заказы доставленными',
     p_products:'Каталог товаров', p_products_d:'Может править каталог: названия, коды EAN, вес', t_products:'Каталог', nav_products:'Каталог',nav_assistant:'Помощник',
-    p_assistant_kb:'База знаний помощника', p_assistant_kb_d:'Может править ответы помощника и видит вопросы без ответа', t_assistant_kb:'Помощник', nav_assistant:'Помощник',
+    p_ksiegowosc:'Бухгалтерия (чеки)', p_ksiegowosc_d:'Может ставить галочку в колонке Księgowość, что чек/фактура пробиты. Только этот человек — больше никто не изменит.', t_ksiegowosc:'Бухгалтерия', p_assistant_kb:'База знаний помощника', p_assistant_kb_d:'Может править ответы помощника и видит вопросы без ответа', t_assistant_kb:'Помощник', nav_assistant:'Помощник',
     p_manage_users:'Управление пользователями', p_manage_users_d:'Может добавлять, менять и удалять пользователей',
     t_dashboard:'Сводка', t_orders:'Заказы', t_prices:'Цены', t_phones:'Телефоны',
     t_export:'Экспорт', t_sync:'Синх', t_add_orders:'Добавление', t_edit_comments:'Комментарии',

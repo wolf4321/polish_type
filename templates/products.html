@@ -112,9 +112,9 @@
         </div>
         <label class="field-label" data-i18n="pr_f_type">Typ towaru (kolumna w zamówieniach)</label>
         <select class="field" id="f-type">
-            <option value="Поликарбонат">Poliwęglan</option>
-            <option value="Теплица">Szklarnia</option>
-            <option value="Аксессуары">Akcesoria</option>
+            <option value="Poliwęglan">Poliwęglan</option>
+            <option value="Szklarnia">Szklarnia</option>
+            <option value="Akcesoria">Akcesoria</option>
             <option value="">—</option>
         </select>
         <label class="field-label" data-i18n="pr_f_codes">Kody (jeden w linii: kod; etykieta)</label>
@@ -231,7 +231,7 @@ function openEdit(id){
     document.getElementById('f-name').value = p ? p.name : '';
     document.getElementById('f-cat').value = p ? p.category : (document.getElementById('cat').value || '');
     document.getElementById('f-w').value = p && p.weight_kg != null ? String(p.weight_kg).replace('.', ',') : '';
-    document.getElementById('f-type').value = p ? (p.product_type || '') : 'Поликарбонат';
+    document.getElementById('f-type').value = p ? (p.product_type || '') : 'Poliwęglan';
     document.getElementById('f-codes').value = p ? (p.codes || []).map(function(c){ return c.code + (c.label ? '; ' + c.label : ''); }).join('\n') : '';
     document.getElementById('f-attrs').value = p ? Object.keys(p.attrs || {}).map(function(k){ return k + ': ' + p.attrs[k]; }).join('\n') : '';
     document.getElementById('f-active').checked = p ? !!p.active : true;

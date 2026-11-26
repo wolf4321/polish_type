@@ -50,10 +50,12 @@ ALL_PERMISSIONS = [
     ("mark_delivery", "Oznaczanie dostawy",     "Może oznaczać zamówienia jako dostarczone"),
     ("products",      "Katalog produktów",      "Może edytować katalog: nazwy, kody EAN, wagę"),
     ("assistant_kb",  "Baza wiedzy asystenta",  "Może edytować odpowiedzi asystenta i widzi pytania bez odpowiedzi"),
+    ("ksiegowosc",    "Księgowość (paragony)",  "Może odhaczać w kolumnie Księgowość, że paragon/faktura jest nabita"),
     ("manage_users",  "Zarządzanie użytkownikami", "Może dodawać/edytować/usuwać użytkowników"),
 ]
 
-OWNER_PERMS = ",".join(p[0] for p in ALL_PERMISSIONS)
+# Księgowość — личная отметка бухгалтера: владельцу автоматически не выдаётся
+OWNER_PERMS = ",".join(p[0] for p in ALL_PERMISSIONS if p[0] != "ksiegowosc")
 
 # ── DB pool (shared with main.py — injected at startup) ──
 _pool = None

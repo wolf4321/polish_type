@@ -16,6 +16,7 @@ import os
 import io
 import csv
 import json
+import re
 import asyncio
 import hashlib
 import hmac
@@ -627,6 +628,49 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[startup] чистка старых заказов Erli (2) не удалась: {e}")
 
+        # Правки клиента 26.11: кто писал комментарий, отметка бухгалтерии
+        await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS comment_by VARCHAR(200) DEFAULT ''")
+        await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS comment_at TIMESTAMP")
+        await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS fiscal_done BOOLEAN DEFAULT FALSE")
+        await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS fiscal_at TIMESTAMP")
+        await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS fiscal_by VARCHAR(200) DEFAULT ''")
+
+        # Разово: типы товара — только Szklarnia / Poliwęglan / Reklamacja,
+        # по-польски; у ручных заказов статус переезжает в «Płatność».
+        try:
+            done = await conn.fetchval(
+                "SELECT value FROM app_settings WHERE key='migration:product_types_pl_v1'")
+            if not done:
+                rows = await conn.fetch(
+                    "SELECT DISTINCT product_type FROM orders WHERE COALESCE(product_type,'') <> ''")
+                changed = 0
+                for r in rows:
+                    old = r["product_type"]
+                    new = _norm_product_type(old)
+                    if new and new != old:
+                        res = await conn.execute(
+                            "UPDATE orders SET product_type=$1 WHERE product_type=$2", new, old)
+                        changed += int(res.split()[-1])
+                await conn.execute("""
+                    UPDATE orders SET payment_method = CASE
+                        WHEN status='awaiting_proforma' AND COALESCE(payment_method,'') = ''
+                            THEN 'Oczekujemy na opłacenie proformy'
+                        WHEN status='awaiting_proforma' AND payment_method NOT ILIKE '%proform%'
+                            THEN payment_method || ' · oczekujemy na opłacenie proformy'
+                        WHEN status='awaiting_cod' AND COALESCE(payment_method,'') = ''
+                            THEN 'Płatność przy odbiorze'
+                        ELSE payment_method END,
+                        status = ''
+                    WHERE source='manual' AND status IN ('awaiting_cod','awaiting_proforma')
+                """)
+                await conn.execute(
+                    "INSERT INTO app_settings (key, value, updated_at) VALUES "
+                    "('migration:product_types_pl_v1', $1, NOW()) ON CONFLICT (key) DO NOTHING",
+                    "orders=%d" % changed)
+                print("[startup] типы товара → польские: %d заказов" % changed)
+        except Exception as e:
+            print(f"[startup] миграция типов товара не удалась: {e}")
+
         # Разовая выдача новых прав при переезде со старой версии:
         # всем, кто работает с заказами, — каталог и обучение помощника.
         # Флаг в app_settings, чтобы потом админ мог эти права снять.
@@ -1007,7 +1051,10 @@ def _detect_product_type(items: list) -> str:
       - If item contains szklarnia keywords -> greenhouse (even if it also mentions poliweglan)
       - If item contains poliweglan keywords but NOT szklarnia -> standalone polycarbonate
     Then combine across all items in the order.
-    Returns: 'Теплица', 'Поликарбонат', 'Теплица + Поликарбонат', or ''
+    Returns: 'Szklarnia', 'Poliwęglan' or ''.
+    Клиент: «типов товара всего три» — Szklarnia, Poliwęglan и (только для
+    ручных) Reklamacja. Заказ с теплицей = Szklarnia, всё остальное
+    (листы, профили, ленты) = Poliwęglan.
     """
     has_szklarnia = False
     has_standalone_poliweglan = False
@@ -1037,13 +1084,40 @@ def _detect_product_type(items: list) -> str:
             # Standalone polycarbonate (no szklarnia keywords in this item)
             has_standalone_poliweglan = True
 
-    if has_szklarnia and has_standalone_poliweglan:
-        return "Теплица + Поликарбонат"
     if has_szklarnia:
-        return "Теплица"
-    if has_standalone_poliweglan:
-        return "Поликарбонат"
+        return "Szklarnia"
+    if has_standalone_poliweglan or items:
+        return "Poliwęglan"
     return ""
+
+
+PRODUCT_TYPES = ("Szklarnia", "Poliwęglan", "Reklamacja")
+
+
+def _manual_invoice(body: dict):
+    """Фактура у ручного заказа: две галочки — именная или на фирму (+NIP)."""
+    t = (body.get("invoice_type") or "").strip().lower()
+    if t not in ("person", "company"):
+        t = ""
+    nip = re.sub(r"[^0-9A-Za-z]", "", str(body.get("invoice_nip") or ""))[:20] if t == "company" else ""
+    data = str(body.get("invoice_data") or "").strip()[:1000] if t else ""
+    if t == "company" and nip and "NIP" not in data:
+        data = (data + "\nNIP: " + nip).strip()
+    return t, nip, data
+
+
+def _norm_product_type(v: str) -> str:
+    """Привести любое написание типа к одному из трёх."""
+    t = (v or "").strip().lower()
+    if not t:
+        return ""
+    if any(k in t for k in ("reklam", "реклам")):
+        return "Reklamacja"
+    if any(k in t for k in ("szkl", "теплиц", "greenhouse", "cieplar")):
+        return "Szklarnia"
+    if any(k in t for k in ("poliw", "polik", "polyc", "поликарб", "akcesor", "аксесс", "profil", "taśm", "tasm")):
+        return "Poliwęglan"
+    return (v or "").strip()
 
 
 def _parse_woo_order(woo: dict, unit_price: bool = False) -> dict:
@@ -3066,9 +3140,12 @@ async def add_manual_order(request: Request):
     ship = float(body.get("shipping_cost", 0) or 0)
     total = round(goods + ship, 2)
 
+    inv_type, inv_nip, inv_data = _manual_invoice(body)
     order_data = {
         "external_id": ext_id,
-        "status": body.get("status", "processing"),
+        # У ручных заказов статуса нет — оплата пишется в «Płatność».
+        # Старый вид ещё присылает status, его и сохраняем.
+        "status": body.get("status", "") if "status" in body else "",
         "customer_name": body.get("customer_name", ""),
         "customer_email": body.get("customer_email", ""),
         "customer_phone": body.get("customer_phone", ""),
@@ -3085,8 +3162,9 @@ async def add_manual_order(request: Request):
         "external_created": ext_created,
         "shipping_cost": ship,
         "customer_comment": body.get("comment", ""),
-        "seller_account": body.get("seller_account", ""),
-        "product_type": body.get("product_type", "") or _detect_product_type(items),
+        # «Konto» у ручного заказа — кто его завёл, а не то, что впишут руками
+        "seller_account": body.get("seller_account") or user.get("name") or user.get("email", ""),
+        "product_type": _norm_product_type(body.get("product_type", "")) or _detect_product_type(items),
         "configuration": body.get("configuration", ""),
     }
 
@@ -3098,8 +3176,9 @@ async def add_manual_order(request: Request):
                 total, currency, items_count, items_json,
                 payment_method, shipping_method, note, external_created,
                 shipping_cost, seller_account, customer_comment,
-                product_type, configuration, created_by_email, weight_kg
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+                product_type, configuration, created_by_email, weight_kg,
+                invoice_type, invoice_nip, invoice_data
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
         """,
             ext_id, source,
             order_data["status"], order_data["customer_name"], order_data["customer_email"],
@@ -3108,7 +3187,7 @@ async def add_manual_order(request: Request):
             order_data["payment_method"], "", order_data["note"], ext_created,
             ship, order_data["seller_account"], order_data["customer_comment"],
             order_data["product_type"], order_data["configuration"],
-            user.get("email", ""), weight,
+            user.get("email", ""), weight, inv_type, inv_nip, inv_data,
         )
 
     return JSONResponse({"ok": True, "id": ext_id})
@@ -3124,7 +3203,9 @@ async def edit_manual_order(order_id: int, request: Request):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT source, external_id, created_by_email, items_json, "
-                                  "weight_kg, shipping_cost FROM orders WHERE id=$1", order_id)
+                                  "weight_kg, shipping_cost, seller_account, status, "
+                                  "invoice_type, invoice_nip, invoice_data "
+                                  "FROM orders WHERE id=$1", order_id)
         if not row or not (row["external_id"] or "").startswith("manual"):
             return JSONResponse({"ok": False, "error": "Only manual orders can be edited"}, status_code=400)
         # Only creator or superadmin can edit
@@ -3180,10 +3261,11 @@ async def edit_manual_order(order_id: int, request: Request):
                 customer_comment=$9, shipping_cost=$10, seller_account=$11,
                 product_type=$12, configuration=$13, customer_email=$14,
                 external_created=COALESCE($15, external_created),
-                source=$16, weight_kg=$18, items_count=$19, updated_at=NOW()
+                source=$16, weight_kg=$18, items_count=$19,
+                invoice_type=$20, invoice_nip=$21, invoice_data=$22, updated_at=NOW()
             WHERE id=$17
         """,
-            body.get("status", "processing"),
+            body.get("status", "") if "status" in body else "",
             body.get("customer_name", ""),
             body.get("customer_phone", ""),
             body.get("customer_city", ""),
@@ -3193,8 +3275,8 @@ async def edit_manual_order(order_id: int, request: Request):
             body.get("payment_method", ""),
             body.get("comment", ""),
             ship,
-            body.get("seller_account", ""),
-            body.get("product_type", "") or _detect_product_type(items),
+            body["seller_account"] if "seller_account" in body else (row["seller_account"] or ""),
+            _norm_product_type(body.get("product_type", "")) or _detect_product_type(items),
             body.get("configuration", ""),
             body.get("customer_email", ""),
             ext_created,
@@ -3202,6 +3284,8 @@ async def edit_manual_order(order_id: int, request: Request):
             order_id,
             weight,
             len(items),
+            *(_manual_invoice(body) if "invoice_type" in body else
+              (row["invoice_type"] or "", row["invoice_nip"] or "", row["invoice_data"] or "")),
         )
     return JSONResponse({"ok": True})
 
@@ -3241,15 +3325,45 @@ async def update_order_comment(request: Request):
         was = await conn.fetchval(
             "SELECT customer_comment FROM orders WHERE id=$1", int(order_id)
         )
-        await conn.execute(
-            "UPDATE orders SET customer_comment=$1 WHERE id=$2",
-            comment, int(order_id),
-        )
         if (was or "") != (comment or ""):
+            await conn.execute(
+                "UPDATE orders SET customer_comment=$1, comment_by=$2, comment_at=NOW() WHERE id=$3",
+                comment, (user.get("name") or user.get("email") or "") if comment else "", int(order_id),
+            )
             await log_action(conn, user, "comment", [order_id],
                              old_value=was or "", new_value=comment or "",
                              label=await _order_label(conn, order_id))
     return JSONResponse({"ok": True})
+
+
+# ============================================================
+# === API: Księgowość — отметка «чек/фактура пробиты» ===
+# ============================================================
+# Ставить и снимать может только тот, у кого право ksiegowosc
+# (бухгалтер). Остальные видят отметку, но не могут её изменить.
+
+@app.post("/api/orders/toggle-fiscal")
+async def toggle_fiscal(request: Request):
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "ksiegowosc"):
+        return JSONResponse({"ok": False, "error": "Tylko księgowość"}, status_code=403)
+    body = await request.json()
+    order_id = int(body.get("id") or 0)
+    done = bool(body.get("done"))
+    if not order_id:
+        return JSONResponse({"ok": False, "error": "no id"})
+    who = user.get("name") or user.get("email") or ""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        was = await conn.fetchval("SELECT fiscal_done FROM orders WHERE id=$1", order_id)
+        await conn.execute(
+            "UPDATE orders SET fiscal_done=$1, fiscal_at=CASE WHEN $1 THEN NOW() ELSE NULL END, "
+            "fiscal_by=CASE WHEN $1 THEN $2 ELSE '' END WHERE id=$3", done, who, order_id)
+        if bool(was) != done:
+            await log_action(conn, user, "fiscal", [order_id],
+                             old_value="1" if was else "0", new_value="1" if done else "0",
+                             label=await _order_label(conn, order_id))
+    return JSONResponse({"ok": True, "done": done, "by": who if done else ""})
 
 
 # ============================================================
@@ -3695,6 +3809,7 @@ async def api_orders(
     priority: str = Query(None),
     product_type: str = Query(None),
     invoice_type: str = Query(None),
+    manual_type: str = Query(None),
 ):
     user = await get_current_user(request)
     if not user:
@@ -3726,6 +3841,7 @@ async def api_orders(
             if src_conds:
                 conditions.append(f"({' OR '.join(src_conds)})")
 
+    n_before_src = len(conditions)
     if source or seller:
         source_list = [s.strip() for s in source.split(",") if s.strip()] if source else []
         seller_list = [s.strip() for s in seller.split(",") if s.strip()] if seller else []
@@ -3749,6 +3865,17 @@ async def api_orders(
         elif seller_list:
             params.append(seller_list)
             conditions.append(f"(source IN ('allegro', 'erli') AND seller_account = ANY(${len(params)}))")
+    # «Ręczne: szklarnie / poliwęglan / reklamacje» — ручные заказы по типу товара.
+    # Вместе с другими отмеченными магазинами работает как «ИЛИ».
+    mtypes = [_norm_product_type(x) for x in (manual_type or "").split(",") if x.strip()]
+    if mtypes:
+        params.append(mtypes)
+        mcond = f"(source = 'manual' AND product_type = ANY(${len(params)}))"
+        if len(conditions) > n_before_src:
+            prev = conditions.pop()
+            conditions.append(f"({prev} OR {mcond})")
+        else:
+            conditions.append(mcond)
     if status:
         params.append(status)
         conditions.append(f"status = ${len(params)}")
