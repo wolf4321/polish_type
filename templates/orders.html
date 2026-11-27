@@ -87,6 +87,37 @@
         #f-source-dropdown label:hover{background:var(--chip);}
         #f-source-dropdown input[type="checkbox"]{accent-color:var(--accent);margin-right:6px;}
         .src-indent{padding-left:32px!important;color:var(--muted)!important;}
+        #f-pay-btn{
+            padding:8px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;
+            background:var(--input-bg);color:var(--ink);cursor:pointer;min-width:150px;text-align:left;
+            font-family:inherit;font-weight:500;
+        }
+        #f-pay-btn.on{border-color:var(--accent);}
+        #f-pay-dropdown{
+            background:var(--card-bg);border:1px solid var(--line);border-radius:11px;
+            box-shadow:0 12px 30px rgba(0,0,0,.16);padding:6px 0;min-width:240px;
+        }
+        #f-pay-dropdown label{display:block;padding:6px 14px;font-size:12.5px;cursor:pointer;color:var(--ink);}
+        #f-pay-dropdown label:hover{background:var(--chip);}
+        #f-pay-dropdown input[type="checkbox"]{accent-color:var(--accent);margin-right:6px;}
+        /* ——— уведомления бухгалтеру ——— */
+        .notif-bell{position:relative;background:none;border:1px solid var(--line);border-radius:8px;
+            padding:3px 9px;cursor:pointer;font-size:14px;color:var(--ink);}
+        .notif-bell .cnt{position:absolute;top:-7px;right:-7px;background:#d63b3b;color:#fff;border-radius:10px;
+            font-size:10.5px;font-weight:700;padding:1px 5px;min-width:16px;text-align:center;}
+        .notif-panel{position:fixed;top:56px;right:16px;width:min(420px,calc(100vw - 32px));max-height:70vh;overflow:auto;
+            background:var(--card-bg);border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.22);
+            z-index:3000;display:none;}
+        .notif-panel.open{display:block;}
+        .notif-head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);
+            font-weight:600;font-size:13px;position:sticky;top:0;background:var(--card-bg);}
+        .notif-head button{font-size:12px;background:none;border:1px solid var(--line);border-radius:7px;padding:3px 8px;cursor:pointer;color:var(--ink);}
+        .notif-item{padding:9px 14px;border-bottom:1px solid var(--line);font-size:12.5px;cursor:pointer;}
+        .notif-item:hover{background:var(--chip);}
+        .notif-item.new{border-left:3px solid #d63b3b;}
+        .notif-item .nt{color:var(--muted);font-size:11.5px;}
+        .notif-item .nv{margin-top:3px;white-space:pre-wrap;word-break:break-word;}
+        .notif-empty{padding:18px 14px;color:var(--muted);font-size:12.5px;}
 
         /* ——— карточка и таблица ——— */
         .card{
@@ -492,6 +523,9 @@
             <button type="button" data-lang="ru" onclick="setLang('ru')">RU</button>
         </div>
         <button type="button" class="theme-toggle" id="theme-toggle" title="Motyw">&#9790;</button>
+        {% if user and 'ksiegowosc' in (user.permissions or '').split(',') %}
+        <button type="button" class="notif-bell" id="notif-bell" onclick="toggleNotif()" data-help="Zmiany w opłaconych zamówieniach (PayU, opłacone): nowy lub zmieniony komentarz, edycja zamówienia.">&#128276;<span class="cnt" id="notif-cnt" style="display:none;"></span></button>
+        {% endif %}
         {% if user %}
         <div class="nav-sep"></div>
         <span class="nav-user">{{ user.name }}</span>
@@ -501,6 +535,7 @@
         {% endif %}
     </div>
 </nav>
+{% if user and 'ksiegowosc' in (user.permissions or '').split(',') %}<div class="notif-panel" id="notif-panel"></div>{% endif %}
 
 <script>
 (function(){
@@ -597,6 +632,15 @@
                     <label class="src-indent"><input type="checkbox" class="source-check" value="mtype:Szklarnia"> <span data-i18n="mt_szklarnia">Ręczne: szklarnie</span></label>
                     <label class="src-indent"><input type="checkbox" class="source-check" value="mtype:Poliwęglan"> <span data-i18n="mt_poliweglan">Ręczne: poliwęglan</span></label>
                     <label class="src-indent"><input type="checkbox" class="source-check" value="mtype:Reklamacja"> <span data-i18n="mt_reklamacja">Ręczne: reklamacje</span></label>
+                </div>
+            </div>
+            <div style="position:relative;display:inline-block;" id="f-pay-wrap" data-help="Filtr płatności. Można zaznaczyć kilka i łączyć z typem towaru i sklepem.">
+                <button type="button" id="f-pay-btn" onclick="togglePayDropdown()"><span data-i18n="pay_all">Wszystkie płatności</span> &#9662;</button>
+                <div id="f-pay-dropdown" style="display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:100;">
+                    <label><input type="checkbox" class="pay-check" value="cod"> <span data-i18n="pay_cod">Płatność przy odbiorze</span></label>
+                    <label><input type="checkbox" class="pay-check" value="payu"> <span data-i18n="pay_payu">PayU / online</span></label>
+                    <label><input type="checkbox" class="pay-check" value="paid"> <span data-i18n="pay_paid">Opłacone</span></label>
+                    <label><input type="checkbox" class="pay-check" value="proforma"> <span data-i18n="pay_proforma">Proforma</span></label>
                 </div>
             </div>
             <select id="f-status">
@@ -870,6 +914,10 @@
             pay_cod: 'Płatność przy odbiorze', pay_proforma: 'Oczekujemy na opłacenie proformy', pay_paid: 'Opłacone',
             mt_required: 'Wybierz typ towaru',
             col_weight: 'Waga (kg)', detail_weight: 'Waga/szt.', nav_products: 'Katalog', nav_assistant: 'Asystent',
+            pay_all: 'Wszystkie płatności', pay_label: 'Płatności', pay_cod: 'Płatność przy odbiorze', pay_payu: 'PayU / online',
+            pay_paid: 'Opłacone', pay_proforma: 'Proforma',
+            nt_title: 'Zmiany w opłaconych zamówieniach', nt_seen: 'Oznacz jako przeczytane', nt_empty: 'Brak nowych zmian',
+            nt_comment: 'komentarz', nt_edit: 'edycja zamówienia', nt_popup: 'Zmiana w opłaconym zamówieniu',
             modal_edit_order: 'Edytuj zamówienie',
             modal_date: 'Data',
             modal_product_name: 'Nazwa produktu',
@@ -922,6 +970,7 @@
             alog_a_exported: 'Oznaczenie \u2713',
             alog_a_priority: 'Priorytet \u2605',
             alog_a_comment: 'Komentarz',
+            alog_a_manual_edit: 'Edycja zamówienia',
             alog_marked: 'oznaczone \u2713',
             alog_set: 'w\u0142\u0105czone',
             alog_unset: 'wy\u0142\u0105czone',
@@ -1096,6 +1145,10 @@
             pay_cod: 'Płatność przy odbiorze', pay_proforma: 'Oczekujemy na opłacenie proformy', pay_paid: 'Opłacone',
             mt_required: 'Выбери тип товара',
             col_weight: 'Вес (кг)', detail_weight: 'Вес/шт.', nav_products: 'Каталог', nav_assistant: 'Помощник',
+            pay_all: 'Все оплаты', pay_label: 'Оплаты', pay_cod: 'Оплата при получении', pay_payu: 'PayU / онлайн',
+            pay_paid: 'Оплачено', pay_proforma: 'Проформа',
+            nt_title: 'Изменения в оплаченных заказах', nt_seen: 'Отметить прочитанным', nt_empty: 'Новых изменений нет',
+            nt_comment: 'комментарий', nt_edit: 'правка заказа', nt_popup: 'Изменение в оплаченном заказе',
             modal_edit_order: 'Редактировать заказ',
             modal_date: 'Дата',
             modal_product_name: 'Название продукта',
@@ -1148,6 +1201,7 @@
             alog_a_exported: 'Галочка \u2713',
             alog_a_priority: 'Звёздочка \u2605',
             alog_a_comment: 'Комментарий',
+            alog_a_manual_edit: 'Правка заказа',
             alog_marked: 'отмечены \u2713',
             alog_set: 'поставили',
             alog_unset: 'сняли',
@@ -1315,6 +1369,29 @@
         return parseFloat(n || 0).toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
 
+    function togglePayDropdown() {
+        var dd = document.getElementById('f-pay-dropdown');
+        dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+    }
+    function updPayLabel() {
+        var checks = document.querySelectorAll('.pay-check:checked');
+        var btn = document.getElementById('f-pay-btn');
+        var txt = checks.length === 0 ? t('pay_all')
+            : checks.length === 1 ? checks[0].parentElement.textContent.trim()
+            : t('pay_label') + ': ' + checks.length;
+        btn.innerHTML = '';
+        var sp = document.createElement('span'); sp.textContent = txt; btn.appendChild(sp);
+        btn.appendChild(document.createTextNode(' \u25BE'));
+        btn.classList.toggle('on', checks.length > 0);
+    }
+    document.addEventListener('click', function(e) {
+        var wrap = document.getElementById('f-pay-wrap');
+        if (wrap && !wrap.contains(e.target)) document.getElementById('f-pay-dropdown').style.display = 'none';
+    });
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('pay-check')) { updPayLabel(); loadOrders(1); }
+    });
+
     function toggleSourceDropdown() {
         var dd = document.getElementById('f-source-dropdown');
         dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
@@ -1372,6 +1449,7 @@
             priority: document.getElementById('f-priority').value,
             product_type: document.getElementById('f-product-type').value,
             invoice_type: (document.getElementById('f-invoice') || {}).value || '',
+            pay: Array.prototype.map.call(document.querySelectorAll('.pay-check:checked'), function(c){ return c.value; }).join(','),
         };
     }
 
@@ -1411,6 +1489,7 @@
         if (f.priority) url += '&priority=' + f.priority;
         if (f.product_type) url += '&product_type=' + encodeURIComponent(f.product_type);
         if (f.invoice_type) url += '&invoice_type=' + encodeURIComponent(f.invoice_type);
+        if (f.pay) url += '&pay=' + encodeURIComponent(f.pay);
 
         fetch(url).then(function(r) { return r.json(); }).then(function(d) {
             totalOrders = d.total;
@@ -1878,6 +1957,7 @@
     function exportCSV() {
         var f = getFilters();
         var url = '/api/orders/export?fmt=xlsx';
+        if (f.pay) url += '&pay=' + encodeURIComponent(f.pay);
         if (f.source) url += '&source=' + encodeURIComponent(f.source);
         if (f.seller) url += '&seller=' + encodeURIComponent(f.seller);
         if (f.manual_type) url += '&manual_type=' + encodeURIComponent(f.manual_type);
@@ -2021,6 +2101,92 @@
 
     // --- Toggle priority star ---
     var CAN_FISCAL = {{ 'true' if user and 'ksiegowosc' in (user.permissions or '').split(',') else 'false' }};
+
+    /* ——— Уведомления бухгалтеру ———
+       Раз в минуту спрашиваем сервер, не меняли ли комментарий или сам заказ
+       у оплаченных заказов (PayU / online / opłacone). Новое — красный счётчик
+       на колокольчике и всплывающее окно. Свои действия не показываем. */
+    var notifData = {items: [], unread: 0}, notifShownMax = 0;
+    function notifFetch() {
+        if (!CAN_FISCAL) return;
+        fetch('/api/notifications').then(function(r){ return r.json(); }).then(function(d) {
+            notifData = d || {items: [], unread: 0};
+            var cnt = document.getElementById('notif-cnt');
+            if (cnt) {
+                cnt.textContent = notifData.unread > 99 ? '99+' : String(notifData.unread);
+                cnt.style.display = notifData.unread ? '' : 'none';
+            }
+            document.title = (notifData.unread ? '(' + notifData.unread + ') ' : '') + document.title.replace(/^\(\d+\+?\) /, '');
+            var maxNew = 0;
+            (notifData.items || []).forEach(function(x){ if (x.new_flag && x.id > maxNew) maxNew = x.id; });
+            // Всплывающее окно — только если появилось что-то новее уже показанного
+            if (maxNew > notifShownMax) {
+                var first = notifShownMax === 0;
+                notifShownMax = maxNew;
+                var key = 'ekomat_notif_popup';
+                var last = 0;
+                try { last = parseInt(localStorage.getItem(key) || '0', 10) || 0; } catch (e) {}
+                if (maxNew > last) {
+                    try { localStorage.setItem(key, String(maxNew)); } catch (e) {}
+                    openNotif();
+                }
+            }
+            if (document.getElementById('notif-panel') && document.getElementById('notif-panel').classList.contains('open')) renderNotif();
+        }).catch(function(){});
+    }
+    function notifText(x) {
+        if (x.action === 'comment') return x['new'] ? x['new'] : '(' + t('alog_empty') + ')';
+        return x['new'];
+    }
+    function renderNotif() {
+        var p = document.getElementById('notif-panel');
+        var items = notifData.items || [];
+        var html = '<div class="notif-head"><span>' + esc(t('nt_title')) + '</span>'
+            + (notifData.unread ? '<button type="button" onclick="notifSeen()">' + esc(t('nt_seen')) + '</button>' : '')
+            + '</div>';
+        if (!items.length) html += '<div class="notif-empty">' + esc(t('nt_empty')) + '</div>';
+        items.forEach(function(x) {
+            var dt = x.at ? new Date(x.at).toLocaleString(currentLang === 'ru' ? 'ru-RU' : 'pl-PL') : '';
+            html += '<div class="notif-item' + (x.new_flag ? ' new' : '') + '" onclick="notifOpenOrder(' + x.order_id + ')">'
+                + '<div><b>' + esc(x.label || ('#' + x.order_id)) + '</b> · ' + esc(x.action === 'comment' ? t('nt_comment') : t('nt_edit')) + '</div>'
+                + '<div class="nt">' + [esc(x.who), esc(dt), esc(x.payment), x.fiscal_done ? '\u2713 ' + esc(t('alog_a_fiscal')) : '']
+                    .filter(Boolean).join(' · ') + '</div>'
+                + '<div class="nv">' + esc(notifText(x)) + '</div></div>';
+        });
+        p.innerHTML = html;
+    }
+    function openNotif() {
+        var p = document.getElementById('notif-panel');
+        if (!p) return;
+        renderNotif();
+        p.classList.add('open');
+    }
+    function toggleNotif() {
+        var p = document.getElementById('notif-panel');
+        if (p.classList.contains('open')) p.classList.remove('open'); else openNotif();
+    }
+    function notifSeen() {
+        var upto = 0;
+        (notifData.items || []).forEach(function(x){ if (x.id > upto) upto = x.id; });
+        fetch('/api/notifications/seen', {method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({upto: upto})}).then(function(){ notifFetch(); });
+    }
+    function notifOpenOrder(id) {
+        var p = document.getElementById('notif-panel');
+        if (p) p.classList.remove('open');
+        var s = document.getElementById('f-search');
+        var it = (notifData.items || []).filter(function(x){ return x.order_id === id; })[0];
+        if (s && it) { s.value = it.external_id || ''; loadOrders(1); }
+    }
+    document.addEventListener('click', function(e) {
+        var p = document.getElementById('notif-panel'), b = document.getElementById('notif-bell');
+        if (p && p.classList.contains('open') && !p.contains(e.target) && b && !b.contains(e.target)) p.classList.remove('open');
+    });
+    if (CAN_FISCAL) {
+        document.addEventListener('DOMContentLoaded', function(){ notifFetch(); });
+        setTimeout(notifFetch, 1500);
+        setInterval(notifFetch, 60000);
+    }
     function fmtShortDt(v) {
         var d = new Date(v);
         if (isNaN(d)) return '';
@@ -2125,6 +2291,21 @@
     // --- Add/Edit order modal ---
     var editingOrderId = null;
 
+    // Płatność в ручной форме — два варианта. У старых заказов бывает другой текст
+    // (Gotówka, Opłacone…): показываем его отдельной строкой, чтобы правка его не стёрла.
+    function setPaymentValue(v) {
+        var sel = document.getElementById('m-payment');
+        Array.prototype.slice.call(sel.querySelectorAll('option.legacy')).forEach(function(o){ o.remove(); });
+        if (!v) { sel.value = 'Płatność przy odbiorze'; return; }
+        var has = Array.prototype.some.call(sel.options, function(o){ return o.value === v; });
+        if (!has) {
+            var o = document.createElement('option');
+            o.value = v; o.textContent = v; o.className = 'legacy';
+            sel.appendChild(o);
+        }
+        sel.value = v;
+    }
+
     function openAddModal() {
         editingOrderId = null;
         document.getElementById('modal-order-title').textContent = t('modal_add_order');
@@ -2141,7 +2322,7 @@
         setItems([]);
         closePicker();
         setInvFields('', '', '');
-        document.getElementById('m-payment').value = 'Płatność przy odbiorze';
+        setPaymentValue('');
         document.getElementById('m-name').value = '';
         document.getElementById('m-phone').value = '';
         document.getElementById('m-city').value = '';
@@ -2395,7 +2576,7 @@
                         qty: it.qty || 1, price: (it.price === undefined || it.price === '' || it.price === null) ? '' : parseFloat(it.price), weight: it.weight || '', code: it.code || ''};
             }));
             closePicker();
-            document.getElementById('m-payment').value = order.payment_method || '';
+            setPaymentValue(order.payment_method || '');
             document.getElementById('m-name').value = order.customer_name || '';
             document.getElementById('m-phone').value = order.customer_phone || '';
             document.getElementById('m-city').value = order.customer_city || '';
@@ -2443,7 +2624,7 @@
                     : (document.getElementById('m-inv-company').checked ? 'company' : '');
         var items = readItems();
         var data = {
-            date: document.getElementById('m-date').value,
+            date: '',  // дату ставит сервер: новый заказ — сейчас, правка — без изменений
             source: document.getElementById('m-source').value,
             items: items,
             product_type: document.getElementById('m-type').value,
@@ -2629,6 +2810,9 @@
         if (e.action === 'export') {
             return '<span class="alog-to">' + t('alog_marked') + '</span>';
         }
+        if (e.action === 'manual_edit') {
+            return '<span class="alog-to" title="' + esc(e.new_value) + '">' + esc(cut(e.new_value)) + '</span>';
+        }
         if (e.action === 'comment') {
             return '<span class="alog-from">' + esc(cut(e.old_value)) + '</span>'
                  + '<span class="alog-arrow">→</span>'
@@ -2707,6 +2891,8 @@
                 if (e.undone) {
                     act = '<span class="alog-muted" title="' + esc(e.undone_by || '') + '">'
                         + t('alog_done_undone') + '</span>';
+                } else if (e.action === 'manual_edit') {
+                    act = '<span class="alog-muted">—</span>';
                 } else {
                     act = '<button class="alog-undo" onclick="undoAction(' + e.id + ')">'
                         + t('alog_undo') + '</button>';
@@ -2803,8 +2989,7 @@
         <div class="modal">
             <h3 id="modal-order-title" data-i18n="modal_add_order">Dodaj zamówienie ręcznie</h3>
             <div class="form-grid">
-                <div class="form-group">
-                    <label data-i18n="modal_date">Data</label>
+                <div class="form-group" style="display:none;">
                     <input type="datetime-local" id="m-date">
                 </div>
                 <div class="form-group" style="display:none;">
@@ -2842,15 +3027,10 @@
                 </div>
                 <div class="form-group">
                     <label data-i18n="modal_payment">Płatność</label>
-                    <input type="text" id="m-payment" list="m-payment-list" placeholder="Płatność przy odbiorze / Proforma / Gotówka">
-                    <datalist id="m-payment-list">
-                        <option value="Płatność przy odbiorze"></option>
-                        <option value="Oczekujemy na opłacenie proformy"></option>
-                        <option value="Opłacone"></option>
-                        <option value="Gotówka"></option>
-                        <option value="Przelew"></option>
-                        <option value="Blik"></option>
-                    </datalist>
+                    <select id="m-payment">
+                        <option value="Płatność przy odbiorze">Płatność przy odbiorze</option>
+                        <option value="Oczekujemy na opłacenie proformy">Oczekujemy na opłacenie proformy</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label data-i18n="modal_customer_name">Imię i nazwisko klienta</label>

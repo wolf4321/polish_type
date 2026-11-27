@@ -671,6 +671,26 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[startup] миграция типов товара не удалась: {e}")
 
+        # Миграция v1 дописала « · oczekujemy na opłacenie proformy» и к уже
+        # оплаченным ручным заказам («przelew, opłacone»). Хвост вводит в заблуждение — убираем.
+        try:
+            done = await conn.fetchval(
+                "SELECT value FROM app_settings WHERE key='migration:pay_suffix_fix_v1'")
+            if not done:
+                res = await conn.execute("""
+                    UPDATE orders SET payment_method =
+                        replace(payment_method, ' · oczekujemy na opłacenie proformy', '')
+                    WHERE source='manual'
+                      AND payment_method LIKE '% · oczekujemy na opłacenie proformy'
+                      AND (payment_method ILIKE '%opłacon%' OR payment_method ILIKE '%oplacon%')
+                """)
+                await conn.execute(
+                    "INSERT INTO app_settings (key, value, updated_at) VALUES "
+                    "('migration:pay_suffix_fix_v1', $1, NOW()) ON CONFLICT (key) DO NOTHING", res)
+                print("[startup] хвост proforma у оплаченных ручных: " + res)
+        except Exception as e:
+            print(f"[startup] pay_suffix_fix не удался: {e}")
+
         # Разовая выдача новых прав при переезде со старой версии:
         # всем, кто работает с заказами, — каталог и обучение помощника.
         # Флаг в app_settings, чтобы потом админ мог эти права снять.
@@ -1092,6 +1112,19 @@ def _detect_product_type(items: list) -> str:
 
 
 PRODUCT_TYPES = ("Szklarnia", "Poliwęglan", "Reklamacja")
+
+# Группы оплаты для фильтра «Płatność» и для уведомлений бухгалтеру.
+# Порядок важен: «opłacone» сильнее «proforma», если в тексте есть оба.
+PAY_BUCKET_SQL = """(CASE
+    WHEN payment_method ILIKE '%%opłacon%%' OR payment_method ILIKE '%%oplacon%%' OR payment_method ILIKE '%%opalcon%%' THEN 'paid'
+    WHEN payment_method ILIKE '%%proform%%' THEN 'proforma'
+    WHEN payment_method ILIKE '%%payu%%' OR payment_method ILIKE '%%przelewy24%%' OR payment_method ILIKE '%%blik%%'
+         OR payment_method ILIKE '%%kartą%%' OR payment_method ILIKE '%%raty%%' OR payment_method ILIKE '%%paypo%%'
+         OR payment_method ILIKE '%%przelew%%' OR payment_method ILIKE '%%paypal%%' THEN 'payu'
+    WHEN payment_method ILIKE '%%odbior%%' OR payment_method ILIKE '%%gotówk%%' OR payment_method ILIKE '%%gotowk%%'
+         OR payment_method ILIKE '%%cash on delivery%%' OR payment_method ILIKE '%%pobran%%' THEN 'cod'
+    ELSE 'other' END)""".replace("%%", "%")
+PAY_BUCKETS = ("cod", "proforma", "payu", "paid", "other")
 
 
 def _manual_invoice(body: dict):
@@ -3193,6 +3226,47 @@ async def add_manual_order(request: Request):
     return JSONResponse({"ok": True, "id": ext_id})
 
 
+# Что сравниваем при правке ручного заказа (для журнала и уведомлений бухгалтеру)
+_EDIT_TRACK = [
+    ("customer_name", "Klient"), ("customer_phone", "Telefon"), ("customer_email", "E-mail"),
+    ("customer_city", "Miasto"), ("customer_address", "Adres"), ("total", "Suma"),
+    ("shipping_cost", "Dostawa"), ("payment_method", "Płatność"), ("customer_comment", "Komentarz"),
+    ("configuration", "Konfiguracja"), ("product_type", "Typ towaru"),
+    ("invoice_type", "Faktura"), ("invoice_nip", "NIP"), ("invoice_data", "Dane do faktury"),
+    ("items_json", "Pozycje"),
+]
+_EDIT_TRACK_SQL = ", ".join(c for c, _ in _EDIT_TRACK)
+
+
+def _edit_diff(before, after):
+    """Короткое описание, что поменялось: «Поле: было → стало» по строке."""
+    if not before or not after:
+        return ""
+    out = []
+    for col, title in _EDIT_TRACK:
+        a, b = before[col], after[col]
+        if col in ("total", "shipping_cost"):
+            a, b = float(a or 0), float(b or 0)
+            if abs(a - b) > 0.004:
+                out.append(f"{title}: {a:.2f} → {b:.2f}")
+            continue
+        a, b = (a or "").strip(), (b or "").strip()
+        if a == b:
+            continue
+        if col == "items_json":
+            def names(js):
+                try:
+                    return "; ".join(f"{(it.get('full_name') or it.get('name') or '').strip()} ×{it.get('qty') or 1}"
+                                     for it in json.loads(js or "[]"))
+                except Exception:
+                    return ""
+            a, b = names(a), names(b)
+            if a == b:
+                continue
+        out.append(f"{title}: {a[:120] or '—'} → {b[:120] or '—'}")
+    return "\n".join(out)
+
+
 @app.put("/api/orders/manual/{order_id}")
 async def edit_manual_order(order_id: int, request: Request):
     """Edit a manually created order. Creator or superadmin can edit."""
@@ -3254,6 +3328,7 @@ async def edit_manual_order(order_id: int, request: Request):
             except Exception:
                 ext_created = None
 
+        before = await conn.fetchrow(f"SELECT {_EDIT_TRACK_SQL} FROM orders WHERE id=$1", order_id)
         await conn.execute("""
             UPDATE orders SET
                 status=$1, customer_name=$2, customer_phone=$3, customer_city=$4,
@@ -3287,6 +3362,11 @@ async def edit_manual_order(order_id: int, request: Request):
             *(_manual_invoice(body) if "invoice_type" in body else
               (row["invoice_type"] or "", row["invoice_nip"] or "", row["invoice_data"] or "")),
         )
+        after = await conn.fetchrow(f"SELECT {_EDIT_TRACK_SQL} FROM orders WHERE id=$1", order_id)
+        diff = _edit_diff(before, after)
+        if diff:
+            await log_action(conn, user, "manual_edit", [order_id], old_value="",
+                             new_value=diff, label=await _order_label(conn, order_id))
     return JSONResponse({"ok": True})
 
 
@@ -3341,6 +3421,73 @@ async def update_order_comment(request: Request):
 # ============================================================
 # Ставить и снимать может только тот, у кого право ksiegowosc
 # (бухгалтер). Остальные видят отметку, но не могут её изменить.
+
+# ——— Уведомления бухгалтеру ———
+# Бухгалтер пробивает чеки по оплаченным заказам (PayU / online / opłacone).
+# Если кто-то потом меняет комментарий или правит такой заказ, ей надо знать.
+# Источник — action_log; «прочитано» — номер последней записи, по пользователю.
+
+_NOTIF_ACTIONS = ("comment", "manual_edit")
+
+
+@app.get("/api/notifications")
+async def api_notifications(request: Request):
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "ksiegowosc"):
+        return JSONResponse({"items": [], "unread": 0})
+    me = user.get("email", "") or ""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        seen = await conn.fetchval("SELECT value FROM app_settings WHERE key=$1", "notif_seen:" + me)
+        try:
+            seen_id = int(seen or 0)
+        except Exception:
+            seen_id = 0
+        rows = await conn.fetch(f"""
+            SELECT a.id, a.action, a.user_email, a.old_value, a.new_value, a.label, a.created_at,
+                   o.id AS order_id, o.external_id, o.source, o.payment_method, o.fiscal_done,
+                   COALESCE(u.name, a.user_email) AS who
+            FROM action_log a
+            JOIN orders o ON o.id = a.order_ids[1]
+            LEFT JOIN users u ON u.email = a.user_email
+            WHERE a.action = ANY($1::text[])
+              AND COALESCE(a.user_email,'') <> $2
+              AND a.created_at > NOW() - INTERVAL '14 days'
+              AND ({PAY_BUCKET_SQL} IN ('payu','paid') OR o.fiscal_done)
+            ORDER BY a.id DESC
+            LIMIT 60
+        """, list(_NOTIF_ACTIONS), me)
+    items = [{
+        "id": r["id"], "action": r["action"], "who": r["who"] or "",
+        "old": r["old_value"] or "", "new": r["new_value"] or "", "label": r["label"] or "",
+        "at": r["created_at"].isoformat() if r["created_at"] else "",
+        "order_id": r["order_id"], "external_id": r["external_id"] or "",
+        "source": r["source"] or "", "payment": r["payment_method"] or "",
+        "fiscal_done": bool(r["fiscal_done"]), "new_flag": r["id"] > seen_id,
+    } for r in rows]
+    return JSONResponse({"items": items, "unread": sum(1 for x in items if x["new_flag"]),
+                         "seen_id": seen_id})
+
+
+@app.post("/api/notifications/seen")
+async def api_notifications_seen(request: Request):
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "ksiegowosc"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    body = await request.json()
+    try:
+        upto = int(body.get("upto") or 0)
+    except Exception:
+        upto = 0
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value=GREATEST(app_settings.value::bigint, EXCLUDED.value::bigint)::text, "
+            "updated_at=NOW()",
+            "notif_seen:" + (user.get("email", "") or ""), str(upto))
+    return JSONResponse({"ok": True})
+
 
 @app.post("/api/orders/toggle-fiscal")
 async def toggle_fiscal(request: Request):
@@ -3423,6 +3570,7 @@ ACTION_KINDS = {
     "exported": "exported",   # галочка «выгружено» вручную
     "priority": "priority",   # звёздочка
     "comment":  "comment",    # комментарий
+    "manual_edit": "manual_edit",  # правка ручного заказа
 }
 
 
@@ -3810,6 +3958,7 @@ async def api_orders(
     product_type: str = Query(None),
     invoice_type: str = Query(None),
     manual_type: str = Query(None),
+    pay: str = Query(None),
 ):
     user = await get_current_user(request)
     if not user:
@@ -3937,6 +4086,11 @@ async def api_orders(
         else:
             params.append(invoice_type)
             conditions.append(f"invoice_type = ${len(params)}")
+
+    pays = [x.strip() for x in (pay or "").split(",") if x.strip() in PAY_BUCKETS]
+    if pays and len(pays) < len(PAY_BUCKETS):
+        params.append(pays)
+        conditions.append(f"{PAY_BUCKET_SQL} = ANY(${len(params)})")
 
     where = " AND ".join(conditions)
 
@@ -4077,6 +4231,7 @@ async def export_orders(
     date_to:   str = Query(None),
     ids: str = Query(None),
     fmt: str = Query("csv"),
+    pay: str = Query(None),
 ):
     user = await get_current_user(request)
     if not user or not has_perm(user, "export"):
@@ -4111,6 +4266,11 @@ async def export_orders(
     if date_to:
         params.append(date.fromisoformat(date_to))
         conditions.append(f"COALESCE(external_created, created_at)::date <= ${len(params)}")
+
+    pays = [x.strip() for x in (pay or "").split(",") if x.strip() in PAY_BUCKETS]
+    if pays and len(pays) < len(PAY_BUCKETS) and not ids:
+        params.append(pays)
+        conditions.append(f"{PAY_BUCKET_SQL} = ANY(${len(params)})")
 
     where = " AND ".join(conditions)
 
