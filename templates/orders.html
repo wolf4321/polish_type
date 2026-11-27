@@ -366,6 +366,9 @@
         .star-btn{background:none;border:none;cursor:pointer;font-size:17px;color:var(--line-strong);line-height:1;padding:2px;}
         .star-btn:hover{color:var(--warn-ink);}
         .star-btn.active{color:#ff6600;}
+        .order-eta{display:block;font-size:10.5px;color:var(--muted);margin-top:3px;white-space:nowrap;font-style:normal;}
+        .order-eta b{color:var(--ink);font-weight:600;}
+        .order-eta.late b{color:#d63b3b;}
         .order-extid{font-size:10px;color:var(--faint);margin-top:2px;font-family:'IBM Plex Mono',monospace;}
 
         /* ——— тянем колонки ——— */
@@ -916,6 +919,7 @@
             col_weight: 'Waga (kg)', detail_weight: 'Waga/szt.', nav_products: 'Katalog', nav_assistant: 'Asystent',
             pay_all: 'Wszystkie płatności', pay_label: 'Płatności', pay_cod: 'Płatność przy odbiorze', pay_payu: 'PayU / online',
             pay_paid: 'Opłacone', pay_proforma: 'Proforma',
+            eta_label: 'Dostawa:', eta_title: 'Przewidywany czas dostawy',
             nt_title: 'Zmiany w opłaconych zamówieniach', nt_seen: 'Oznacz jako przeczytane', nt_empty: 'Brak nowych zmian',
             nt_comment: 'komentarz', nt_edit: 'edycja zamówienia', nt_popup: 'Zmiana w opłaconym zamówieniu',
             modal_edit_order: 'Edytuj zamówienie',
@@ -1147,6 +1151,7 @@
             col_weight: 'Вес (кг)', detail_weight: 'Вес/шт.', nav_products: 'Каталог', nav_assistant: 'Помощник',
             pay_all: 'Все оплаты', pay_label: 'Оплаты', pay_cod: 'Оплата при получении', pay_payu: 'PayU / онлайн',
             pay_paid: 'Оплачено', pay_proforma: 'Проформа',
+            eta_label: 'Доставка:', eta_title: 'Прогноз доставки',
             nt_title: 'Изменения в оплаченных заказах', nt_seen: 'Отметить прочитанным', nt_empty: 'Новых изменений нет',
             nt_comment: 'комментарий', nt_edit: 'правка заказа', nt_popup: 'Изменение в оплаченном заказе',
             modal_edit_order: 'Редактировать заказ',
@@ -1356,6 +1361,26 @@
         loadStats();
         loadSyncInfo();
     })();
+
+    /* Allegro / Erli: «Przewidywany czas dostawy» вместо номера заказа.
+       Красным — срок прошёл, а заказ ещё не отправлен. */
+    var MONTHS_PL = ['sty','lut','mar','kwi','maj','cze','lip','sie','wrz','paź','lis','gru'];
+    var MONTHS_RU = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+    function etaHtml(o) {
+        if (!(o.source === 'allegro' || o.source === 'erli') || !(o.delivery_to || o.delivery_from)) return '';
+        var mn = currentLang === 'ru' ? MONTHS_RU : MONTHS_PL;
+        var f = (o.delivery_from || o.delivery_to).slice(0, 10), to = (o.delivery_to || o.delivery_from).slice(0, 10);
+        var pf = f.split('-'), pt = to.split('-');
+        var txt;
+        if (f === to) txt = (+pt[2]) + ' ' + mn[+pt[1] - 1];
+        else if (pf[1] === pt[1]) txt = (+pf[2]) + '–' + (+pt[2]) + ' ' + mn[+pt[1] - 1];
+        else txt = (+pf[2]) + ' ' + mn[+pf[1] - 1] + ' – ' + (+pt[2]) + ' ' + mn[+pt[1] - 1];
+        var today = new Date(); today.setHours(0, 0, 0, 0);
+        var late = new Date(to + 'T00:00:00') < today
+            && ['shipped', 'delivered', 'cancelled', 'refunded', 'completed'].indexOf(o.status) === -1;
+        return '<span class="order-eta' + (late ? ' late' : '') + '" title="' + t('eta_title') + ' · #' + (o.external_id || '') + '">'
+            + t('eta_label') + ' <b>' + txt + '</b></span>';
+    }
 
     function fmt(n) {
         return parseFloat(n || 0).toLocaleString('pl-PL');
@@ -1714,7 +1739,8 @@
 
                 var srcHtml = '<i style="background:' + srcColor(o.source) + '"></i>'
                     + (o.source || '\u2014')
-                    + (o.seller_account ? '<em> \u00b7 ' + o.seller_account + '</em>' : '');
+                    + (o.seller_account ? '<em> \u00b7 ' + o.seller_account + '</em>' : '')
+                    + etaHtml(o);
 
                 html += '<tr class="order-row compact' + exportedClass + '" id="row-' + orderId + '">'
                     + '<td onclick="event.stopPropagation()"><input type="checkbox" class="order-check" data-id="' + orderId + '"' + (selectedIds[orderId] ? ' checked' : '') + ' onchange="toggleSelect(this)"></td>'
@@ -1756,7 +1782,7 @@
                 + '<td class="address-cell" onclick="toggleDetail(\'' + rowId + '\')">' + addrHtml + '</td>'
                 + '<td class="comment-cell" onclick="event.stopPropagation()"><span class="editable-comment" data-id="' + orderId + '" onclick="editComment(this)" title="' + t('click_to_edit') + '">' + commentHtml + '</span>' + commentBy + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="badge badge-' + o.source + '">' + (o.source || '').toUpperCase() + '</span>'
-                + (o.source === 'manual' ? '' : '<div class="order-extid">' + ((o.external_id || '').replace(/[^0-9]/g, '') || '') + '</div>')
+                + (o.source === 'manual' ? '' : (etaHtml(o) || '<div class="order-extid">' + ((o.external_id || '').replace(/[^0-9]/g, '') || '') + '</div>'))
                 + (o.created_by_email ? '<div class="order-extid">' + o.created_by_email + '</div>' : '')
                 + '</td>'
                 + '<td class="seller-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.seller_account || '') + '</td>'

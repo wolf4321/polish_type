@@ -632,6 +632,9 @@ async def lifespan(app: FastAPI):
         await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS comment_by VARCHAR(200) DEFAULT ''")
         await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS comment_at TIMESTAMP")
         await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS fiscal_done BOOLEAN DEFAULT FALSE")
+        # Szacowany czas dostawy с Allegro / Erli (диапазон дат)
+        await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_from DATE")
+        await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_to DATE")
         await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS fiscal_at TIMESTAMP")
         await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS fiscal_by VARCHAR(200) DEFAULT ''")
 
@@ -828,7 +831,7 @@ def _safe_val(v):
     """Конвертирует Decimal/datetime в JSON-совместимые типы."""
     if isinstance(v, Decimal):
         return float(v)
-    if isinstance(v, datetime):
+    if isinstance(v, (datetime, date)):
         return v.isoformat()
     return v
 
@@ -879,6 +882,44 @@ async def _catalog_after_save(conn, source: str, ext_id: str):
         await catalog.apply_catalog_to_order(conn, source, ext_id)
     except Exception as e:
         print(f"[catalog] apply failed for {source}/{ext_id}: {e}")
+
+
+async def _save_delivery_eta(conn, source, ext_id, order_data):
+    """Прогноз доставки (Allegro/Erli). Пишем только если площадка его отдала."""
+    if "delivery_from" not in order_data and "delivery_to" not in order_data:
+        return
+    d_from, d_to = order_data.get("delivery_from"), order_data.get("delivery_to")
+    if not d_from and not d_to:
+        return
+    try:
+        await conn.execute(
+            "UPDATE orders SET delivery_from=$1, delivery_to=$2 WHERE source=$3 AND external_id=$4",
+            d_from or d_to, d_to or d_from, source, ext_id)
+    except Exception as e:
+        print(f"[delivery_eta] {source}:{ext_id}: {e}")
+
+
+def _iso_to_local_date(v):
+    """ISO-строка с площадки → дата по польскому времени."""
+    if not v:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(TZ)
+        return dt.date()
+    except Exception:
+        return None
+
+
+def _add_workdays(d, n):
+    """+n рабочих дней (пн–пт), праздники не учитываем."""
+    n = int(n or 0)
+    while n > 0:
+        d += timedelta(days=1)
+        if d.weekday() < 5:
+            n -= 1
+    return d
 
 
 async def _save_order(conn, source: str, order_data: dict):
@@ -945,6 +986,7 @@ async def _save_order(conn, source: str, order_data: dict):
             order_data.get("invoice_data", ""),
             order_data.get("invoice_type", ""),
         )
+        await _save_delivery_eta(conn, source, ext_id, order_data)
         await _catalog_after_save(conn, source, ext_id)
         return "updated"
     else:
@@ -991,6 +1033,7 @@ async def _save_order(conn, source: str, order_data: dict):
             order_data.get("invoice_data", ""),
             order_data.get("invoice_type", ""),
         )
+        await _save_delivery_eta(conn, source, ext_id, order_data)
         await _catalog_after_save(conn, source, ext_id)
         return "new"
 
@@ -2166,7 +2209,17 @@ def _parse_allegro_order(form: dict, seller_name: str = "drogatrade") -> dict:
     else:
         invoice_type = "receipt"
 
+    # «Przewidywany czas dostawy» — Allegro считает сам и отдаёт в delivery.time
+    d_time = delivery.get("time") or {}
+    d_from = _iso_to_local_date(d_time.get("from"))
+    d_to = _iso_to_local_date(d_time.get("to"))
+    if not d_from and not d_to:
+        g = d_time.get("guaranteed") or {}
+        d_from, d_to = _iso_to_local_date(g.get("from")), _iso_to_local_date(g.get("to"))
+
     return {
+        "delivery_from": d_from,
+        "delivery_to": d_to,
         "external_id": str(form.get("id", "")),
         "status": status,
         "customer_name": recipient_name,
@@ -2430,6 +2483,56 @@ def _erli_parse_dt(value):
         return None
 
 
+# Сроки доставки по методам Erli: {typeId: (min, max, unit)}. Берём из
+# /delivery/priceListsDetails раз в синк. В заказе готовой даты нет —
+# Erli показывает «Szacowany termin doręczenia» = оплата + czas wysyłki
+# товара (рабочие дни) + срок доставки метода.
+ERLI_DELIVERY_TIMES = {}
+
+
+async def _erli_load_delivery_times(session, account):
+    try:
+        url = f"{ERLI_API_URL}/delivery/priceListsDetails"
+        async with session.get(url, headers=_erli_headers(account), ssl=True) as resp:
+            if resp.status != 200:
+                print(f"[erli] priceListsDetails {resp.status}")
+                return
+            data = await resp.json()
+        lists = data if isinstance(data, list) else (data.get("items") or data.get("priceLists") or [])
+        cnt = 0
+        for pl in lists:
+            for pr in pl.get("prices") or []:
+                dm = pr.get("deliveryMethod") or {}
+                dt = dm.get("deliveryTime") or {}
+                if dm.get("id") and dt:
+                    ERLI_DELIVERY_TIMES[dm["id"]] = (
+                        int(dt.get("minPeriod") or 0), int(dt.get("maxPeriod") or dt.get("minPeriod") or 0),
+                        dt.get("unit") or "days")
+                    cnt += 1
+        print(f"[erli] сроки доставки: {cnt} методов")
+    except Exception as e:
+        print(f"[erli] priceListsDetails не прочитал: {e}")
+
+
+def _erli_delivery_eta(o: dict):
+    delivery = o.get("delivery") or {}
+    start = _iso_to_local_date(o.get("purchasedAt") or o.get("created"))
+    if not start:
+        return None, None
+    disp = 0
+    for li in o.get("items") or []:
+        dt = li.get("dispatchTime") or {}
+        per = int(dt.get("period") or 0)
+        unit = dt.get("unit") or "day"
+        days = per if unit == "day" else (0 if unit == "hour" else per * 21)
+        disp = max(disp, days)
+    mn, mx, unit = ERLI_DELIVERY_TIMES.get(delivery.get("typeId") or "", (1, 2, "days"))
+    if unit == "hours":
+        mn, mx = (1 if mn else 0), max(1, round(mx / 24))
+    ship = _add_workdays(start, disp)
+    return _add_workdays(ship, mn), _add_workdays(ship, mx)
+
+
 def _parse_erli_order(o: dict, seller_name: str = "erli") -> dict:
     """Erli Order → наш единый формат заказа."""
     user = o.get("user") or {}
@@ -2558,6 +2661,8 @@ def _parse_erli_order(o: dict, seller_name: str = "erli") -> dict:
         "note": comment,
         "external_created": _erli_parse_dt(o.get("created")),
         "shipping_cost": _erli_money(delivery.get("price")),
+        "delivery_from": _erli_delivery_eta(o)[0],
+        "delivery_to": _erli_delivery_eta(o)[1],
         "seller_account": seller_name,
         "customer_comment": customer_comment,
         "invoice_nip": invoice_nip,
@@ -2608,6 +2713,7 @@ async def _sync_erli_account(account: dict, full=False):
 
     try:
         async with _http_session() as session:
+            await _erli_load_delivery_times(session, account)
             cursor = after
             while True:
                 orders = await _erli_fetch_orders(session, account, after=cursor, limit=200)
@@ -4683,6 +4789,26 @@ async def _handle_woo_webhook(request: Request, source: str, secret: str, unit_p
 # приложит cookie. Достаточно было подсунуть залогиненному админу
 # ссылку — и запрос выполнялся от его имени. POST браузер cross-site
 # уже не отправит вместе с cookie.
+@app.get("/admin/erli/raw")
+async def admin_erli_raw(request: Request, id: str = Query(...)):
+    """Сырой заказ Erli + наш прогноз доставки — для сверки с панелью Erli."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    for account in ERLI_ACCOUNTS:
+        async with _http_session() as session:
+            await _erli_load_delivery_times(session, account)
+            async with session.get(f"{ERLI_API_URL}/orders/{id}", headers=_erli_headers(account), ssl=True) as resp:
+                if resp.status != 200:
+                    continue
+                o = await resp.json()
+        f, t = _erli_delivery_eta(o)
+        return JSONResponse({"account": account["name"], "eta": [str(f), str(t)],
+                             "times": {k: list(v) for k, v in ERLI_DELIVERY_TIMES.items()},
+                             "order": o})
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
 @app.post("/admin/sync")
 async def manual_sync(request: Request, source: str = Query(None), full: bool = Query(False)):
     """Ручной запуск синхронизации. /admin/sync?source=allegro&full=true"""
