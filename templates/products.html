@@ -34,6 +34,21 @@
         .pr-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;}
         .pr-hint{font-size:11px;color:var(--faint);margin:-4px 0 10px;}
         .pr-warn{font-size:12px;color:var(--danger-ink);background:var(--danger-bg);padding:8px 10px;border-radius:8px;margin-top:8px;display:none;white-space:pre-line;}
+        .pr-sel{width:30px;}
+        .pr-sel input{width:16px;height:16px;cursor:pointer;margin:0;}
+        tr.pr-picked td{background:var(--accent-soft, rgba(124,58,237,.07));}
+        .pr-bar{position:sticky;top:8px;z-index:20;display:none;align-items:center;gap:10px;background:var(--ink);color:var(--bg);
+                padding:9px 14px;border-radius:10px;margin-bottom:10px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.18);}
+        .pr-bar.on{display:flex;}
+        .pr-bar button{border:0;border-radius:7px;padding:6px 12px;font:600 12.5px inherit;cursor:pointer;}
+        .pr-bar .del{background:#dc2626;color:#fff;}
+        .pr-bar .res{background:#16a34a;color:#fff;}
+        .pr-bar .clr{background:transparent;color:inherit;opacity:.75;}
+        .pr-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:300;display:none;align-items:center;gap:14px;
+                  background:var(--ink);color:var(--bg);padding:12px 16px;border-radius:12px;font-size:13.5px;box-shadow:0 10px 30px rgba(0,0,0,.25);}
+        .pr-toast.on{display:flex;}
+        .pr-toast button{background:#facc15;color:#111;border:0;border-radius:8px;padding:7px 14px;font:700 13px inherit;cursor:pointer;}
+        .pr-toast .t-bar{position:absolute;left:0;bottom:0;height:3px;background:#facc15;border-radius:0 0 12px 12px;}
         @media (max-width:700px){ .pr-grid{grid-template-columns:1fr;} .hide-sm{display:none;} }
     </style>
 </head>
@@ -81,18 +96,27 @@
             <label><input type="checkbox" id="only-dup" onchange="render()"> <span data-i18n="pr_only_dup">Tylko powtórzone kody</span></label>
             <span class="pr-count" id="count"></span>
         </div>
+        <div class="pr-bar" id="sel-bar">
+            <span id="sel-n"></span>
+            <button class="del" id="sel-del" onclick="bulkSet(false)" data-i18n="pr_sel_del">Usuń zaznaczone</button>
+            <button class="res" id="sel-res" onclick="bulkSet(true)" data-i18n="pr_sel_res">Przywróć zaznaczone</button>
+            <button class="clr" onclick="clearSel()" data-i18n="pr_sel_clr">Odznacz</button>
+        </div>
         <table class="tbl">
             <thead><tr>
+                <th class="pr-sel"><input type="checkbox" id="sel-all" onchange="selAll(this.checked)" title="Zaznacz wszystkie widoczne"></th>
                 <th data-i18n="pr_th_name">Produkt</th>
                 <th class="hide-sm" data-i18n="pr_th_cat">Kategoria</th>
                 <th class="r" data-i18n="pr_th_w">Waga/szt.</th>
                 <th data-i18n="pr_th_codes">Kody</th>
             </tr></thead>
-            <tbody id="rows"><tr><td colspan="4"><div class="empty" data-i18n="loading">Ładowanie…</div></td></tr></tbody>
+            <tbody id="rows"><tr><td colspan="5"><div class="empty" data-i18n="loading">Ładowanie…</div></td></tr></tbody>
         </table>
         <div class="pr-more" id="more"></div>
     </div>
 </main>
+
+<div class="pr-toast" id="toast"><span id="toast-txt"></span><button onclick="undoBulk()" data-i18n="pr_undo">Cofnij</button><div class="t-bar" id="toast-bar"></div></div>
 
 <div class="modal-overlay" id="edit-modal">
     <div class="modal">
@@ -146,6 +170,8 @@ EKOMAT.extend({
     pr_f_attrs:'Parametry do przycisków (jeden w linii: nazwa: wartość)',
     pr_f_active:'Aktywny (widoczny przy dodawaniu zamówienia)',
     pr_new:'Nowy produkt', pr_edit:'Edycja produktu', pr_hidden:'ukryty',
+    pr_sel_del:'Usuń zaznaczone', pr_sel_res:'Przywróć zaznaczone', pr_sel_clr:'Odznacz', pr_selected:'Zaznaczono:',
+    pr_undo:'Cofnij', pr_deleted:'Usunięto produktów:', pr_restored:'Przywrócono produktów:', pr_undone:'Cofnięto',
     pr_dup:'kod przy kilku produktach — automatyczne dopasowanie wyłączone',
     pr_conflict:'Uwaga: te kody są też przy innych produktach — automatyczne dopasowanie po nich nie zadziała:',
     pr_shown:'pokazano', pr_of:'z', pr_more:'Zawęź wyszukiwanie, aby zobaczyć resztę',
@@ -163,6 +189,8 @@ EKOMAT.extend({
     pr_f_attrs:'Параметры для кнопок (по одному в строке: название: значение)',
     pr_f_active:'Активен (виден при добавлении заказа)',
     pr_new:'Новый товар', pr_edit:'Редактирование товара', pr_hidden:'скрыт',
+    pr_sel_del:'Удалить выбранные', pr_sel_res:'Вернуть выбранные', pr_sel_clr:'Снять выбор', pr_selected:'Выбрано:',
+    pr_undo:'Отменить', pr_deleted:'Удалено товаров:', pr_restored:'Возвращено товаров:', pr_undone:'Отменено',
     pr_dup:'код у нескольких товаров — автоподбор выключен',
     pr_conflict:'Внимание: эти коды есть и у других товаров — автоподбор по ним работать не будет:',
     pr_shown:'показано', pr_of:'из', pr_more:'Уточните поиск, чтобы увидеть остальные',
@@ -170,7 +198,63 @@ EKOMAT.extend({
   }
 });
 var T = function(k){ return EKOMAT.t(k); };
-var ALL = [], EDIT_ID = null, LIMIT = 300;
+var ALL = [], EDIT_ID = null, LIMIT = 300, SEL = {}, VISIBLE = [], UNDO = null;
+
+// --- выбор нескольких и удаление с отменой ---
+function selCount(){ return Object.keys(SEL).length; }
+function updSel(){
+    var n = selCount(), bar = document.getElementById('sel-bar');
+    bar.classList.toggle('on', n > 0);
+    document.getElementById('sel-n').textContent = T('pr_selected') + ' ' + n;
+    var anyOff = false, anyOn = false;
+    ALL.forEach(function(p){ if (SEL[p.id]) { if (p.active) anyOn = true; else anyOff = true; } });
+    document.getElementById('sel-del').style.display = anyOn ? '' : 'none';
+    document.getElementById('sel-res').style.display = anyOff ? '' : 'none';
+    var all = document.getElementById('sel-all');
+    var vis = VISIBLE.filter(function(id){ return SEL[id]; }).length;
+    all.checked = VISIBLE.length > 0 && vis === VISIBLE.length;
+    all.indeterminate = vis > 0 && vis < VISIBLE.length;
+}
+function pick(id, on){
+    if (on) SEL[id] = 1; else delete SEL[id];
+    var tr = document.getElementById('pr-' + id); if (tr) tr.classList.toggle('pr-picked', !!on);
+    updSel();
+}
+function selAll(on){ VISIBLE.forEach(function(id){ if (on) SEL[id] = 1; else delete SEL[id]; }); render(); }
+function clearSel(){ SEL = {}; render(); }
+function bulkSet(active){
+    var ids = ALL.filter(function(p){ return SEL[p.id] && p.active !== active; }).map(function(p){ return p.id; });
+    if (!ids.length) return;
+    fetch('/api/products/bulk', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids: ids, active: active})})
+    .then(function(r){ return r.json(); }).then(function(d){
+        if (!d.ok) { alert(d.error || 'Error'); return; }
+        SEL = {};
+        showUndo(ids, active);
+        load();
+    });
+}
+function showUndo(ids, active){
+    if (UNDO && UNDO.timer) clearInterval(UNDO.timer);
+    var left = 15, total = 15;
+    UNDO = {ids: ids, active: active};
+    var toast = document.getElementById('toast'), bar = document.getElementById('toast-bar');
+    document.getElementById('toast-txt').textContent = T(active ? 'pr_restored' : 'pr_deleted') + ' ' + ids.length;
+    toast.classList.add('on'); bar.style.width = '100%';
+    UNDO.timer = setInterval(function(){
+        left -= 0.25; bar.style.width = Math.max(0, left / total * 100) + '%';
+        if (left <= 0) { clearInterval(UNDO.timer); UNDO = null; toast.classList.remove('on'); }
+    }, 250);
+}
+function undoBulk(){
+    if (!UNDO) return;
+    var u = UNDO; clearInterval(u.timer); UNDO = null;
+    fetch('/api/products/bulk', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids: u.ids, active: !u.active})})
+    .then(function(r){ return r.json(); }).then(function(){
+        document.getElementById('toast-txt').textContent = T('pr_undone');
+        setTimeout(function(){ document.getElementById('toast').classList.remove('on'); }, 1200);
+        load();
+    });
+}
 
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 function fmtW(v){ return (v == null) ? '' : Number(v).toLocaleString(EKOMAT.lang === 'ru' ? 'ru-RU' : 'pl-PL', {maximumFractionDigits: 3}); }
@@ -204,13 +288,15 @@ function render(){
         if (dup && !p._dup) return false;
         return words.every(function(w){ return p._hay.indexOf(w) >= 0; });
     });
+    VISIBLE = list.slice(0, LIMIT).map(function(p){ return p.id; });
     var html = list.slice(0, LIMIT).map(function(p){
         var attrs = Object.keys(p.attrs || {}).map(function(k){ return esc(k) + ': ' + esc(p.attrs[k]); }).join(' · ');
         var codes = (p.codes || []).map(function(c){
             return '<div' + (c.dup ? ' class="dup" title="' + esc(T('pr_dup')) + '"' : '') + '>' + esc(c.code)
                 + (c.label ? ' <span class="lbl">' + esc(c.label) + '</span>' : '') + (c.dup ? ' ⚠' : '') + '</div>';
         }).join('') || '<span class="pr-w-none">—</span>';
-        return '<tr class="' + (p.active ? '' : 'pr-off') + '">'
+        return '<tr id="pr-' + p.id + '" class="' + (p.active ? '' : 'pr-off') + (SEL[p.id] ? ' pr-picked' : '') + '">'
+            + '<td class="pr-sel"><input type="checkbox"' + (SEL[p.id] ? ' checked' : '') + ' onchange="pick(' + p.id + ', this.checked)"></td>'
             + '<td><div class="pr-name" onclick="openEdit(' + p.id + ')">' + esc(p.name) + '</div>'
             + (attrs ? '<div class="pr-attrs">' + attrs + '</div>' : '')
             + (p.active ? '' : '<div class="pr-attrs">' + esc(T('pr_hidden')) + '</div>') + '</td>'
@@ -218,7 +304,8 @@ function render(){
             + '<td class="r num">' + (p.weight_kg != null ? fmtW(p.weight_kg) + ' kg' : '<span class="pr-w-none">—</span>') + '</td>'
             + '<td class="pr-codes">' + codes + '</td></tr>';
     }).join('');
-    document.getElementById('rows').innerHTML = html || '<tr><td colspan="4"><div class="empty">—</div></td></tr>';
+    document.getElementById('rows').innerHTML = html || '<tr><td colspan="5"><div class="empty">—</div></td></tr>';
+    updSel();
     document.getElementById('count').textContent = T('pr_shown') + ' ' + Math.min(list.length, LIMIT) + ' ' + T('pr_of') + ' ' + list.length;
     document.getElementById('more').textContent = list.length > LIMIT ? T('pr_more') : '';
 }

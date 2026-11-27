@@ -182,7 +182,7 @@ async def lookup_codes(conn, codes: list) -> dict:
     rows = await conn.fetch("""
         SELECT pc.code, p.id, p.name, p.weight_kg, p.category, p.product_type
         FROM product_codes pc JOIN products p ON p.id = pc.product_id
-        WHERE pc.code = ANY($1::text[])
+        WHERE pc.code = ANY($1::text[]) AND p.active
     """, list(codes))
     by_code = {}
     for r in rows:
@@ -288,8 +288,10 @@ async def _all_products(conn, include_inactive=False):
     codes = {}
     for c in crow:
         codes.setdefault(c["product_id"], []).append({"code": c["code"], "label": c["label"] or ""})
+    # Повтор — только среди активных: скрытый (удалённый) товар код не занимает
     dup = await conn.fetch(
-        "SELECT code FROM product_codes GROUP BY code HAVING COUNT(DISTINCT product_id) > 1")
+        "SELECT pc.code FROM product_codes pc JOIN products p ON p.id=pc.product_id "
+        "WHERE p.active GROUP BY pc.code HAVING COUNT(DISTINCT pc.product_id) > 1")
     dups = {d["code"] for d in dup}
     out = []
     for r in rows:
@@ -377,7 +379,7 @@ async def _conflicts(conn, codes, pid=None):
         return []
     rows = await conn.fetch("""
         SELECT pc.code, p.name FROM product_codes pc JOIN products p ON p.id=pc.product_id
-        WHERE pc.code = ANY($1::text[]) AND ($2::int IS NULL OR pc.product_id <> $2)
+        WHERE pc.code = ANY($1::text[]) AND ($2::int IS NULL OR pc.product_id <> $2) AND p.active
     """, [c["code"] for c in codes], pid)
     return [{"code": r["code"], "name": r["name"]} for r in rows]
 
@@ -448,3 +450,22 @@ async def api_product_delete(pid: int, request: Request):
     async with pool.acquire() as conn:
         await conn.execute("UPDATE products SET active=FALSE, updated_at=NOW() WHERE id=$1", pid)
     return JSONResponse({"ok": True})
+
+
+@router.post("/api/products/bulk")
+async def api_products_bulk(request: Request):
+    """Скрыть (удалить) или вернуть несколько товаров разом. Удаление мягкое —
+    отмена в интерфейсе просто возвращает active=true."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "products"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    body = await request.json()
+    ids = [int(x) for x in (body.get("ids") or []) if str(x).isdigit()][:2000]
+    active = bool(body.get("active"))
+    if not ids:
+        return JSONResponse({"ok": False, "error": "no ids"})
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        res = await conn.execute(
+            "UPDATE products SET active=$1, updated_at=NOW() WHERE id = ANY($2::int[])", active, ids)
+    return JSONResponse({"ok": True, "count": int(res.split()[-1])})
