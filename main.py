@@ -3623,6 +3623,143 @@ async def toggle_fiscal(request: Request):
 # === API: Toggle exported status ===
 # ============================================================
 
+# ——— Статус обратно на сайт ———
+# Заказы магазинов обрабатывают в панели. Чтобы сайт не висел вечно
+# в «W realizacji», статус, выбранный в панели, отправляем в магазин,
+# и только после ответа магазина меняем его у себя.
+
+WOO_PUSH_STATUSES = ["processing", "on-hold", "completed", "cancelled", "refunded"]
+# PrestaShop (cieplarnia): наш статус → id состояния в магазине
+PRESTA_PUSH_STATES = {"processing": "3", "shipped": "4", "delivered": "5",
+                      "cancelled": "6", "refunded": "7"}
+
+
+def _shop_push_target(source):
+    if source == "oteko":
+        return ("woo", WOO_OTEKO_URL, WOO_OTEKO_KEY, WOO_OTEKO_SECRET)
+    if source == "dobraszklarnia":
+        return ("woo", WOO_URL, WOO_KEY, WOO_SECRET)
+    if source == "cieplarnia":
+        return ("presta", PRESTA_CIEP_URL, PRESTA_CIEP_KEY, "")
+    return None
+
+
+async def _push_status_to_shop(source, external_id, status):
+    """Отправить статус в магазин. Возвращает None или текст ошибки."""
+    t = _shop_push_target(source)
+    if not t:
+        return "Ten sklep nie obsługuje zmiany statusu"
+    kind, base, key, secret = t
+    if not key:
+        return "Brak klucza API sklepu"
+    try:
+        async with _http_session(timeout=aiohttp.ClientTimeout(total=25)) as session:
+            if kind == "woo":
+                if status not in WOO_PUSH_STATUSES:
+                    return "Nieznany status"
+                url = f"{base}/wp-json/wc/v3/orders/{external_id}"
+                async with session.put(url, headers=_woo_auth_header(key, secret),
+                                       json={"status": status}, ssl=True) as resp:
+                    if resp.status in (200, 201):
+                        return None
+                    txt = (await resp.text())[:300]
+                    if resp.status in (401, 403):
+                        return "Klucz API sklepu nie ma prawa zapisu (potrzebny Read/Write)"
+                    return f"Sklep odpowiedział {resp.status}: {txt}"
+            else:
+                state = PRESTA_PUSH_STATES.get(status)
+                if not state:
+                    return "Nieznany status"
+                xml = ('<?xml version="1.0" encoding="UTF-8"?><prestashop><order_history>'
+                       f'<id_order>{int(external_id)}</id_order>'
+                       f'<id_order_state>{state}</id_order_state>'
+                       '</order_history></prestashop>')
+                async with session.post(f"{base}/api/order_histories", params={"sendemail": "1"},
+                                        data=xml.encode(), auth=aiohttp.BasicAuth(key, ""),
+                                        headers={"Content-Type": "application/xml"}, ssl=True) as resp:
+                    if resp.status in (200, 201):
+                        return None
+                    txt = (await resp.text())[:300]
+                    if resp.status in (401, 403, 405):
+                        return "Klucz Webservice nie ma prawa POST do order_histories"
+                    return f"Sklep odpowiedział {resp.status}: {txt}"
+    except ExternalCallBlocked:
+        return "Wysyłanie do sklepów wyłączone na tej kopii"
+    except Exception as e:
+        return f"Błąd połączenia ze sklepem: {e}"
+
+
+@app.get("/admin/shop-write-check")
+async def shop_write_check(request: Request):
+    """Можно ли писать статусы в магазины. Ничего не меняет:
+    Woo — PUT последнего заказа с тем же статусом; Presta — права ключа из /api/."""
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "manage_users"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    out = {}
+    async with _http_session(timeout=aiohttp.ClientTimeout(total=25)) as session:
+        for src in ("oteko", "dobraszklarnia"):
+            kind, base, key, secret = _shop_push_target(src)
+            if not key:
+                out[src] = "brak klucza"; continue
+            try:
+                async with session.get(f"{base}/wp-json/wc/v3/orders", headers=_woo_auth_header(key, secret),
+                                       params={"per_page": 1}, ssl=True) as r:
+                    lst = await r.json(content_type=None) if r.status == 200 else []
+                if not lst:
+                    out[src] = "nie mogę odczytać zamówień"; continue
+                o = lst[0]
+                async with session.put(f"{base}/wp-json/wc/v3/orders/{o['id']}", headers=_woo_auth_header(key, secret),
+                                       json={"status": o["status"]}, ssl=True) as r:
+                    out[src] = "zapis OK" if r.status in (200, 201) else f"zapis NIE ({r.status})"
+            except Exception as e:
+                out[src] = f"błąd: {e}"
+        kind, base, key, _ = _shop_push_target("cieplarnia")
+        if not key:
+            out["cieplarnia"] = "brak klucza"
+        else:
+            try:
+                async with session.get(f"{base}/api/", params={"output_format": "JSON"},
+                                       auth=aiohttp.BasicAuth(key, ""), ssl=True) as r:
+                    data = await r.json(content_type=None)
+                api = data.get("api", data)
+                oh = api.get("order_histories") or {}
+                attrs = oh.get("attrs") or oh.get("@attributes") or oh
+                out["cieplarnia"] = {"order_histories": attrs, "orders": (api.get("orders") or {}).get("attrs") or api.get("orders")}
+            except Exception as e:
+                out["cieplarnia"] = f"błąd: {e}"
+    return JSONResponse(out)
+
+
+@app.post("/api/orders/set-status")
+async def set_order_status(request: Request):
+    user = await get_current_user(request)
+    if not user or not has_perm(user, "mark_delivery"):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    body = await request.json()
+    try:
+        order_id = int(body.get("id"))
+    except Exception:
+        return JSONResponse({"ok": False, "error": "no id"}, status_code=400)
+    status = (body.get("status") or "").strip()
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT source, external_id, status FROM orders WHERE id=$1", order_id)
+    if not row:
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    if row["status"] == status:
+        return JSONResponse({"ok": True, "status": status})
+    err = await _push_status_to_shop(row["source"], row["external_id"], status)
+    if err:
+        print(f"[status-push] {row['source']}#{row['external_id']} → {status}: {err}")
+        return JSONResponse({"ok": False, "error": err}, status_code=502)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE orders SET status=$1, updated_at=NOW() WHERE id=$2", status, order_id)
+        await log_action(conn, user, "status", [order_id], old_value=row["status"] or "",
+                         new_value=status, label=await _order_label(conn, order_id))
+    return JSONResponse({"ok": True, "status": status})
+
+
 @app.post("/api/orders/toggle-exported")
 async def toggle_exported(request: Request):
     """Toggle exported flag for an order."""

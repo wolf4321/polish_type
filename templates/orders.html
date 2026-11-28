@@ -366,6 +366,20 @@
         .star-btn{background:none;border:none;cursor:pointer;font-size:17px;color:var(--line-strong);line-height:1;padding:2px;}
         .star-btn:hover{color:var(--warn-ink);}
         .star-btn.active{color:#ff6600;}
+        .st-edit{cursor:pointer;white-space:nowrap;}
+        .st-edit:hover .pill{outline:1px solid var(--accent);}
+        .st-caret{font-size:10px;color:var(--muted);}
+        .st-menu{position:absolute;z-index:3500;background:var(--card-bg);border:1px solid var(--line);border-radius:10px;
+            box-shadow:0 12px 30px rgba(0,0,0,.18);padding:6px 0;min-width:220px;}
+        .st-menu .st-head{padding:4px 14px 6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+        .st-menu button{display:block;width:100%;text-align:left;background:none;border:0;padding:7px 14px;font:inherit;
+            font-size:12.5px;color:var(--ink);cursor:pointer;}
+        .st-menu button:hover{background:var(--chip);}
+        .st-menu button.cur{font-weight:700;}
+        .st-menu button:disabled{opacity:.5;cursor:default;}
+        .st-menu .st-msg{padding:4px 14px;font-size:11.5px;color:var(--muted);max-width:260px;}
+        .st-menu .st-msg:empty{display:none;}
+        .st-menu .st-msg.err{color:#d63b3b;}
         .order-eta{display:block;font-size:10.5px;color:var(--muted);margin-top:3px;white-space:nowrap;font-style:normal;}
         .order-eta b{color:var(--ink);font-weight:600;}
         .order-eta.late b{color:#d63b3b;}
@@ -975,6 +989,9 @@
             alog_a_priority: 'Priorytet \u2605',
             alog_a_comment: 'Komentarz',
             alog_a_manual_edit: 'Edycja zamówienia',
+            alog_a_status: 'Status (wysłany do sklepu)',
+            st_change: 'Zmień status — zmiana pójdzie na stronę sklepu', st_head: 'Status na stronie sklepu',
+            st_sending: 'Wysyłam do sklepu…', st_neterr: 'Brak połączenia, spróbuj jeszcze raz',
             alog_marked: 'oznaczone \u2713',
             alog_set: 'w\u0142\u0105czone',
             alog_unset: 'wy\u0142\u0105czone',
@@ -1207,6 +1224,9 @@
             alog_a_priority: 'Звёздочка \u2605',
             alog_a_comment: 'Комментарий',
             alog_a_manual_edit: 'Правка заказа',
+            alog_a_status: 'Статус (отправлен на сайт)',
+            st_change: 'Сменить статус — изменение уйдёт на сайт магазина', st_head: 'Статус на сайте магазина',
+            st_sending: 'Отправляю на сайт…', st_neterr: 'Нет связи, попробуй ещё раз',
             alog_marked: 'отмечены \u2713',
             alog_set: 'поставили',
             alog_unset: 'сняли',
@@ -1757,7 +1777,7 @@
                     + '<td class="c-amount" onclick="toggleDetail(\'' + rowId + '\')"><b>' + fmtMoney(totalVal) + ' z\u0142</b>'
                     + (shipCost > 0 ? '<span>+ ' + fmtMoney(shipCost) + ' ' + t('delivery_short') + '</span>' : '')
                     + (wVal !== null && !isNaN(wVal) ? '<span>' + weightHtml + '</span>' : '') + '</td>'
-                    + '<td onclick="toggleDetail(\'' + rowId + '\')">' + (statusLabel ? '<span class="pill ' + pillClass(o.status) + '">' + statusLabel + '</span>' : '') + '</td>'
+                    + '<td onclick="toggleDetail(\'' + rowId + '\')">' + statusCell(o, statusLabel ? '<span class="pill ' + pillClass(o.status) + '">' + statusLabel + '</span>' : '') + '</td>'
                     + '<td class="c-pay" onclick="toggleDetail(\'' + rowId + '\')">' + (o.payment_method || '\u2014') + ' ' + fiscalHtml + '</td>'
                     + '<td class="c-src" onclick="toggleDetail(\'' + rowId + '\')">' + srcHtml + '</td>'
                     + '<td class="c-chev" onclick="toggleDetail(\'' + rowId + '\')">\u2304</td>'
@@ -1775,7 +1795,7 @@
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + priceHtml + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + weightHtml + '</td>'
                 + '<td onclick="toggleDetail(\'' + rowId + '\')">' + productHtml + '</td>'
-                + '<td onclick="toggleDetail(\'' + rowId + '\')"><span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span></td>'
+                + '<td onclick="toggleDetail(\'' + rowId + '\')">' + statusCell(o, '<span class="status-' + (o.status || '').replace(/ /g,'-') + '">' + statusLabel + '</span>') + '</td>'
                 + '<td style="font-size:11px;" onclick="toggleDetail(\'' + rowId + '\')">' + (o.payment_method || '—') + '</td>'
                 + '<td style="text-align:center;">' + fiscalHtml + '</td>'
                 + '<td class="phone-cell" onclick="toggleDetail(\'' + rowId + '\')">' + (o.customer_phone || '—') + '</td>'
@@ -2127,6 +2147,66 @@
 
     // --- Toggle priority star ---
     var CAN_FISCAL = {{ 'true' if user and 'ksiegowosc' in (user.permissions or '').split(',') else 'false' }};
+    var CAN_STATUS = {{ 'true' if user and 'mark_delivery' in (user.permissions or '').split(',') else 'false' }};
+
+    /* Статус заказа магазина меняется в панели и уходит на сайт.
+       Клик по статусу открывает меню; статус меняется только после ответа сайта. */
+    var SHOP_STATUSES = {
+        woo: ['processing', 'on-hold', 'completed', 'cancelled', 'refunded'],
+        presta: ['processing', 'shipped', 'delivered', 'cancelled', 'refunded']
+    };
+    function shopKind(src) {
+        return (src === 'oteko' || src === 'dobraszklarnia') ? 'woo' : (src === 'cieplarnia' ? 'presta' : '');
+    }
+    function statusCell(o, inner) {
+        if (!CAN_STATUS || !shopKind(o.source)) return inner;
+        return '<span class="st-edit" title="' + esc(t('st_change')) + '" onclick="event.stopPropagation();openStatusMenu(this,' + o.id + ',\'' + o.source + '\',\'' + (o.status || '') + '\')">'
+            + (inner || '<span class="pill">—</span>') + ' <span class="st-caret">\u25BE</span></span>';
+    }
+    function closeStatusMenu() {
+        var m = document.getElementById('st-menu'); if (m) m.remove();
+    }
+    function openStatusMenu(el, id, src, cur) {
+        closeStatusMenu();
+        var m = document.createElement('div');
+        m.id = 'st-menu'; m.className = 'st-menu';
+        var head = document.createElement('div'); head.className = 'st-head'; head.textContent = t('st_head');
+        m.appendChild(head);
+        SHOP_STATUSES[shopKind(src)].forEach(function(st) {
+            var b = document.createElement('button');
+            b.type = 'button'; b.textContent = getStatus(st);
+            if (st === cur) b.className = 'cur';
+            b.onclick = function(ev) { ev.stopPropagation(); setShopStatus(id, st, b); };
+            m.appendChild(b);
+        });
+        var msg = document.createElement('div'); msg.className = 'st-msg'; m.appendChild(msg);
+        document.body.appendChild(m);
+        var r = el.getBoundingClientRect();
+        m.style.top = (window.scrollY + r.bottom + 4) + 'px';
+        m.style.left = Math.max(8, Math.min(window.scrollX + r.left, window.scrollX + document.documentElement.clientWidth - m.offsetWidth - 8)) + 'px';
+    }
+    function setShopStatus(id, st, btn) {
+        var m = document.getElementById('st-menu');
+        var msg = m.querySelector('.st-msg');
+        Array.prototype.forEach.call(m.querySelectorAll('button'), function(b){ b.disabled = true; });
+        msg.textContent = t('st_sending'); msg.className = 'st-msg';
+        fetch('/api/orders/set-status', {method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: id, status: st})})
+            .then(function(r){ return r.json(); })
+            .then(function(d) {
+                if (d.ok) { closeStatusMenu(); loadOrders(currentPage || 1); return; }
+                msg.textContent = d.error || 'Error'; msg.className = 'st-msg err';
+                Array.prototype.forEach.call(m.querySelectorAll('button'), function(b){ b.disabled = false; });
+            })
+            .catch(function() {
+                msg.textContent = t('st_neterr'); msg.className = 'st-msg err';
+                Array.prototype.forEach.call(m.querySelectorAll('button'), function(b){ b.disabled = false; });
+            });
+    }
+    document.addEventListener('click', function(e) {
+        var m = document.getElementById('st-menu');
+        if (m && !m.contains(e.target)) closeStatusMenu();
+    });
 
     /* ——— Уведомления бухгалтеру ———
        Раз в минуту спрашиваем сервер, не меняли ли комментарий или сам заказ
@@ -2839,6 +2919,11 @@
         if (e.action === 'manual_edit') {
             return '<span class="alog-to" title="' + esc(e.new_value) + '">' + esc(cut(e.new_value)) + '</span>';
         }
+        if (e.action === 'status') {
+            return '<span class="alog-from">' + esc(getStatus(e.old_value)) + '</span>'
+                 + '<span class="alog-arrow">→</span>'
+                 + '<span class="alog-to">' + esc(getStatus(e.new_value)) + '</span>';
+        }
         if (e.action === 'comment') {
             return '<span class="alog-from">' + esc(cut(e.old_value)) + '</span>'
                  + '<span class="alog-arrow">→</span>'
@@ -2917,7 +3002,7 @@
                 if (e.undone) {
                     act = '<span class="alog-muted" title="' + esc(e.undone_by || '') + '">'
                         + t('alog_done_undone') + '</span>';
-                } else if (e.action === 'manual_edit') {
+                } else if (e.action === 'manual_edit' || e.action === 'status') {
                     act = '<span class="alog-muted">—</span>';
                 } else {
                     act = '<button class="alog-undo" onclick="undoAction(' + e.id + ')">'
