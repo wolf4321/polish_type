@@ -3719,13 +3719,13 @@ async def shop_write_check(request: Request):
             out["cieplarnia"] = "brak klucza"
         else:
             try:
-                async with session.get(f"{base}/api/", params={"output_format": "JSON"},
-                                       auth=aiohttp.BasicAuth(key, ""), ssl=True) as r:
-                    data = await r.json(content_type=None)
-                api = data.get("api", data)
-                oh = api.get("order_histories") or {}
-                attrs = oh.get("attrs") or oh.get("@attributes") or oh
-                out["cieplarnia"] = {"order_histories": attrs, "orders": (api.get("orders") or {}).get("attrs") or api.get("orders")}
+                async with session.get(f"{base}/api/", auth=aiohttp.BasicAuth(key, ""), ssl=True) as r:
+                    xml = await r.text()
+                res = {}
+                for name in ("order_histories", "orders"):
+                    m = re.search(r"<%s\b([^>]*)>" % name, xml)
+                    res[name] = dict(re.findall(r'(get|put|post|delete|head)="(\w+)"', m.group(1))) if m else "brak dostępu"
+                out["cieplarnia"] = res
             except Exception as e:
                 out["cieplarnia"] = f"błąd: {e}"
     return JSONResponse(out)
